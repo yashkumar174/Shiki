@@ -51,19 +51,20 @@ public static class Theme
     {
         Dark = true,
         Pixel = true,
-        GlassTint = Color.FromArgb(0xF2, 0x14, 0x11, 0x26),
-        GlassRim = Color.FromRgb(0x3E, 0x37, 0x68),
-        WedgeRest = Color.FromRgb(0x2A, 0x25, 0x47),
-        WedgeEdge = Color.FromRgb(0x3E, 0x37, 0x68),
-        Label = Color.FromRgb(0xF1, 0xEE, 0xFF),
-        SubLabel = Color.FromRgb(0xA6, 0xA0, 0xCC),
-        HubPill = Color.FromRgb(0x22, 0x1E, 0x3D),
-        Surface = Color.FromArgb(0xFA, 0x16, 0x13, 0x2A),
-        SurfaceBorder = Color.FromRgb(0x3E, 0x37, 0x68),
-        RowHover = Color.FromRgb(0x2A, 0x25, 0x47),
-        Text = Color.FromRgb(0xF1, 0xEE, 0xFF),
-        SubtleText = Color.FromRgb(0xA6, 0xA0, 0xCC),
-        Track = Color.FromRgb(0x2A, 0x25, 0x47),
+        // Neutral near-black (not pure black), grey edges; colour comes only from the accents.
+        GlassTint = Color.FromArgb(0xF5, 0x17, 0x17, 0x17),
+        GlassRim = Color.FromRgb(0x3A, 0x3A, 0x3A),
+        WedgeRest = Color.FromRgb(0x26, 0x26, 0x26),
+        WedgeEdge = Color.FromRgb(0x3A, 0x3A, 0x3A),
+        Label = Color.FromRgb(0xF2, 0xF2, 0xF2),
+        SubLabel = Color.FromRgb(0xA3, 0xA3, 0xA3),
+        HubPill = Color.FromRgb(0x1F, 0x1F, 0x1F),
+        Surface = Color.FromArgb(0xFA, 0x17, 0x17, 0x17),
+        SurfaceBorder = Color.FromRgb(0x3A, 0x3A, 0x3A),
+        RowHover = Color.FromRgb(0x26, 0x26, 0x26),
+        Text = Color.FromRgb(0xF2, 0xF2, 0xF2),
+        SubtleText = Color.FromRgb(0xA3, 0xA3, 0xA3),
+        Track = Color.FromRgb(0x2A, 0x2A, 0x2A),
     };
 
     static readonly Palette DarkPalette = new()
