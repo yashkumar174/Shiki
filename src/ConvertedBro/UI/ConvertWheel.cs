@@ -14,6 +14,7 @@ using ConvertedBro.Core;
 using ConvertedBro.Shell;
 using Path = System.Windows.Shapes.Path;
 using Ellipse = System.Windows.Shapes.Ellipse;
+using Rectangle = System.Windows.Shapes.Rectangle;
 using IOPath = System.IO.Path;
 
 namespace ConvertedBro.UI;
@@ -38,6 +39,9 @@ public sealed class ConvertWheel : Window
     readonly WheelMode _mode;
     readonly Point _centerPx;
     readonly Palette _p = Theme.Current;
+    readonly bool _pixel = Theme.Current.Pixel;
+    /// <summary>Arcade art pixel: 4 physical screen pixels, so edges land on real pixels.</summary>
+    readonly double _cell = 4 / NativeMethods.SystemScale;
     readonly Grid _root = new() { Width = Size, Height = Size };
     readonly ScaleTransform _rootScale = new(0.86, 0.86, C, C);
     readonly Grid _glassHost = new() { IsHitTestVisible = false };
@@ -45,7 +49,7 @@ public sealed class ConvertWheel : Window
     readonly Ellipse _hub = new() { Width = HubRadius * 2, Height = HubRadius * 2 };
     readonly SolidColorBrush _hubFill;
     readonly TextBlock _hubTitle = new(), _hubSub = new();
-    readonly Ellipse _dotFormats = new(), _dotTools = new();
+    readonly Rectangle _dotFormats = new(), _dotTools = new();
     readonly StackPanel _dots = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
     readonly DispatcherTimer _dwell = new() { Interval = TimeSpan.FromMilliseconds(520) };
     readonly DispatcherTimer _noFiles = new() { Interval = TimeSpan.FromMilliseconds(1400) };
@@ -83,6 +87,7 @@ public sealed class ConvertWheel : Window
         Left = -10000;
         UseLayoutRounding = true;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Ideal);
+        if (_pixel) TextOptions.SetTextRenderingMode(this, TextRenderingMode.Aliased);
 
         BuildChrome();
         Content = _root;
@@ -114,6 +119,11 @@ public sealed class ConvertWheel : Window
     void BuildChrome()
     {
         _root.RenderTransform = _rootScale;
+        if (_pixel)
+        {
+            BuildPixelChrome();
+            return;
+        }
 
         // Soft, wide shadow so the glass floats above the desktop.
         _root.Children.Add(new Ellipse
@@ -147,10 +157,31 @@ public sealed class ConvertWheel : Window
         _hub.StrokeThickness = 1;
         _hub.IsHitTestVisible = false;
         _root.Children.Add(_hub);
+        BuildHubText();
+    }
 
+    /// <summary>Arcade: a solid pixel disc with a hard drop shadow, bevelled like an old game button.</summary>
+    void BuildPixelChrome()
+    {
+        var center = new Point(C, C);
+        var disc = PixelShape.Create(Size, _cell, PixelShape.Disc(center, DiscRadius));
+        _root.Children.Add(new Path { Data = disc.Body, Fill = Theme.Brush(Color.FromArgb(0x80, 0, 0, 0)), RenderTransform = new TranslateTransform(_cell * 2, _cell * 2), IsHitTestVisible = false });
+        _root.Children.Add(new Path { Data = disc.Body, Fill = Theme.Brush(_p.GlassTint), IsHitTestVisible = false });
+        _root.Children.Add(new Path { Data = disc.Outline, Fill = Theme.Brush(_p.GlassRim), IsHitTestVisible = false });
+        _root.Children.Add(_wedgeLayer);
+
+        var hub = PixelShape.Create(Size, _cell, PixelShape.Disc(center, HubRadius));
+        _root.Children.Add(new Path { Data = hub.Body, Fill = _hubFill, IsHitTestVisible = false });
+        _root.Children.Add(new Path { Data = hub.Light, Fill = Theme.Brush(Color.FromArgb(0x30, 255, 255, 255)), IsHitTestVisible = false });
+        _root.Children.Add(new Path { Data = hub.Dark, Fill = Theme.Brush(Color.FromArgb(0x55, 0, 0, 0)), IsHitTestVisible = false });
+        BuildHubText();
+    }
+
+    void BuildHubText()
+    {
         foreach (var (tb, size, font, weight, brush) in new[]
         {
-            (_hubTitle, 14.5, Theme.DisplayFont, FontWeights.SemiBold, _p.Label),
+            (_hubTitle, _pixel ? 15.0 : 14.5, Theme.TitleFont, _pixel ? FontWeights.Normal : FontWeights.SemiBold, _p.Label),
             (_hubSub, 11.5, Theme.TextFont, FontWeights.Normal, _p.SubLabel),
         })
         {
@@ -170,7 +201,8 @@ public sealed class ConvertWheel : Window
 
         foreach (var dot in new[] { _dotFormats, _dotTools })
         {
-            dot.Width = dot.Height = 5;
+            dot.Width = dot.Height = _pixel ? _cell * 2 : 5;
+            dot.RadiusX = dot.RadiusY = _pixel ? 0 : 2.5;
             dot.Margin = new Thickness(2.5, 7, 2.5, 0);
             _dots.Children.Add(dot);
         }
@@ -210,9 +242,11 @@ public sealed class ConvertWheel : Window
             // Empty glass ring: waiting for a drag to tell us what's coming, or nothing to offer.
             var ring = new Path
             {
-                Data = WedgeGeometry.Create(new Point(C, C), InnerRadius, OuterRadius, 0, Math.PI * 2, Gap, Corner),
+                Data = _pixel
+                    ? PixelShape.Create(Size, _cell, PixelShape.Wedge(new Point(C, C), InnerRadius, OuterRadius, 0, Math.PI * 2, Gap, _cell)).Body
+                    : WedgeGeometry.Create(new Point(C, C), InnerRadius, OuterRadius, 0, Math.PI * 2, Gap, Corner),
                 Fill = Theme.Brush(_p.WedgeRest),
-                Stroke = Theme.Brush(_p.WedgeEdge),
+                Stroke = _pixel ? null : Theme.Brush(_p.WedgeEdge),
                 StrokeThickness = 1,
                 IsHitTestVisible = false,
             };
@@ -224,7 +258,7 @@ public sealed class ConvertWheel : Window
             for (int i = 0; i < actions.Count; i++)
             {
                 double start = -Math.PI / 2 - step / 2 + i * step;
-                var wedge = new Wedge(actions[i], i, start, start + step, _p, _accent);
+                var wedge = new Wedge(actions[i], start, start + step, _p, _accent, _pixel ? _cell : 0);
                 _wedges.Add(wedge);
                 _wedgeLayer.Children.Add(wedge.Container);
                 if (animate) wedge.AnimateIn(i * 14, fromAngle);
@@ -244,12 +278,20 @@ public sealed class ConvertWheel : Window
 
         // Keep the disc itself on screen; the transparent margin may hang over the edge.
         double margin = C - DiscRadius - 4;
-        Left = Math.Clamp(center.X - C, area.Left - margin, area.Right - Size + margin);
-        Top = Math.Clamp(center.Y - C, area.Top - margin, area.Bottom - Size + margin);
+        Left = Snap(Math.Clamp(center.X - C, area.Left - margin, area.Right - Size + margin));
+        Top = Snap(Math.Clamp(center.Y - C, area.Top - margin, area.Bottom - Size + margin));
+        if (_pixel) return;
 
         // Snapshot what's behind us before we become visible.
         var snapshot = Glass.Capture(Glass.ToPixels(this, new Rect(Left, Top, Size, Size)));
         _glassHost.Children.Add(Glass.Build(snapshot, new EllipseGeometry(new Point(C, C), DiscRadius, DiscRadius), _p));
+    }
+
+    /// <summary>Lands on a whole physical pixel, so pixel art and hairlines stay sharp.</summary>
+    static double Snap(double dip)
+    {
+        double scale = NativeMethods.SystemScale;
+        return Math.Round(dip * scale) / scale;
     }
 
     void Open()
@@ -267,12 +309,20 @@ public sealed class ConvertWheel : Window
             _noFiles.Start();
         }
 
-        var pop = new DoubleAnimation(0.86, 1, TimeSpan.FromMilliseconds(280))
+        if (_pixel)
         {
-            EasingFunction = new BackEase { Amplitude = 0.28, EasingMode = EasingMode.EaseOut },
-        };
-        _rootScale.BeginAnimation(ScaleTransform.ScaleXProperty, pop);
-        _rootScale.BeginAnimation(ScaleTransform.ScaleYProperty, pop);
+            // Scaling pixel art blurs it; the arcade wheel snaps open and lets the wedges drop in.
+            _rootScale.ScaleX = _rootScale.ScaleY = 1;
+        }
+        else
+        {
+            var pop = new DoubleAnimation(0.86, 1, TimeSpan.FromMilliseconds(280))
+            {
+                EasingFunction = new BackEase { Amplitude = 0.28, EasingMode = EasingMode.EaseOut },
+            };
+            _rootScale.BeginAnimation(ScaleTransform.ScaleXProperty, pop);
+            _rootScale.BeginAnimation(ScaleTransform.ScaleYProperty, pop);
+        }
         BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(170)));
         for (int i = 0; i < _wedges.Count; i++) _wedges[i].AnimateIn(40 + i * 16, -14);
     }
@@ -289,9 +339,12 @@ public sealed class ConvertWheel : Window
         if (_closing) return;
         _closing = true;
         var ease = new QuadraticEase { EasingMode = EasingMode.EaseIn };
-        var shrink = new DoubleAnimation(_chosen ? 1.04 : 0.92, TimeSpan.FromMilliseconds(150)) { EasingFunction = ease };
-        _rootScale.BeginAnimation(ScaleTransform.ScaleXProperty, shrink);
-        _rootScale.BeginAnimation(ScaleTransform.ScaleYProperty, shrink);
+        if (!_pixel)
+        {
+            var shrink = new DoubleAnimation(_chosen ? 1.04 : 0.92, TimeSpan.FromMilliseconds(150)) { EasingFunction = ease };
+            _rootScale.BeginAnimation(ScaleTransform.ScaleXProperty, shrink);
+            _rootScale.BeginAnimation(ScaleTransform.ScaleYProperty, shrink);
+        }
         var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(150)) { EasingFunction = ease };
         fade.Completed += (_, _) => Close();
         BeginAnimation(OpacityProperty, fade);
@@ -547,47 +600,65 @@ public sealed class ConvertWheel : Window
         public BroAction Action { get; }
         public Canvas Container { get; } = new() { Width = Size, Height = Size, IsHitTestVisible = false };
 
-        readonly Path _shape;
         readonly SolidColorBrush _fill, _label, _glyph;
-        readonly TranslateTransform _push = new();
+        readonly TranslateTransform _push = new(), _drop = new();
         readonly RotateTransform _spin = new(0, C, C);
         readonly ScaleTransform _pulse = new(1, 1, C, C);
-        readonly double _mid;
-        readonly Color _accent, _rest, _labelColor;
-        readonly DropShadowEffect _glow;
+        readonly double _mid, _cell;
+        readonly Color _accent, _rest, _labelColor, _glyphColor;
+        readonly DropShadowEffect? _glow;
+        readonly Path? _hardShadow;
+        bool Pixel => _cell > 0;
 
-        public Wedge(BroAction action, int index, double start, double end, Palette p, Color accent)
+        /// <param name="cell">Arcade pixel size in DIPs; 0 for the smooth glass wedge.</param>
+        public Wedge(BroAction action, double start, double end, Palette p, Color accent, double cell)
         {
             Action = action;
             _accent = accent;
             _rest = p.WedgeRest;
             _labelColor = p.Label;
+            _glyphColor = p.SubLabel;
+            _cell = cell;
             _mid = (start + end) / 2;
             _fill = new SolidColorBrush(p.WedgeRest);
             _label = new SolidColorBrush(p.Label);
             _glyph = new SolidColorBrush(p.SubLabel);
-            _glow = new DropShadowEffect { Color = accent, BlurRadius = 22, ShadowDepth = 0, Opacity = 0 };
 
-            var geometry = WedgeGeometry.Create(new Point(C, C), InnerRadius, OuterRadius, start, end, Gap, Corner);
-            _shape = new Path { Data = geometry, Fill = _fill, Stroke = Theme.Brush(p.WedgeEdge), StrokeThickness = 1, Effect = _glow };
-            Container.Children.Add(_shape);
-
-            // A faint sheen from the top keeps each slice reading as glass, also when lit up.
-            Container.Children.Add(new Path
+            if (Pixel)
             {
-                Data = geometry,
-                Fill = new LinearGradientBrush(Color.FromArgb(p.Dark ? (byte)0x14 : (byte)0x40, 255, 255, 255),
-                    Color.FromArgb(0, 255, 255, 255), 90),
-            });
+                var shape = PixelShape.Create(Size, cell, PixelShape.Wedge(new Point(C, C), InnerRadius, OuterRadius, start, end, Gap, cell));
+                // A hard, offset shadow in a darker accent sits under the lit wedge, like a raised key.
+                var deep = Color.FromRgb((byte)(accent.R * 0.45), (byte)(accent.G * 0.45), (byte)(accent.B * 0.45));
+                _hardShadow = new Path { Data = shape.Body, Fill = Theme.Brush(deep), Opacity = 0, RenderTransform = new TranslateTransform(cell, cell) };
+                Container.Children.Add(_hardShadow);
+                Container.Children.Add(new Path { Data = shape.Body, Fill = _fill });
+                Container.Children.Add(new Path { Data = shape.Light, Fill = Theme.Brush(Color.FromArgb(0x30, 255, 255, 255)) });
+                Container.Children.Add(new Path { Data = shape.Dark, Fill = Theme.Brush(Color.FromArgb(0x55, 0, 0, 0)) });
+            }
+            else
+            {
+                _glow = new DropShadowEffect { Color = accent, BlurRadius = 22, ShadowDepth = 0, Opacity = 0 };
+                var geometry = WedgeGeometry.Create(new Point(C, C), InnerRadius, OuterRadius, start, end, Gap, Corner);
+                Container.Children.Add(new Path { Data = geometry, Fill = _fill, Stroke = Theme.Brush(p.WedgeEdge), StrokeThickness = 1, Effect = _glow });
+                // A faint sheen from the top keeps each slice reading as glass, also when lit up.
+                Container.Children.Add(new Path
+                {
+                    Data = geometry,
+                    Fill = new LinearGradientBrush(Color.FromArgb(p.Dark ? (byte)0x14 : (byte)0x40, 255, 255, 255),
+                        Color.FromArgb(0, 255, 255, 255), 90),
+                });
+            }
 
             var content = BuildLabel(action);
             content.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
             double labelRadius = (InnerRadius + OuterRadius) / 2;
-            Canvas.SetLeft(content, C + labelRadius * Math.Cos(_mid) - content.DesiredSize.Width / 2);
-            Canvas.SetTop(content, C + labelRadius * Math.Sin(_mid) - content.DesiredSize.Height / 2);
+            double left = C + labelRadius * Math.Cos(_mid) - content.DesiredSize.Width / 2;
+            double top = C + labelRadius * Math.Sin(_mid) - content.DesiredSize.Height / 2;
+            Canvas.SetLeft(content, Snap(left));
+            Canvas.SetTop(content, Snap(top));
             Container.Children.Add(content);
 
-            Container.RenderTransform = new TransformGroup { Children = { _pulse, _spin, _push } };
+            Container.RenderTransform = new TransformGroup { Children = { _pulse, _spin, _push, _drop } };
         }
 
         FrameworkElement BuildLabel(BroAction action)
@@ -607,9 +678,9 @@ public sealed class ConvertWheel : Window
                 stack.Children.Add(new TextBlock
                 {
                     Text = action.Short,
-                    FontFamily = Theme.TextFont,
-                    FontSize = 11.5,
-                    FontWeight = FontWeights.Medium,
+                    FontFamily = Pixel ? Theme.PixelFont : Theme.TextFont,
+                    FontSize = Pixel ? 12.5 : 11.5,
+                    FontWeight = Pixel ? FontWeights.Normal : FontWeights.Medium,
                     Foreground = _label,
                     HorizontalAlignment = HorizontalAlignment.Center,
                 });
@@ -619,9 +690,9 @@ public sealed class ConvertWheel : Window
                 stack.Children.Add(new TextBlock
                 {
                     Text = action.Short,
-                    FontFamily = Theme.DisplayFont,
-                    FontSize = 15,
-                    FontWeight = FontWeights.SemiBold,
+                    FontFamily = Pixel ? Theme.PixelFont : Theme.DisplayFont,
+                    FontSize = Pixel ? 17 : 15,
+                    FontWeight = Pixel ? FontWeights.Normal : FontWeights.SemiBold,
                     Foreground = _label,
                     HorizontalAlignment = HorizontalAlignment.Center,
                 });
@@ -632,13 +703,35 @@ public sealed class ConvertWheel : Window
         public void SetHot(bool hot)
         {
             var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
-            _fill.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot ? _accent : _rest, HoverTime) { EasingFunction = ease });
-            _label.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot ? Colors.White : _labelColor, HoverTime));
-            _glyph.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot ? Colors.White : Theme.Current.SubLabel, HoverTime));
-            _glow.BeginAnimation(DropShadowEffect.OpacityProperty, new DoubleAnimation(hot ? 0.6 : 0, HoverTime));
-            double push = hot ? 5 : 0;
-            _push.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(push * Math.Cos(_mid), HoverTime) { EasingFunction = ease });
-            _push.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(push * Math.Sin(_mid), HoverTime) { EasingFunction = ease });
+            var time = Pixel ? TimeSpan.FromMilliseconds(60) : HoverTime;
+            _fill.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot ? _accent : _rest, time) { EasingFunction = ease });
+            // Arcade labels go dark on the bright key; glass labels go white.
+            var labelHot = Pixel ? Color.FromRgb((byte)(_accent.R * 0.18), (byte)(_accent.G * 0.18), (byte)(_accent.B * 0.18)) : Colors.White;
+            _label.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot ? labelHot : _labelColor, time));
+            _glyph.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot ? labelHot : _glyphColor, time));
+
+            if (Pixel)
+            {
+                _hardShadow!.Opacity = hot ? 1 : 0;
+                // Step outward two whole pixels, never landing in between.
+                double push = hot ? 2 : 0;
+                _push.BeginAnimation(TranslateTransform.XProperty, Steps(_push.X, Math.Round(push * Math.Cos(_mid)) * _cell));
+                _push.BeginAnimation(TranslateTransform.YProperty, Steps(_push.Y, Math.Round(push * Math.Sin(_mid)) * _cell));
+                return;
+            }
+
+            _glow!.BeginAnimation(DropShadowEffect.OpacityProperty, new DoubleAnimation(hot ? 0.6 : 0, HoverTime));
+            double smooth = hot ? 5 : 0;
+            _push.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(smooth * Math.Cos(_mid), HoverTime) { EasingFunction = ease });
+            _push.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(smooth * Math.Sin(_mid), HoverTime) { EasingFunction = ease });
+        }
+
+        DoubleAnimationUsingKeyFrames Steps(double from, double to)
+        {
+            var frames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(70) };
+            frames.KeyFrames.Add(new DiscreteDoubleKeyFrame(Math.Round((from + to) / 2 / _cell) * _cell, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(30))));
+            frames.KeyFrames.Add(new DiscreteDoubleKeyFrame(to, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(70))));
+            return frames;
         }
 
         public void AnimateIn(int delayMs, double fromAngle)
@@ -647,7 +740,16 @@ public sealed class ConvertWheel : Window
             var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
             Container.Opacity = 0;
             Container.BeginAnimation(UIElement.OpacityProperty,
-                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)) { BeginTime = delay, EasingFunction = ease });
+                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(Pixel ? 120 : 200)) { BeginTime = delay, EasingFunction = ease });
+            if (Pixel)
+            {
+                // Drop in from three pixels up, one pixel per frame.
+                var frames = new DoubleAnimationUsingKeyFrames { BeginTime = delay, Duration = TimeSpan.FromMilliseconds(150) };
+                for (int i = 0; i <= 3; i++)
+                    frames.KeyFrames.Add(new DiscreteDoubleKeyFrame(-(3 - i) * _cell, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(i * 50))));
+                _drop.BeginAnimation(TranslateTransform.YProperty, frames);
+                return;
+            }
             _spin.BeginAnimation(RotateTransform.AngleProperty,
                 new DoubleAnimation(fromAngle, 0, TimeSpan.FromMilliseconds(300)) { BeginTime = delay, EasingFunction = ease });
         }
@@ -656,11 +758,20 @@ public sealed class ConvertWheel : Window
         {
             var ease = new QuadraticEase { EasingMode = EasingMode.EaseIn };
             Container.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, TimeSpan.FromMilliseconds(110)) { EasingFunction = ease });
-            _spin.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(toAngle, TimeSpan.FromMilliseconds(110)) { EasingFunction = ease });
+            if (!Pixel)
+                _spin.BeginAnimation(RotateTransform.AngleProperty, new DoubleAnimation(toAngle, TimeSpan.FromMilliseconds(110)) { EasingFunction = ease });
         }
 
         public void Pulse()
         {
+            if (Pixel)
+            {
+                // Arcade press: the key sinks onto its shadow.
+                _push.BeginAnimation(TranslateTransform.XProperty, Steps(_push.X, _cell));
+                _push.BeginAnimation(TranslateTransform.YProperty, Steps(_push.Y, _cell));
+                _hardShadow!.Opacity = 0;
+                return;
+            }
             var bump = new DoubleAnimation(1, 1.035, TimeSpan.FromMilliseconds(90)) { AutoReverse = true };
             _pulse.BeginAnimation(ScaleTransform.ScaleXProperty, bump);
             _pulse.BeginAnimation(ScaleTransform.ScaleYProperty, bump);

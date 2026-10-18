@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -25,7 +26,13 @@ public sealed class ToastWindow : Window
 
     readonly Job? _job;
     readonly Palette _p = Theme.Current;
+    readonly bool _pixel = Theme.Current.Pixel;
     readonly Color _accent;
+    // Arcade progress: a row of blocks that light up one by one.
+    const int BlockCount = 26;
+    readonly UniformGrid _blocks = new() { Rows = 1, Columns = BlockCount, Height = 6 };
+    readonly DispatcherTimer _blockSweep = new() { Interval = TimeSpan.FromMilliseconds(70) };
+    int _sweep;
     readonly TextBlock _title = new(), _status = new(), _tileGlyph = new();
     readonly Border _tile = new();
     readonly Grid _track = new() { Height = 3, ClipToBounds = true };
@@ -68,6 +75,7 @@ public sealed class ToastWindow : Window
         ResizeMode = ResizeMode.NoResize;
         Opacity = 0;
         UseLayoutRounding = true;
+        if (_pixel) TextOptions.SetTextRenderingMode(this, TextRenderingMode.Aliased);
 
         Content = Build(title, message, glyph, showProgress);
         SourceInitialized += (_, _) => MakeNonActivating();
@@ -85,7 +93,7 @@ public sealed class ToastWindow : Window
     UIElement Build(string title, string message, string glyph, bool showProgress)
     {
         _tile.Width = _tile.Height = 38;
-        _tile.CornerRadius = new CornerRadius(10);
+        _tile.CornerRadius = new CornerRadius(_pixel ? 0 : 10);
         _tile.VerticalAlignment = VerticalAlignment.Top;
         _tile.Background = new LinearGradientBrush(Theme.Lighten(_accent, 0.18), _accent, 60);
         _tileGlyph.Text = glyph;
@@ -97,9 +105,9 @@ public sealed class ToastWindow : Window
         _tile.Child = _tileGlyph;
 
         _title.Text = title;
-        _title.FontFamily = Theme.TextFont;
-        _title.FontSize = 13.5;
-        _title.FontWeight = FontWeights.SemiBold;
+        _title.FontFamily = _pixel ? Theme.PixelFont : Theme.TextFont;
+        _title.FontSize = _pixel ? 15 : 13.5;
+        _title.FontWeight = _pixel ? FontWeights.Normal : FontWeights.SemiBold;
         _title.Foreground = Theme.Brush(_p.Text);
         _title.TextTrimming = TextTrimming.CharacterEllipsis;
         _title.Margin = new Thickness(0, 0, 22, 0);
@@ -121,9 +129,20 @@ public sealed class ToastWindow : Window
         _shimmer.RenderTransform = _shimmerMove;
         _track.Margin = new Thickness(0, 10, 0, 0);
         _track.Visibility = showProgress ? Visibility.Visible : Visibility.Collapsed;
-        _track.Children.Add(new Rectangle { Fill = Theme.Brush(_p.Track), RadiusX = 1.5, RadiusY = 1.5 });
-        _track.Children.Add(_bar);
-        _track.Children.Add(_shimmer);
+        if (_pixel)
+        {
+            _track.Height = 6;
+            for (int i = 0; i < BlockCount; i++)
+                _blocks.Children.Add(new Rectangle { Fill = Theme.Brush(_p.Track), Margin = new Thickness(0, 0, 2, 0) });
+            _track.Children.Add(_blocks);
+            _blockSweep.Tick += (_, _) => { _sweep = (_sweep + 1) % (BlockCount + 6); PaintBlocks(0); };
+        }
+        else
+        {
+            _track.Children.Add(new Rectangle { Fill = Theme.Brush(_p.Track), RadiusX = 1.5, RadiusY = 1.5 });
+            _track.Children.Add(_bar);
+            _track.Children.Add(_shimmer);
+        }
 
         var text = new StackPanel { Margin = new Thickness(12, 0, 0, 0), Children = { _title, _status, _track, _buttons } };
         var row = new DockPanel();
@@ -149,11 +168,14 @@ public sealed class ToastWindow : Window
         {
             Margin = new Thickness(Pad),
             Padding = new Thickness(14, 14, 16, 14),
-            CornerRadius = new CornerRadius(12),
+            CornerRadius = new CornerRadius(_pixel ? 0 : 12),
             Background = Theme.Brush(_p.Surface),
             BorderBrush = Theme.Brush(_p.SurfaceBorder),
-            BorderThickness = new Thickness(1),
-            Effect = new DropShadowEffect { BlurRadius = 24, ShadowDepth = 5, Direction = 270, Opacity = _p.Dark ? 0.45 : 0.18 },
+            BorderThickness = new Thickness(_pixel ? 2 : 1),
+            // Arcade: a hard shadow with no blur. Glass: a soft lift.
+            Effect = _pixel
+                ? new DropShadowEffect { BlurRadius = 0, ShadowDepth = 6, Direction = 315, Opacity = 0.55 }
+                : new DropShadowEffect { BlurRadius = 24, ShadowDepth = 5, Direction = 270, Opacity = _p.Dark ? 0.45 : 0.18 },
             RenderTransform = _slide,
             Child = card,
         };
@@ -210,6 +232,11 @@ public sealed class ToastWindow : Window
 
     void AnimateBar(double fraction)
     {
+        if (_pixel)
+        {
+            PaintBlocks(fraction);
+            return;
+        }
         double full = _track.ActualWidth > 0 ? _track.ActualWidth : CardWidth - 82;
         _bar.BeginAnimation(WidthProperty, new DoubleAnimation(full * fraction, TimeSpan.FromMilliseconds(260))
         {
@@ -222,12 +249,32 @@ public sealed class ToastWindow : Window
     {
         if (on == _shimmering) return;
         _shimmering = on;
+        if (_pixel)
+        {
+            if (on) _blockSweep.Start(); else _blockSweep.Stop();
+            return;
+        }
         _shimmer.Opacity = on ? 1 : 0;
         if (on)
             _shimmerMove.BeginAnimation(TranslateTransform.XProperty,
                 new DoubleAnimation(-80, CardWidth - 60, TimeSpan.FromSeconds(1.2)) { RepeatBehavior = RepeatBehavior.Forever, EasingFunction = new SineEase() });
         else
             _shimmerMove.BeginAnimation(TranslateTransform.XProperty, null);
+    }
+
+    /// <summary>Lights the blocks up to <paramref name="fraction"/>; while sweeping, a short run moves along instead.</summary>
+    void PaintBlocks(double fraction)
+    {
+        int lit = (int)Math.Round(fraction * BlockCount);
+        var on = Theme.Brush(_accent);
+        var dim = Theme.Brush(Theme.WithAlpha(_accent, 0x60));
+        var off = Theme.Brush(_p.Track);
+        for (int i = 0; i < BlockCount; i++)
+        {
+            var block = (Rectangle)_blocks.Children[i];
+            if (_shimmering) block.Fill = i <= _sweep && i > _sweep - 4 ? (i == _sweep ? on : dim) : off;
+            else block.Fill = i < lit ? on : off;
+        }
     }
 
     static string DoneText(IReadOnlyList<string> outputs)
@@ -255,16 +302,16 @@ public sealed class ToastWindow : Window
         var button = new Border
         {
             Background = background,
-            CornerRadius = new CornerRadius(6),
+            CornerRadius = new CornerRadius(_pixel ? 0 : 6),
             Padding = new Thickness(11, 5, 11, 6),
             Margin = new Thickness(0, 0, 6, 0),
             Cursor = Cursors.Hand,
             Child = new TextBlock
             {
                 Text = text,
-                FontFamily = Theme.TextFont,
-                FontSize = 12,
-                FontWeight = primary ? FontWeights.SemiBold : FontWeights.Normal,
+                FontFamily = Theme.LabelFont,
+                FontSize = _pixel ? 13 : 12,
+                FontWeight = primary && !_pixel ? FontWeights.SemiBold : FontWeights.Normal,
                 Foreground = Theme.Brush(primary ? Theme.Lighten(_accent, _p.Dark ? 0.35 : 0) : _p.Text),
             },
         };
@@ -306,6 +353,15 @@ public sealed class ToastWindow : Window
 
     void AnimateIn()
     {
+        if (_pixel)
+        {
+            var frames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(150) };
+            foreach (var (x, ms) in new[] { (24.0, 0), (12.0, 50), (4.0, 100), (0.0, 150) })
+                frames.KeyFrames.Add(new DiscreteDoubleKeyFrame(x, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(ms))));
+            _slide.BeginAnimation(TranslateTransform.XProperty, frames);
+            BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(100)));
+            return;
+        }
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
         _slide.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(28, 0, TimeSpan.FromMilliseconds(260)) { EasingFunction = ease });
         BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(180)));
@@ -316,6 +372,7 @@ public sealed class ToastWindow : Window
         if (_closing) return;
         _closing = true;
         _autoClose.Stop();
+        _blockSweep.Stop();
         var ease = new QuadraticEase { EasingMode = EasingMode.EaseIn };
         _slide.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(20, TimeSpan.FromMilliseconds(170)) { EasingFunction = ease });
         var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(170)) { EasingFunction = ease };

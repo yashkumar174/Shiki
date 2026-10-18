@@ -6,8 +6,11 @@ namespace ConvertedBro.Core;
 
 public sealed class Settings
 {
-    public double? BuddyLeft { get; set; }
-    public double? BuddyTop { get; set; }
+    /// <summary>Horizontal spot along the bottom edge where the cat lives (DIPs).</summary>
+    public double? CatLeft { get; set; }
+    public string Cat { get; set; } = "mochi";
+    /// <summary>"arcade" (pixel) or "glass".</summary>
+    public string Style { get; set; } = "arcade";
     public bool BuddyVisible { get; set; } = true;
     public bool ShiftDragSummon { get; set; } = true;
 

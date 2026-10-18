@@ -62,6 +62,12 @@ internal static class NativeMethods
     public static extern IntPtr GetForegroundWindow();
 
     [DllImport("user32.dll")]
+    public static extern uint GetDpiForSystem();
+
+    /// <summary>Physical pixels per DIP for the primary display (1.25 at 125%).</summary>
+    public static double SystemScale => Math.Max(1, GetDpiForSystem()) / 96.0;
+
+    [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, [MarshalAs(UnmanagedType.Bool)] bool fAttach);
 

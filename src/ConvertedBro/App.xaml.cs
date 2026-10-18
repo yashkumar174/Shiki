@@ -27,11 +27,12 @@ public partial class App : Application
 
     SingleInstance? _instance;
     Settings _settings = new();
-    BuddyWindow? _buddy;
+    CatWindow? _buddy;
     TrayIcon? _tray;
     GlobalMouseHook? _hook;
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
+    Point _menuAnchor;
     bool _headless;
     readonly Dictionary<string, List<string>> _pending = new(StringComparer.OrdinalIgnoreCase);
     readonly DispatcherTimer _batchTimer = new() { Interval = BatchWindow };
@@ -50,9 +51,15 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += (_, ex) => Log.Error("Unhandled error", ex.ExceptionObject as Exception);
 
         var args = e.Args;
+        if (args.Length == 2 && args[0] == "--export-sprites")
+        {
+            CatSprites.Export(args[1]);
+            Shutdown();
+            return;
+        }
         if (args.Length > 0 && args[0] is "--register" or "--unregister")
         {
-            if (args[0] == "--register") ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile());
+            if (args[0] == "--register") ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile(CatSprites.Skin(Settings.Load().Cat)));
             else ContextMenuRegistrar.Unregister();
             Shutdown();
             return;
@@ -70,6 +77,7 @@ public partial class App : Application
         _instance.MessageReceived += a => Dispatcher.BeginInvoke(() => Handle(a));
         _instance.StartServer();
         _settings = Settings.Load();
+        Theme.Style = _settings.Style;
         _batchTimer.Tick += (_, _) => FlushBatches();
 
         JobRunner.JobStarted += job => Dispatcher.BeginInvoke(() =>
@@ -182,30 +190,63 @@ public partial class App : Application
         wheel.Show();
     }
 
+    CatSkin Skin => CatSprites.Skin(_settings.Cat);
+
     void ShowMenu(Point anchorPx)
     {
         _menu?.CloseAnimated();
+        _menuAnchor = anchorPx;
         bool visible = _buddy?.IsVisible ?? false;
         _menu = new BroMenu(anchorPx, "Drop files on me, or Shift + drag one anywhere.",
         [
-            new MenuEntry("", "Convert files…", PickFiles),
-            new MenuEntry(visible ? "" : "", visible ? "Hide the bro" : "Show the bro", () => SetBuddyVisible(!visible)),
+            new MenuEntry("\uE8E5", "Convert files…", PickFiles),
+            new MenuEntry(visible ? "\uE7B3" : "\uE890", visible ? "Hide the cat" : "Show the cat", () => SetBuddyVisible(!visible)),
             null,
-            new MenuEntry("", "Right-click menu in Explorer", ToggleExplorerMenu, ContextMenuRegistrar.IsRegistered),
-            new MenuEntry("", "Shift + drag opens the wheel", ToggleShiftDrag, () => _settings.ShiftDragSummon),
-            new MenuEntry("", "Start with Windows", () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath), StartupRegistration.IsEnabled),
+            new MenuChoice("Cat", CatSprites.Skins.Select(k => new ChoiceOption(k.Id, $"{k.Name}: {k.Description}", CatSprites.Head(k))).ToList(),
+                () => _settings.Cat, SetCat),
+            new MenuChoice("Look", [new ChoiceOption("arcade", "Arcade", Font: Theme.PixelFont), new ChoiceOption("glass", "Glass", Font: Theme.DisplayFont)],
+                () => _settings.Style, SetStyle),
             null,
-            new MenuEntry("", "Open log folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Log.DataDir}\"") { UseShellExecute = true })),
-            new MenuEntry("", "Quit", () => Shutdown()),
-        ]);
+            new MenuEntry("\uE8B7", "Right-click menu in Explorer", ToggleExplorerMenu, ContextMenuRegistrar.IsRegistered),
+            new MenuEntry("\uE7C9", "Shift + drag opens the wheel", ToggleShiftDrag, () => _settings.ShiftDragSummon),
+            new MenuEntry("\uE7E8", "Start with Windows", () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath), StartupRegistration.IsEnabled),
+            null,
+            new MenuEntry("\uE81C", "Open log folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Log.DataDir}\"") { UseShellExecute = true })),
+            new MenuEntry("\uE711", "Quit", () => Shutdown()),
+        ], CatSprites.Head(Skin));
         _menu.Closed += (_, _) => _menu = null;
         _menu.Show();
+    }
+
+    void SetCat(string id)
+    {
+        _settings.Cat = id;
+        _settings.Save();
+        _buddy?.SetSkin(Skin);
+        _tray?.SetCat(Skin);
+        // The Explorer menu shows the cat too.
+        if (ContextMenuRegistrar.IsRegistered()) ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile(Skin));
+    }
+
+    void SetStyle(string id)
+    {
+        if (_settings.Style == id) return;
+        _settings.Style = id;
+        _settings.Save();
+        Theme.Style = id;
+        // Reopen the menu so the change shows right away.
+        var anchor = _menuAnchor;
+        if (_menu is { } menu)
+        {
+            menu.Closed += (_, _) => Dispatcher.BeginInvoke(() => ShowMenu(anchor));
+            menu.CloseAnimated();
+        }
     }
 
     void ToggleExplorerMenu()
     {
         bool on = !ContextMenuRegistrar.IsRegistered();
-        if (on) ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile());
+        if (on) ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile(Skin));
         else ContextMenuRegistrar.Unregister();
         ToastHost.Show(ToastWindow.Message(on ? "Added to Explorer" : "Removed from Explorer",
             on ? "Right-click a file, choose Show more options, then Convert with Bro." : "Convert with Bro is no longer in the right-click menu."));
@@ -226,11 +267,11 @@ public partial class App : Application
         _headless = false;
         _idleTimer.Stop();
 
-        _tray = new TrayIcon();
+        _tray = new TrayIcon(Skin);
         _tray.Clicked += () => SetBuddyVisible(!(_buddy?.IsVisible ?? false));
         _tray.MenuRequested += ShowMenu;
 
-        _buddy = new BuddyWindow(_settings);
+        _buddy = new CatWindow(_settings);
         _buddy.FilesDropped += (paths, center) => ShowWheel(FileList.Expand(paths), center);
         _buddy.MenuRequested += ShowMenu;
         _buddy.PickFilesRequested += PickFiles;

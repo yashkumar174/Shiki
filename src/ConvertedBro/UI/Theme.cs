@@ -9,6 +9,8 @@ namespace ConvertedBro.UI;
 public sealed class Palette
 {
     public required bool Dark { get; init; }
+    /// <summary>Arcade style: pixel font, square corners, stepped shapes, hard shadows.</summary>
+    public bool Pixel { get; init; }
     /// <summary>Laid over the blurred desktop to make the glass.</summary>
     public required Color GlassTint { get; init; }
     public required Color GlassRim { get; init; }
@@ -34,6 +36,35 @@ public static class Theme
     public static readonly FontFamily TextFont = new("Segoe UI Variable Text, Segoe UI");
     public static readonly FontFamily DisplayFont = new("Segoe UI Variable Display, Segoe UI");
     public static readonly FontFamily IconFont = new("Segoe Fluent Icons, Segoe MDL2 Assets");
+    public static readonly FontFamily PixelFont = new(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Pixelify Sans");
+
+    /// <summary>"arcade" or "glass"; set from settings.</summary>
+    public static string Style { get; set; } = "arcade";
+    public static bool Arcade => Style == "arcade";
+
+    /// <summary>Headings and wheel labels.</summary>
+    public static FontFamily TitleFont => Arcade ? PixelFont : DisplayFont;
+    /// <summary>Short UI labels such as menu rows.</summary>
+    public static FontFamily LabelFont => Arcade ? PixelFont : TextFont;
+
+    static readonly Palette ArcadePalette = new()
+    {
+        Dark = true,
+        Pixel = true,
+        GlassTint = Color.FromArgb(0xF2, 0x14, 0x11, 0x26),
+        GlassRim = Color.FromRgb(0x3E, 0x37, 0x68),
+        WedgeRest = Color.FromRgb(0x2A, 0x25, 0x47),
+        WedgeEdge = Color.FromRgb(0x3E, 0x37, 0x68),
+        Label = Color.FromRgb(0xF1, 0xEE, 0xFF),
+        SubLabel = Color.FromRgb(0xA6, 0xA0, 0xCC),
+        HubPill = Color.FromRgb(0x22, 0x1E, 0x3D),
+        Surface = Color.FromArgb(0xFA, 0x16, 0x13, 0x2A),
+        SurfaceBorder = Color.FromRgb(0x3E, 0x37, 0x68),
+        RowHover = Color.FromRgb(0x2A, 0x25, 0x47),
+        Text = Color.FromRgb(0xF1, 0xEE, 0xFF),
+        SubtleText = Color.FromRgb(0xA6, 0xA0, 0xCC),
+        Track = Color.FromRgb(0x2A, 0x25, 0x47),
+    };
 
     static readonly Palette DarkPalette = new()
     {
@@ -71,13 +102,15 @@ public static class Theme
         Track = Color.FromArgb(0x18, 0x00, 0x00, 0x00),
     };
 
-    public static Palette Current { get; private set; } = Read();
+    static Palette _system = Read();
+
+    public static Palette Current => Arcade ? ArcadePalette : _system;
 
     static Theme()
     {
         SystemEvents.UserPreferenceChanged += (_, e) =>
         {
-            if (e.Category == UserPreferenceCategory.General) Current = Read();
+            if (e.Category == UserPreferenceCategory.General) _system = Read();
         };
     }
 

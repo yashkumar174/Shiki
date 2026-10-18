@@ -16,12 +16,23 @@ namespace ConvertedBro.UI;
 /// <summary>A row in <see cref="BroMenu"/>. Give <see cref="IsOn"/> to make it a switch.</summary>
 public sealed record MenuEntry(string Glyph, string Text, Action OnClick, Func<bool>? IsOn = null);
 
-/// <summary>The bro's own menu (tray icon and right-click on the bro): glass, rounded, with switches.</summary>
+/// <summary>A row of picture chips, e.g. which cat to show.</summary>
+public sealed record MenuChoice(string Text, IReadOnlyList<ChoiceOption> Options, Func<string> Current, Action<string> Select);
+
+public sealed record ChoiceOption(string Id, string Label, ImageSource? Image = null, FontFamily? Font = null);
+
+/// <summary>
+/// The menu for the tray icon and a right-click on the cat. Arcade style: solid, square, hard
+/// shadow, pixel font. Glass style: frosted, rounded, soft shadow.
+/// </summary>
 public sealed class BroMenu : Window
 {
-    const double MenuWidth = 292, Pad = 18, Radius = 10;
+    const double MenuWidth = 300, Pad = 18;
 
     readonly Palette _p = Theme.Current;
+    readonly bool _pixel = Theme.Current.Pixel;
+    readonly double _px = 1 / NativeMethods.SystemScale;
+    readonly double _radius;
     readonly Point _anchorPx;
     readonly Grid _host = new();
     readonly Border _panel;
@@ -29,9 +40,10 @@ public sealed class BroMenu : Window
     readonly DispatcherTimer _outsideClick = new() { Interval = TimeSpan.FromMilliseconds(40) };
     bool _closing, _opensUp;
 
-    public BroMenu(Point anchorPx, string subtitle, IReadOnlyList<MenuEntry?> entries)
+    public BroMenu(Point anchorPx, string subtitle, IReadOnlyList<object?> entries, ImageSource? avatar)
     {
         _anchorPx = anchorPx;
+        _radius = _pixel ? 0 : 10;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -41,13 +53,19 @@ public sealed class BroMenu : Window
         Left = -10000;
         Opacity = 0;
         UseLayoutRounding = true;
+        if (_pixel) TextOptions.SetTextRenderingMode(this, TextRenderingMode.Aliased);
 
-        var stack = new StackPanel { Margin = new Thickness(5) };
-        stack.Children.Add(Header(subtitle));
+        var stack = new StackPanel { Margin = new Thickness(_pixel ? 6 : 5) };
+        stack.Children.Add(Header(subtitle, avatar));
         foreach (var entry in entries)
-            stack.Children.Add(entry == null ? Separator() : Row(entry));
+            stack.Children.Add(entry switch
+            {
+                MenuEntry row => Row(row),
+                MenuChoice choice => Choice(choice),
+                _ => Separator(),
+            });
 
-        _panel = new Border { Width = MenuWidth, CornerRadius = new CornerRadius(Radius), Child = stack };
+        _panel = new Border { Width = MenuWidth, CornerRadius = new CornerRadius(_radius), Child = stack };
         _host.Margin = new Thickness(Pad);
         _host.RenderTransform = _slide;
         Content = _host;
@@ -55,7 +73,7 @@ public sealed class BroMenu : Window
         // Size is known up front so the glass snapshot can match it exactly.
         _panel.Measure(new Size(MenuWidth, double.PositiveInfinity));
         Width = MenuWidth + Pad * 2;
-        Height = _panel.DesiredSize.Height + Pad * 2;
+        Height = Math.Ceiling(_panel.DesiredSize.Height) + Pad * 2;
 
         SourceInitialized += (_, _) => PlaceAndBuild();
         Loaded += (_, _) => Open();
@@ -80,26 +98,39 @@ public sealed class BroMenu : Window
         // Open toward the free side of the screen, like Windows does for tray menus.
         _opensUp = anchor.Y + Height - Pad > area.Bottom;
         double left = anchor.X - Pad, top = _opensUp ? anchor.Y - Height + Pad : anchor.Y - Pad;
-        Left = Math.Clamp(left, area.Left - Pad, area.Right - Width + Pad);
-        Top = Math.Clamp(top, area.Top - Pad, area.Bottom - Height + Pad);
+        Left = Snap(Math.Clamp(left, area.Left - Pad, area.Right - Width + Pad));
+        Top = Snap(Math.Clamp(top, area.Top - Pad, area.Bottom - Height + Pad));
 
-        var rect = new Rect(0, 0, MenuWidth, _panel.DesiredSize.Height);
-        var snapshot = Glass.Capture(Glass.ToPixels(this, new Rect(Left + Pad, Top + Pad, rect.Width, rect.Height)));
-
-        _host.Children.Add(new Border
+        var rect = new Rect(0, 0, MenuWidth, Height - Pad * 2);
+        if (_pixel)
         {
-            CornerRadius = new CornerRadius(Radius),
-            Background = Theme.Brush(_p.Surface),
-            Effect = new DropShadowEffect { BlurRadius = 26, ShadowDepth = 6, Opacity = _p.Dark ? 0.5 : 0.22, Direction = 270 },
-        });
-        _host.Children.Add(Glass.Build(snapshot, new RectangleGeometry(rect, Radius, Radius), _p, blurRadius: 40));
-        _host.Children.Add(new Border
+            // Hard shadow, offset down-right with no blur, like a sprite's drop shadow.
+            _host.Children.Add(new Rectangle
+            {
+                Fill = Theme.Brush(Color.FromArgb(0x90, 0, 0, 0)),
+                RenderTransform = new TranslateTransform(Snap(6), Snap(6)),
+            });
+            _host.Children.Add(new Rectangle { Fill = Theme.Brush(_p.Surface) });
+            _host.Children.Add(new Rectangle { Stroke = Theme.Brush(_p.SurfaceBorder), StrokeThickness = 2 * _px * 1.5, IsHitTestVisible = false });
+        }
+        else
         {
-            CornerRadius = new CornerRadius(Radius),
-            BorderBrush = Theme.Brush(_p.SurfaceBorder),
-            BorderThickness = new Thickness(1),
-            IsHitTestVisible = false,
-        });
+            var snapshot = Glass.Capture(Glass.ToPixels(this, new Rect(Left + Pad, Top + Pad, rect.Width, rect.Height)));
+            _host.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(_radius),
+                Background = Theme.Brush(_p.Surface),
+                Effect = new DropShadowEffect { BlurRadius = 26, ShadowDepth = 6, Opacity = _p.Dark ? 0.5 : 0.22, Direction = 270 },
+            });
+            _host.Children.Add(Glass.Build(snapshot, new RectangleGeometry(rect, _radius, _radius), _p, blurRadius: 40));
+            _host.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(_radius),
+                BorderBrush = Theme.Brush(_p.SurfaceBorder),
+                BorderThickness = new Thickness(1),
+                IsHitTestVisible = false,
+            });
+        }
         _host.Children.Add(_panel);
 
         var hwnd = new WindowInteropHelper(this).Handle;
@@ -107,11 +138,29 @@ public sealed class BroMenu : Window
         NativeMethods.SetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE, new IntPtr(style | NativeMethods.WS_EX_TOOLWINDOW));
     }
 
+    static double Snap(double dip)
+    {
+        double scale = NativeMethods.SystemScale;
+        return Math.Round(dip * scale) / scale;
+    }
+
     void Open()
     {
         NativeMethods.ForceForeground(new WindowInteropHelper(this).Handle);
         Activate();
         _outsideClick.Start();
+        if (_pixel)
+        {
+            // Pixel UI pops in whole steps instead of gliding.
+            var frames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(120) };
+            double dir = _opensUp ? 1 : -1;
+            frames.KeyFrames.Add(new DiscreteDoubleKeyFrame(Snap(8 * dir), KeyTime.FromTimeSpan(TimeSpan.Zero)));
+            frames.KeyFrames.Add(new DiscreteDoubleKeyFrame(Snap(4 * dir), KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(40))));
+            frames.KeyFrames.Add(new DiscreteDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(80))));
+            _slide.BeginAnimation(TranslateTransform.YProperty, frames);
+            BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(80)));
+            return;
+        }
         var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
         _slide.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(_opensUp ? 10 : -10, 0, TimeSpan.FromMilliseconds(200)) { EasingFunction = ease });
         BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
@@ -121,63 +170,80 @@ public sealed class BroMenu : Window
     {
         if (_closing) return;
         _closing = true;
-        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(110));
+        var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(_pixel ? 70 : 110));
         fade.Completed += (_, _) => Close();
         BeginAnimation(OpacityProperty, fade);
     }
 
     // ---- Pieces ----
 
-    UIElement Header(string subtitle)
+    UIElement Header(string subtitle, ImageSource? avatar)
     {
-        var avatar = new Grid { Width = 34, Height = 34, VerticalAlignment = VerticalAlignment.Center };
-        avatar.Children.Add(new Ellipse
-        {
-            Fill = new LinearGradientBrush(Color.FromRgb(0xA0, 0x8B, 0xFF), Theme.BrandDeep, new Point(0.2, 0), new Point(0.8, 1)),
-        });
-        foreach (var x in new[] { 10.0, 18.5 })
-        {
-            avatar.Children.Add(new Ellipse { Width = 6, Height = 7, Fill = Brushes.White, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(x, 11, 0, 0) });
-            avatar.Children.Add(new Ellipse { Width = 3, Height = 3.5, Fill = Theme.Brush(Color.FromRgb(0x1E, 0x1B, 0x3A)), HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Top, Margin = new Thickness(x + 2, 13.5, 0, 0) });
-        }
+        var picture = new Image { Width = Snap(36), Height = Snap(36), Source = avatar, VerticalAlignment = VerticalAlignment.Center };
+        RenderOptions.SetBitmapScalingMode(picture, BitmapScalingMode.NearestNeighbor);
 
-        var name = new TextBlock { Text = "Converted Bro", FontFamily = Theme.DisplayFont, FontSize = 14, FontWeight = FontWeights.SemiBold, Foreground = Theme.Brush(_p.Text) };
-        var sub = new TextBlock { Text = subtitle, FontFamily = Theme.TextFont, FontSize = 11.5, Foreground = Theme.Brush(_p.SubtleText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 1, 0, 0) };
+        var name = new TextBlock
+        {
+            Text = "Converted Bro",
+            FontFamily = Theme.TitleFont,
+            FontSize = _pixel ? 16 : 14,
+            FontWeight = _pixel ? FontWeights.Normal : FontWeights.SemiBold,
+            Foreground = Theme.Brush(_p.Text),
+        };
+        var sub = new TextBlock { Text = subtitle, FontFamily = Theme.TextFont, FontSize = 11.5, Foreground = Theme.Brush(_p.SubtleText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
         var text = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Children = { name, sub } };
 
         var row = new DockPanel { Margin = new Thickness(10, 10, 10, 8) };
-        DockPanel.SetDock(avatar, Dock.Left);
-        row.Children.Add(avatar);
+        DockPanel.SetDock(picture, Dock.Left);
+        row.Children.Add(picture);
         row.Children.Add(text);
         return row;
     }
 
     UIElement Separator() => new Rectangle
     {
-        Height = 1,
+        Height = _pixel ? 2 * _px * 1.5 : 1,
         Margin = new Thickness(10, 4, 10, 4),
         Fill = Theme.Brush(_p.SurfaceBorder),
     };
 
-    UIElement Row(MenuEntry entry)
+    TextBlock Label(string text) => new()
     {
-        var hover = new SolidColorBrush(Colors.Transparent);
+        Text = text,
+        FontFamily = Theme.LabelFont,
+        FontSize = _pixel ? 14 : 13,
+        Foreground = Theme.Brush(_p.Text),
+        VerticalAlignment = VerticalAlignment.Center,
+    };
+
+    Border HoverRow(double height, out SolidColorBrush hover)
+    {
+        var brush = new SolidColorBrush(Colors.Transparent);
+        hover = brush;
         var row = new Border
         {
-            Height = 36,
-            CornerRadius = new CornerRadius(6),
-            Background = hover,
+            Height = height,
+            CornerRadius = new CornerRadius(_pixel ? 0 : 6),
+            Background = brush,
             Padding = new Thickness(10, 0, 10, 0),
             Cursor = Cursors.Hand,
         };
+        var fast = TimeSpan.FromMilliseconds(_pixel ? 1 : 90);
+        row.MouseEnter += (_, _) => brush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(_p.RowHover, fast));
+        row.MouseLeave += (_, _) => brush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Colors.Transparent, fast));
+        return row;
+    }
 
+    UIElement Row(MenuEntry entry)
+    {
+        var row = HoverRow(36, out _);
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var glyph = new TextBlock { Text = entry.Glyph, FontFamily = Theme.IconFont, FontSize = 15, Foreground = Theme.Brush(_p.SubtleText), VerticalAlignment = VerticalAlignment.Center };
-        var label = new TextBlock { Text = entry.Text, FontFamily = Theme.TextFont, FontSize = 13, Foreground = Theme.Brush(_p.Text), VerticalAlignment = VerticalAlignment.Center };
+        var label = Label(entry.Text);
         Grid.SetColumn(label, 1);
         grid.Children.Add(glyph);
         grid.Children.Add(label);
@@ -185,15 +251,12 @@ public sealed class BroMenu : Window
         Switch? toggle = null;
         if (entry.IsOn != null)
         {
-            toggle = new Switch(entry.IsOn(), _p);
+            toggle = new Switch(entry.IsOn(), _p, _pixel);
             Grid.SetColumn(toggle.View, 2);
             grid.Children.Add(toggle.View);
         }
         row.Child = grid;
 
-        var fast = TimeSpan.FromMilliseconds(90);
-        row.MouseEnter += (_, _) => hover.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(_p.RowHover, fast));
-        row.MouseLeave += (_, _) => hover.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Colors.Transparent, fast));
         row.MouseLeftButtonUp += (_, _) =>
         {
             if (_closing) return;
@@ -212,29 +275,106 @@ public sealed class BroMenu : Window
         return row;
     }
 
-    /// <summary>A Windows 11 style on/off switch.</summary>
+    UIElement Choice(MenuChoice choice)
+    {
+        var grid = new Grid { Margin = new Thickness(10, 4, 10, 4) };
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition());
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var label = Label(choice.Text);
+        Grid.SetColumn(label, 1);
+        grid.Children.Add(label);
+
+        var chips = new StackPanel { Orientation = Orientation.Horizontal };
+        Grid.SetColumn(chips, 2);
+        grid.Children.Add(chips);
+
+        var borders = new List<(ChoiceOption option, Border chip)>();
+        void Refresh()
+        {
+            string current = choice.Current();
+            foreach (var (option, chip) in borders)
+                chip.BorderBrush = Theme.Brush(option.Id == current ? Theme.Brand : Colors.Transparent);
+        }
+
+        foreach (var option in choice.Options)
+        {
+            UIElement content;
+            if (option.Image != null)
+            {
+                var image = new Image { Source = option.Image, Width = Snap(32), Height = Snap(32) };
+                RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
+                content = image;
+            }
+            else
+            {
+                content = new TextBlock
+                {
+                    Text = option.Label,
+                    FontFamily = option.Font ?? Theme.LabelFont,
+                    FontSize = 12.5,
+                    Foreground = Theme.Brush(_p.Text),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(6, 0, 6, 0),
+                };
+            }
+
+            var chip = new Border
+            {
+                Height = Snap(40),
+                MinWidth = Snap(40),
+                Margin = new Thickness(4, 0, 0, 0),
+                CornerRadius = new CornerRadius(_pixel ? 0 : 8),
+                BorderThickness = new Thickness(_pixel ? 3 * _px : 1.5),
+                Background = Theme.Brush(_p.RowHover),
+                Cursor = Cursors.Hand,
+                ToolTip = option.Label,
+                Child = content,
+            };
+            if (content is FrameworkElement fe) { fe.HorizontalAlignment = HorizontalAlignment.Center; fe.VerticalAlignment = VerticalAlignment.Center; }
+            chip.MouseLeftButtonUp += (_, _) =>
+            {
+                if (_closing) return;
+                choice.Select(option.Id);
+                Refresh();
+            };
+            borders.Add((option, chip));
+            chips.Children.Add(chip);
+        }
+        Refresh();
+        return grid;
+    }
+
+    /// <summary>An on/off switch: rounded in Glass, square in Arcade.</summary>
     sealed class Switch
     {
         public Border View { get; }
         readonly SolidColorBrush _track, _border, _knob;
         readonly TranslateTransform _knobMove = new();
         readonly Palette _p;
+        readonly bool _pixel;
 
-        public Switch(bool on, Palette p)
+        public Switch(bool on, Palette p, bool pixel)
         {
             _p = p;
+            _pixel = pixel;
             _track = new SolidColorBrush(on ? Theme.Brand : Colors.Transparent);
             _border = new SolidColorBrush(on ? Theme.Brand : p.SubtleText);
             _knob = new SolidColorBrush(on ? Colors.White : p.SubtleText);
-            var knob = new Ellipse { Width = 12, Height = 12, Fill = _knob, HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(3, 0, 0, 0), RenderTransform = _knobMove };
+            FrameworkElement knob = pixel
+                ? new Rectangle { Width = 10, Height = 10, Fill = _knob }
+                : new Ellipse { Width = 12, Height = 12, Fill = _knob };
+            knob.HorizontalAlignment = HorizontalAlignment.Left;
+            knob.Margin = new Thickness(pixel ? 4 : 3, 0, 0, 0);
+            knob.RenderTransform = _knobMove;
             View = new Border
             {
                 Width = 38,
                 Height = 20,
-                CornerRadius = new CornerRadius(10),
+                CornerRadius = new CornerRadius(pixel ? 0 : 10),
                 Background = _track,
                 BorderBrush = _border,
-                BorderThickness = new Thickness(1),
+                BorderThickness = new Thickness(pixel ? 2 : 1),
                 VerticalAlignment = VerticalAlignment.Center,
                 Child = knob,
             };
@@ -243,9 +383,19 @@ public sealed class BroMenu : Window
 
         public void Set(bool on)
         {
-            var time = TimeSpan.FromMilliseconds(160);
-            var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
-            _knobMove.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(on ? 18 : 0, time) { EasingFunction = ease });
+            var time = TimeSpan.FromMilliseconds(_pixel ? 1 : 160);
+            if (_pixel)
+            {
+                // Two-frame jump, like a toggle in an old game menu.
+                var frames = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(80) };
+                frames.KeyFrames.Add(new DiscreteDoubleKeyFrame(9, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(40))));
+                frames.KeyFrames.Add(new DiscreteDoubleKeyFrame(on ? 18 : 0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(80))));
+                _knobMove.BeginAnimation(TranslateTransform.XProperty, frames);
+            }
+            else
+            {
+                _knobMove.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(on ? 18 : 0, time) { EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut } });
+            }
             _track.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(on ? Theme.Brand : Colors.Transparent, time));
             _border.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(on ? Theme.Brand : _p.SubtleText, time));
             _knob.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(on ? Colors.White : _p.SubtleText, time));

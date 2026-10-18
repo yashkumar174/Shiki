@@ -22,6 +22,10 @@
     <PackageReference Include="PDFsharp" Version="6.2.4" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="Assets\Fonts\PixelifySans.ttf" />
+  </ItemGroup>
+
   <!-- FFmpeg lives in /tools/ffmpeg (not committed) and ships next to the exe. -->
   <ItemGroup>
     <Content Include="..\..\tools\ffmpeg\**\*" Link="tools\ffmpeg\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
