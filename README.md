@@ -40,7 +40,18 @@ Outputs go next to the original and never overwrite anything (`photo (1).jpg`, `
 Pick one in the menu:
 
 - **Arcade** (default): pixel wheel with stepped, bevelled wedges and hard shadows, Pixelify Sans, square menus and toasts with a block progress bar. Everything is drawn on whole screen pixels so it stays sharp.
-- **Glass**: the frosted look: a blurred snapshot of what's behind, rounded wedges, soft shadows, Segoe UI Variable. Follows the Windows light/dark setting.
+- **Glass**: Apple-style liquid glass. Each wedge, the hub, the menu and the toasts are separate glass pieces that bend what's behind them at their rims, with a rim light, slight frost, a saturation lift and a soft shadow. Segoe UI Variable. Follows the Windows light/dark setting.
+
+### How the liquid glass works
+
+`UI/LiquidGlass.cs` does on the CPU what the open-source web versions do with SVG displacement maps or WebGL shaders ([kube.io's write-up](https://kube.io/blog/liquid-glass-css-svg/), [liquidGL](https://github.com/naughtyduk/liquidGL), [liquid-glass-react](https://github.com/rdev/liquid-glass-react)):
+
+1. Take a snapshot of the screen behind the popup (before it appears).
+2. Describe each shape as a signed distance field (`GlassShapes`: circles, rounded rectangles, ring slices).
+3. Give the rim a convex squircle profile, `f(x) = (1 − (1 − x)⁴)^¼`, and bend each ray by Snell's law (air 1.0 → glass 1.5). The sideways offset says where to sample the snapshot, so the rims bend the desktop and the middle stays clear. Red and blue are sampled slightly apart for a hint of colour fringing.
+4. Frost a little, lift saturation, tint, then add a specular rim light from the upper left (and a softer one on the far side) plus a soft drop shadow.
+
+Toasts stay on screen for a while, so they refresh their glass about once a second: the window is excluded from screen capture for a moment (`SetWindowDisplayAffinity`), which lets it see the desktop behind itself without disappearing.
 
 The hovered wedge is lit in the colour of the file type: tangerine for images, iris for video, mint for audio, coral for PDF. Design tokens live in `UI/Theme.cs`.
 

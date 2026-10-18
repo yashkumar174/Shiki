@@ -11,6 +11,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using ConvertedBro.Core;
@@ -42,6 +43,10 @@ public sealed class ToastWindow : Window
     readonly StackPanel _buttons = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
     readonly Border _close = new();
     readonly TranslateTransform _slide = new(28, 0);
+    // A brush, not an Image: the toast sizes itself to its content, and the glass must not count as content.
+    readonly Border _glass = new() { IsHitTestVisible = false };
+    readonly DispatcherTimer _glassRefresh = new() { Interval = TimeSpan.FromMilliseconds(900) };
+    Border? _card;
     readonly DispatcherTimer _autoClose = new();
     bool _closing, _shimmering;
 
@@ -56,7 +61,7 @@ public sealed class ToastWindow : Window
     /// <summary>A plain message with no job behind it.</summary>
     public static ToastWindow Message(string title, string message)
     {
-        var toast = new ToastWindow(title, message, FileKind.Unknown, "", showProgress: false);
+        var toast = new ToastWindow(title, message, FileKind.Unknown, "î¥†", showProgress: false);
         toast.StartAutoClose(TimeSpan.FromSeconds(5));
         return toast;
     }
@@ -77,9 +82,27 @@ public sealed class ToastWindow : Window
         UseLayoutRounding = true;
         if (_pixel) TextOptions.SetTextRenderingMode(this, TextRenderingMode.Aliased);
 
-        Content = Build(title, message, glyph, showProgress);
+        _card = (Border)Build(title, message, glyph, showProgress);
+        var layers = new Grid { RenderTransform = _slide };
+        layers.Children.Add(_glass);
+        layers.Children.Add(_card);
+        _card.RenderTransform = null;
+        Content = layers;
         SourceInitialized += (_, _) => MakeNonActivating();
-        Loaded += (_, _) => AnimateIn();
+        // After the first layout pass the height is known; we're still fully transparent, so the
+        // capture sees only what's behind us. Then fade in.
+        ContentRendered += (_, _) =>
+        {
+            if (!_pixel)
+            {
+                RenderGlass(Glass.Capture(Glass.ToPixels(this, new Rect(Left, Top, Width, ActualHeight))));
+                _glassRefresh.Start();
+            }
+            AnimateIn();
+        };
+        // Keep the glass in step with what's behind it (it moves when cards restack, and the desktop changes).
+        _glassRefresh.Tick += (_, _) => RefreshGlass();
+        Closed += (_, _) => _glassRefresh.Stop();
 
         _autoClose.Tick += (_, _) => CloseAnimated();
         MouseEnter += (_, _) => { _autoClose.Stop(); FadeClose(1); };
@@ -108,14 +131,14 @@ public sealed class ToastWindow : Window
         _title.FontFamily = _pixel ? Theme.PixelFont : Theme.TextFont;
         _title.FontSize = _pixel ? 15 : 13.5;
         _title.FontWeight = _pixel ? FontWeights.Normal : FontWeights.SemiBold;
-        _title.Foreground = Theme.Brush(_p.Text);
+        _title.Foreground = _pixel ? Theme.Brush(_p.Text) : Brushes.White;
         _title.TextTrimming = TextTrimming.CharacterEllipsis;
         _title.Margin = new Thickness(0, 0, 22, 0);
 
         _status.Text = message;
         _status.FontFamily = Theme.TextFont;
         _status.FontSize = 12;
-        _status.Foreground = Theme.Brush(_p.SubtleText);
+        _status.Foreground = _pixel ? Theme.Brush(_p.SubtleText) : Theme.Brush(Color.FromArgb(0xD0, 255, 255, 255));
         _status.TextWrapping = TextWrapping.Wrap;
         _status.Margin = new Thickness(0, 3, 0, 0);
 
@@ -158,7 +181,7 @@ public sealed class ToastWindow : Window
         _close.Background = Brushes.Transparent;
         _close.Cursor = Cursors.Hand;
         _close.Opacity = 0;
-        _close.Child = new TextBlock { Text = "", FontFamily = Theme.IconFont, FontSize = 10, Foreground = Theme.Brush(_p.SubtleText), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        _close.Child = new TextBlock { Text = "îœ‘", FontFamily = Theme.IconFont, FontSize = 10, Foreground = Theme.Brush(_p.SubtleText), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         _close.MouseEnter += (_, _) => _close.Background = Theme.Brush(_p.RowHover);
         _close.MouseLeave += (_, _) => _close.Background = Brushes.Transparent;
         _close.MouseLeftButtonUp += (_, _) => CloseAnimated();
@@ -168,14 +191,14 @@ public sealed class ToastWindow : Window
         {
             Margin = new Thickness(Pad),
             Padding = new Thickness(14, 14, 16, 14),
-            CornerRadius = new CornerRadius(_pixel ? 0 : 12),
-            Background = Theme.Brush(_p.Surface),
-            BorderBrush = Theme.Brush(_p.SurfaceBorder),
-            BorderThickness = new Thickness(_pixel ? 2 : 1),
+            CornerRadius = new CornerRadius(_pixel ? 0 : 18),
+            Background = _pixel ? Theme.Brush(_p.Surface) : Brushes.Transparent,
+            BorderBrush = _pixel ? Theme.Brush(_p.SurfaceBorder) : null,
+            BorderThickness = new Thickness(_pixel ? 2 : 0),
             // Arcade: a hard shadow with no blur. Glass: a soft lift.
             Effect = _pixel
                 ? new DropShadowEffect { BlurRadius = 0, ShadowDepth = 6, Direction = 315, Opacity = 0.55 }
-                : new DropShadowEffect { BlurRadius = 24, ShadowDepth = 5, Direction = 270, Opacity = _p.Dark ? 0.45 : 0.18 },
+                : new DropShadowEffect { BlurRadius = 7, ShadowDepth = 0, Opacity = 0.5, Color = Colors.Black },
             RenderTransform = _slide,
             Child = card,
         };
@@ -199,7 +222,7 @@ public sealed class ToastWindow : Window
             case JobState.Done:
                 SetShimmer(false);
                 AnimateBar(1);
-                _tileGlyph.Text = "";
+                _tileGlyph.Text = "îœ¾";
                 _status.Text = DoneText(_job.Outputs);
                 _buttons.Children.Clear();
                 if (_job.Outputs.Count > 0)
@@ -213,7 +236,7 @@ public sealed class ToastWindow : Window
                 SetShimmer(false);
                 var coral = Theme.Accent(FileKind.Pdf);
                 _tile.Background = new LinearGradientBrush(Theme.Lighten(coral, 0.18), coral, 60);
-                _tileGlyph.Text = "";
+                _tileGlyph.Text = "îžº";
                 _status.Text = _job.Error ?? "The conversion stopped unexpectedly.";
                 _track.Visibility = Visibility.Collapsed;
                 _buttons.Children.Clear();
@@ -378,6 +401,41 @@ public sealed class ToastWindow : Window
         var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(170)) { EasingFunction = ease };
         fade.Completed += (_, _) => Close();
         BeginAnimation(OpacityProperty, fade);
+    }
+
+    void RenderGlass(BitmapSource? snapshot)
+    {
+        if (snapshot == null || _card == null) return;
+        double scale = snapshot.PixelWidth / Width;
+        var card = new Rect(Pad * scale, Pad * scale, (Width - Pad * 2) * scale, (snapshot.PixelHeight / scale - Pad * 2) * scale);
+        var shape = GlassShapes.RoundedRect(card, 18 * scale);
+        var style = ConvertWheel.GlassStyle(_p, bezel: 18 * scale, refraction: 18 * scale, frost: 10);
+        _glass.Background = new ImageBrush(LiquidGlass.Render(snapshot, GlassShapes.Field(snapshot.PixelWidth, snapshot.PixelHeight, shape), style)) { Stretch = Stretch.Fill };
+    }
+
+    /// <summary>
+    /// Re-captures what's behind the toast. The window is briefly excluded from screen capture
+    /// (it stays visible on screen), so the snapshot shows the desktop, not the toast itself.
+    /// </summary>
+    void RefreshGlass()
+    {
+        if (_closing || !IsVisible) return;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (!NativeMethods.SetWindowDisplayAffinity(hwnd, NativeMethods.WDA_EXCLUDEFROMCAPTURE)) return;
+        var settle = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(60) };
+        settle.Tick += (_, _) =>
+        {
+            settle.Stop();
+            try
+            {
+                if (!_closing) RenderGlass(Glass.Capture(Glass.ToPixels(this, new Rect(Left, Top, Width, ActualHeight))));
+            }
+            finally
+            {
+                NativeMethods.SetWindowDisplayAffinity(hwnd, NativeMethods.WDA_NONE);
+            }
+        };
+        settle.Start();
     }
 
     void MakeNonActivating()

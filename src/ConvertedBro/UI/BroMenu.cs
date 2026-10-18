@@ -35,6 +35,8 @@ public sealed class BroMenu : Window
     readonly double _radius;
     readonly Point _anchorPx;
     readonly Grid _host = new();
+    readonly Grid _outer = new();
+    readonly Image _glassImage = new() { Stretch = Stretch.Fill, IsHitTestVisible = false };
     readonly Border _panel;
     readonly TranslateTransform _slide = new();
     readonly DispatcherTimer _outsideClick = new() { Interval = TimeSpan.FromMilliseconds(40) };
@@ -43,7 +45,7 @@ public sealed class BroMenu : Window
     public BroMenu(Point anchorPx, string subtitle, IReadOnlyList<object?> entries, ImageSource? avatar)
     {
         _anchorPx = anchorPx;
-        _radius = _pixel ? 0 : 10;
+        _radius = _pixel ? 0 : 18;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;
@@ -55,7 +57,9 @@ public sealed class BroMenu : Window
         UseLayoutRounding = true;
         if (_pixel) TextOptions.SetTextRenderingMode(this, TextRenderingMode.Aliased);
 
-        var stack = new StackPanel { Margin = new Thickness(_pixel ? 6 : 5) };
+        var stack = new StackPanel { Margin = new Thickness(_pixel ? 6 : 8) };
+        // On clear glass a soft shadow keeps text readable over anything behind it.
+        if (!_pixel) stack.Effect = new DropShadowEffect { BlurRadius = 7, ShadowDepth = 0, Opacity = 0.5, Color = Colors.Black };
         stack.Children.Add(Header(subtitle, avatar));
         foreach (var entry in entries)
             stack.Children.Add(entry switch
@@ -67,8 +71,10 @@ public sealed class BroMenu : Window
 
         _panel = new Border { Width = MenuWidth, CornerRadius = new CornerRadius(_radius), Child = stack };
         _host.Margin = new Thickness(Pad);
-        _host.RenderTransform = _slide;
-        Content = _host;
+        _outer.Children.Add(_glassImage);
+        _outer.Children.Add(_host);
+        _outer.RenderTransform = _slide;
+        Content = _outer;
 
         // Size is known up front so the glass snapshot can match it exactly.
         _panel.Measure(new Size(MenuWidth, double.PositiveInfinity));
@@ -115,21 +121,19 @@ public sealed class BroMenu : Window
         }
         else
         {
-            var snapshot = Glass.Capture(Glass.ToPixels(this, new Rect(Left + Pad, Top + Pad, rect.Width, rect.Height)));
-            _host.Children.Add(new Border
+            // Liquid glass over the whole window, so its soft shadow can fall outside the panel.
+            var snapshot = Glass.Capture(Glass.ToPixels(this, new Rect(Left, Top, Width, Height)));
+            if (snapshot != null)
             {
-                CornerRadius = new CornerRadius(_radius),
-                Background = Theme.Brush(_p.Surface),
-                Effect = new DropShadowEffect { BlurRadius = 26, ShadowDepth = 6, Opacity = _p.Dark ? 0.5 : 0.22, Direction = 270 },
-            });
-            _host.Children.Add(Glass.Build(snapshot, new RectangleGeometry(rect, _radius, _radius), _p, blurRadius: 40));
-            _host.Children.Add(new Border
+                double scale = snapshot.PixelWidth / Width;
+                var shape = GlassShapes.RoundedRect(new Rect(Pad * scale, Pad * scale, rect.Width * scale, rect.Height * scale), _radius * scale);
+                var glassStyle = ConvertWheel.GlassStyle(_p, bezel: 22 * scale, refraction: 22 * scale, frost: 9);
+                _glassImage.Source = LiquidGlass.Render(snapshot, GlassShapes.Field(snapshot.PixelWidth, snapshot.PixelHeight, shape), glassStyle);
+            }
+            else
             {
-                CornerRadius = new CornerRadius(_radius),
-                BorderBrush = Theme.Brush(_p.SurfaceBorder),
-                BorderThickness = new Thickness(1),
-                IsHitTestVisible = false,
-            });
+                _host.Children.Add(new Border { CornerRadius = new CornerRadius(_radius), Background = Theme.Brush(_p.Surface) });
+            }
         }
         _host.Children.Add(_panel);
 
@@ -192,6 +196,7 @@ public sealed class BroMenu : Window
         };
         var sub = new TextBlock { Text = subtitle, FontFamily = Theme.TextFont, FontSize = 11.5, Foreground = Theme.Brush(_p.SubtleText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
         var text = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Children = { name, sub } };
+        if (!_pixel) { name.Foreground = Brushes.White; sub.Foreground = Theme.Brush(Color.FromArgb(0xCC, 255, 255, 255)); }
 
         var row = new DockPanel { Margin = new Thickness(10, 10, 10, 8) };
         DockPanel.SetDock(picture, Dock.Left);
@@ -212,7 +217,7 @@ public sealed class BroMenu : Window
         Text = text,
         FontFamily = Theme.LabelFont,
         FontSize = _pixel ? 14 : 13,
-        Foreground = Theme.Brush(_p.Text),
+        Foreground = _pixel ? Theme.Brush(_p.Text) : Brushes.White,
         VerticalAlignment = VerticalAlignment.Center,
     };
 
@@ -223,13 +228,14 @@ public sealed class BroMenu : Window
         var row = new Border
         {
             Height = height,
-            CornerRadius = new CornerRadius(_pixel ? 0 : 6),
+            CornerRadius = new CornerRadius(_pixel ? 0 : 10),
             Background = brush,
             Padding = new Thickness(10, 0, 10, 0),
             Cursor = Cursors.Hand,
         };
         var fast = TimeSpan.FromMilliseconds(_pixel ? 1 : 90);
-        row.MouseEnter += (_, _) => brush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(_p.RowHover, fast));
+        var hot = _pixel ? _p.RowHover : Color.FromArgb(0x1E, 255, 255, 255);
+        row.MouseEnter += (_, _) => brush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot, fast));
         row.MouseLeave += (_, _) => brush.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(Colors.Transparent, fast));
         return row;
     }

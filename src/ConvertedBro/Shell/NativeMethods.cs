@@ -64,6 +64,13 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern uint GetDpiForSystem();
 
+    /// <summary>WDA_EXCLUDEFROMCAPTURE: the window stays on screen but screen captures skip it.</summary>
+    public const uint WDA_NONE = 0, WDA_EXCLUDEFROMCAPTURE = 0x11;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetWindowDisplayAffinity(IntPtr hWnd, uint affinity);
+
     /// <summary>Physical pixels per DIP for the primary display (1.25 at 125%).</summary>
     public static double SystemScale => Math.Max(1, GetDpiForSystem()) / 96.0;
 

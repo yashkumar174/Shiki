@@ -9,6 +9,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ConvertedBro.Core;
 using ConvertedBro.Shell;
@@ -34,6 +35,8 @@ public sealed class ConvertWheel : Window
     const double Size = 440, C = Size / 2;
     const double DiscRadius = 162, OuterRadius = 151, InnerRadius = 80, HubRadius = 63;
     const double Gap = 6, Corner = 12;
+    // Liquid glass pieces float apart, so they get wider gaps and softer corners.
+    const double LiquidGap = 11, LiquidCorner = 18;
     static readonly TimeSpan HoverTime = TimeSpan.FromMilliseconds(130);
 
     readonly WheelMode _mode;
@@ -56,6 +59,9 @@ public sealed class ConvertWheel : Window
     readonly DispatcherTimer _outsideClick = new() { Interval = TimeSpan.FromMilliseconds(40) };
 
     IReadOnlyList<string> _files;
+    BitmapSource? _snapshot;
+    readonly Image _glass = new() { Stretch = Stretch.Fill, IsHitTestVisible = false };
+    int _glassVersion;
     List<BroAction> _formats = [], _tools = [];
     ActionGroup _page = ActionGroup.Format;
     readonly List<Wedge> _wedges = [];
@@ -70,7 +76,7 @@ public sealed class ConvertWheel : Window
         _mode = mode;
         _centerPx = centerPx;
         _files = files ?? [];
-        _hubFill = new SolidColorBrush(_p.WedgeRest);
+        _hubFill = new SolidColorBrush(_pixel ? _p.WedgeRest : Colors.Transparent);
 
         Title = "Converted Bro";
         Width = Height = Size;
@@ -134,27 +140,17 @@ public sealed class ConvertWheel : Window
             IsHitTestVisible = false,
             Fill = new RadialGradientBrush(
             [
-                new GradientStop(Color.FromArgb(_p.Dark ? (byte)0x70 : (byte)0x38, 0, 0, 0), 0.78),
+                new GradientStop(Color.FromArgb(_p.Dark ? (byte)0x1C : (byte)0x10, 0, 0, 0), 0.72),
                 new GradientStop(Color.FromArgb(0, 0, 0, 0), 1),
             ]),
         });
 
+        _glassHost.Children.Add(_glass);
         _root.Children.Add(_glassHost);
-
-        _root.Children.Add(new Ellipse
-        {
-            Width = DiscRadius * 2,
-            Height = DiscRadius * 2,
-            Stroke = Theme.Brush(_p.GlassRim),
-            StrokeThickness = 1,
-            IsHitTestVisible = false,
-        });
-
         _root.Children.Add(_wedgeLayer);
 
+        // The hub is a glass piece of its own; this only carries its hover tint.
         _hub.Fill = _hubFill;
-        _hub.Stroke = Theme.Brush(_p.WedgeEdge);
-        _hub.StrokeThickness = 1;
         _hub.IsHitTestVisible = false;
         _root.Children.Add(_hub);
         BuildHubText();
@@ -213,6 +209,7 @@ public sealed class ConvertWheel : Window
             HorizontalAlignment = HorizontalAlignment.Center,
             IsHitTestVisible = false,
             Children = { _hubTitle, _hubSub, _dots },
+            Effect = _pixel ? null : new DropShadowEffect { BlurRadius = 8, ShadowDepth = 0, Opacity = 0.55, Color = Colors.Black },
         });
     }
 
@@ -245,8 +242,8 @@ public sealed class ConvertWheel : Window
                 Data = _pixel
                     ? PixelShape.Create(Size, _cell, PixelShape.Wedge(new Point(C, C), InnerRadius, OuterRadius, 0, Math.PI * 2, Gap, _cell)).Body
                     : WedgeGeometry.Create(new Point(C, C), InnerRadius, OuterRadius, 0, Math.PI * 2, Gap, Corner),
-                Fill = Theme.Brush(_p.WedgeRest),
-                Stroke = _pixel ? null : Theme.Brush(_p.WedgeEdge),
+                Fill = _pixel ? Theme.Brush(_p.WedgeRest) : Brushes.Transparent,
+                Stroke = null,
                 StrokeThickness = 1,
                 IsHitTestVisible = false,
             };
@@ -264,6 +261,7 @@ public sealed class ConvertWheel : Window
                 if (animate) wedge.AnimateIn(i * 14, fromAngle);
             }
         }
+        if (!_pixel && _snapshot != null) RenderGlass();
         UpdateHub();
     }
 
@@ -282,10 +280,54 @@ public sealed class ConvertWheel : Window
         Top = Snap(Math.Clamp(center.Y - C, area.Top - margin, area.Bottom - Size + margin));
         if (_pixel) return;
 
-        // Snapshot what's behind us before we become visible.
-        var snapshot = Glass.Capture(Glass.ToPixels(this, new Rect(Left, Top, Size, Size)));
-        _glassHost.Children.Add(Glass.Build(snapshot, new EllipseGeometry(new Point(C, C), DiscRadius, DiscRadius), _p));
+        // Snapshot what's behind us before we become visible; the glass bends this picture.
+        _snapshot = Glass.Capture(Glass.ToPixels(this, new Rect(Left, Top, Size, Size)));
+        if (_snapshot == null)
+            _glassHost.Children.Add(Glass.Build(null, new EllipseGeometry(new Point(C, C), DiscRadius, DiscRadius), _p));
+        else
+            RenderGlass();
     }
+
+    /// <summary>
+    /// Renders the wedges and hub as liquid glass. Runs off the UI thread; the page's wedge count
+    /// decides the shapes, so a page switch renders again.
+    /// </summary>
+    void RenderGlass()
+    {
+        var snapshot = _snapshot!;
+        int version = ++_glassVersion;
+        int count = Math.Max(1, PageActions.Count);
+        double scale = snapshot.PixelWidth / Size;
+        var style = GlassStyle(_p, bezel: 20 * scale, refraction: 28 * scale, frost: 4);
+        var center = new Point(C * scale, C * scale);
+        double step = Math.PI * 2 / count;
+        var shape = GlassShapes.Union(
+            GlassShapes.Wedges(center, InnerRadius * scale, OuterRadius * scale, count, -Math.PI / 2 - step / 2, LiquidGap * scale, LiquidCorner * scale),
+            GlassShapes.Circle(center, HubRadius * scale));
+        int w = snapshot.PixelWidth, h = snapshot.PixelHeight;
+        System.Threading.Tasks.Task.Run(() => LiquidGlass.Render(snapshot, GlassShapes.Field(w, h, shape), style))
+            .ContinueWith(t =>
+            {
+                if (t.IsFaulted) { Log.Error("Liquid glass failed", t.Exception); return; }
+                Dispatcher.BeginInvoke(() =>
+                {
+                    if (version != _glassVersion) return;
+                    _glass.Source = t.Result;
+                });
+            });
+    }
+
+    public static LiquidGlassStyle GlassStyle(Palette p, double bezel, double refraction, int frost = 5) => new()
+    {
+        Bezel = bezel,
+        Refraction = refraction,
+        Frost = frost,
+        // Dark mode darkens the glass a touch so white labels stay readable; light mode brightens it.
+        Tint = p.Dark ? Color.FromArgb(0x2C, 0x12, 0x10, 0x1C) : Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF),
+        Specular = 1.0,
+        ShadowOffset = bezel * 0.3,
+        ShadowBlur = bezel * 0.8,
+    };
 
     /// <summary>Lands on a whole physical pixel, so pixel art and hairlines stay sharp.</summary>
     static double Snap(double dip)
@@ -397,7 +439,9 @@ public sealed class ConvertWheel : Window
         if (hub != _hubHot)
         {
             _hubHot = hub;
-            var target = hub && HasTwoPages ? Theme.Lighten(_p.WedgeRest, _p.Dark ? 0.08 : 0.3) : _p.WedgeRest;
+            var rest = _pixel ? _p.WedgeRest : Colors.Transparent;
+            var lit = _pixel ? Theme.Lighten(_p.WedgeRest, 0.08) : Color.FromArgb(0x26, 255, 255, 255);
+            var target = hub && HasTwoPages ? lit : rest;
             _hubFill.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(target, HoverTime));
             Cursor = hub && HasTwoPages && !dragging ? Cursors.Hand : null;
             UpdateHub();
@@ -432,7 +476,7 @@ public sealed class ConvertWheel : Window
         {
             SetHubTitleToFiles();
             _hubSub.Text = _wedges[_hover].Action.Hint;
-            _hubSub.Foreground = Theme.Brush(Theme.Lighten(_accent, _p.Dark ? 0.3 : 0));
+            _hubSub.Foreground = Theme.Brush(_pixel ? Theme.Lighten(_accent, 0.3) : Color.FromArgb(0xEE, 255, 255, 255));
         }
         else if (_files.Count == 0)
         {
@@ -605,7 +649,8 @@ public sealed class ConvertWheel : Window
         readonly RotateTransform _spin = new(0, C, C);
         readonly ScaleTransform _pulse = new(1, 1, C, C);
         readonly double _mid, _cell;
-        readonly Color _accent, _rest, _labelColor, _glyphColor;
+        readonly Color _accent, _labelColor, _glyphColor;
+        Color _rest;
         readonly DropShadowEffect? _glow;
         readonly Path? _hardShadow;
         bool Pixel => _cell > 0;
@@ -620,7 +665,9 @@ public sealed class ConvertWheel : Window
             _glyphColor = p.SubLabel;
             _cell = cell;
             _mid = (start + end) / 2;
-            _fill = new SolidColorBrush(p.WedgeRest);
+            // Liquid glass wedges are clear until lit; the glass itself is rendered underneath.
+            if (!Pixel) _rest = Theme.WithAlpha(accent, 0);
+            _fill = new SolidColorBrush(_rest);
             _label = new SolidColorBrush(p.Label);
             _glyph = new SolidColorBrush(p.SubLabel);
 
@@ -637,16 +684,10 @@ public sealed class ConvertWheel : Window
             }
             else
             {
-                _glow = new DropShadowEffect { Color = accent, BlurRadius = 22, ShadowDepth = 0, Opacity = 0 };
-                var geometry = WedgeGeometry.Create(new Point(C, C), InnerRadius, OuterRadius, start, end, Gap, Corner);
-                Container.Children.Add(new Path { Data = geometry, Fill = _fill, Stroke = Theme.Brush(p.WedgeEdge), StrokeThickness = 1, Effect = _glow });
-                // A faint sheen from the top keeps each slice reading as glass, also when lit up.
-                Container.Children.Add(new Path
-                {
-                    Data = geometry,
-                    Fill = new LinearGradientBrush(Color.FromArgb(p.Dark ? (byte)0x14 : (byte)0x40, 255, 255, 255),
-                        Color.FromArgb(0, 255, 255, 255), 90),
-                });
+                _glow = new DropShadowEffect { Color = accent, BlurRadius = 26, ShadowDepth = 0, Opacity = 0 };
+                var geometry = WedgeGeometry.Create(new Point(C, C), InnerRadius, OuterRadius, start, end, LiquidGap, LiquidCorner);
+                // Lit, the glass takes on the accent colour (tinted glass), with a soft glow around it.
+                Container.Children.Add(new Path { Data = geometry, Fill = _fill, Effect = _glow });
             }
 
             var content = BuildLabel(action);
@@ -697,6 +738,8 @@ public sealed class ConvertWheel : Window
                     HorizontalAlignment = HorizontalAlignment.Center,
                 });
             }
+            // Clear glass shows whatever is behind it; a soft shadow keeps labels readable on anything.
+            if (!Pixel) stack.Effect = new DropShadowEffect { BlurRadius = 8, ShadowDepth = 0, Opacity = 0.55, Color = Colors.Black };
             return stack;
         }
 
@@ -704,7 +747,8 @@ public sealed class ConvertWheel : Window
         {
             var ease = new QuadraticEase { EasingMode = EasingMode.EaseOut };
             var time = Pixel ? TimeSpan.FromMilliseconds(60) : HoverTime;
-            _fill.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot ? _accent : _rest, time) { EasingFunction = ease });
+            var lit = Pixel ? _accent : Theme.WithAlpha(_accent, 0xB0);
+            _fill.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot ? lit : _rest, time) { EasingFunction = ease });
             // Arcade labels go dark on the bright key; glass labels go white.
             var labelHot = Pixel ? Color.FromRgb((byte)(_accent.R * 0.18), (byte)(_accent.G * 0.18), (byte)(_accent.B * 0.18)) : Colors.White;
             _label.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot ? labelHot : _labelColor, time));
@@ -720,10 +764,8 @@ public sealed class ConvertWheel : Window
                 return;
             }
 
-            _glow!.BeginAnimation(DropShadowEffect.OpacityProperty, new DoubleAnimation(hot ? 0.6 : 0, HoverTime));
-            double smooth = hot ? 5 : 0;
-            _push.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(smooth * Math.Cos(_mid), HoverTime) { EasingFunction = ease });
-            _push.BeginAnimation(TranslateTransform.YProperty, new DoubleAnimation(smooth * Math.Sin(_mid), HoverTime) { EasingFunction = ease });
+            // The glass under the tint stays put, so the lit wedge glows rather than moves.
+            _glow!.BeginAnimation(DropShadowEffect.OpacityProperty, new DoubleAnimation(hot ? 0.75 : 0, HoverTime));
         }
 
         DoubleAnimationUsingKeyFrames Steps(double from, double to)
