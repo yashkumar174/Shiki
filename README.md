@@ -8,14 +8,18 @@ Inspired by [Tangerine](https://x.com/th2049) for macOS.
 
 ## What it does
 
-The wheel has two pages: **formats** (what to convert to) and **tools** (what to do to the file).
+The wheel has up to three pages: **formats** (what to convert to), **tools** (what to do to the file) and **size limit** (make it fit an upload limit).
 
-| Files | Formats | Tools |
-|---|---|---|
-| Images (png, jpg, webp, heic, avif, gif, bmp, tiff, ico, svg) | PNG, JPG, WEBP, ICO, PDF (all images into one A4 PDF) | Compress, Half size, Rotate, Remove metadata (camera, date, GPS) |
-| Video (mp4, mov, mkv, avi, webm, …) | MP4, WEBM, GIF, MP3 | Compress (up to 1080p), Half size, Rotate, Mute |
-| Audio (mp3, wav, m4a, flac, ogg, …) | MP3, M4A, WAV, FLAC, OGG | Even out volume |
-| PDF | Pages to PNG, Pages to JPG | Split into pages, Merge (PDFs and images, in name order) |
+| Files | Formats | Tools | Size limit |
+|---|---|---|---|
+| Images (png, jpg, webp, heic, avif, gif, bmp, tiff, ico, svg) | PNG, JPG, WEBP, ICO, PDF (all images into one A4 PDF) | Scan, Copy text, Compress, Half size, Rotate, Remove metadata (camera, date, GPS) | 100 KB, 200 KB, 1 MB, 2 MB |
+| Video (mp4, mov, mkv, avi, webm, …) | MP4, WEBM, GIF, MP3 | Compress (up to 1080p), Half size, Rotate, Mute | |
+| Audio (mp3, wav, m4a, flac, ogg, …) | MP3, M4A, WAV, FLAC, OGG | Even out volume | |
+| PDF | Pages to PNG, Pages to JPG | Copy text, Split into pages, Merge (PDFs and images, in name order) | 100 KB, 200 KB, 1 MB, 2 MB |
+
+- **Size limit** finds the highest quality that fits (binary search on JPEG/WEBP quality, then a smaller picture if even the lowest quality is too big). PDFs are re-rendered page by page, so their pages become pictures.
+- **Copy text** uses the OCR engine built into Windows (offline) and puts the text on the clipboard. It reads the languages installed in Windows.
+- **Scan** opens an editor: auto-detect places four corners on the page (paper is bright and colourless: Otsu threshold, biggest blob, extreme corners), you drag them where needed (a loupe magnifies the corner), pick *Clean colour*, *Black and white* or *Original*, rotate, preview the result, and save one PDF or one image per photo. Cleanup straightens the page with a perspective warp and divides by a blurred copy of itself, which evens out shadows and turns the paper white.
 
 Outputs go next to the original and never overwrite anything (`photo (1).jpg`, `clip (small).mp4`, `report (pages)\page-01.png`).
 
@@ -88,9 +92,10 @@ Logs and settings: `%LOCALAPPDATA%\ConvertedBro\`.
 ```
 src/ConvertedBro/
   Core/   FileKind, ActionCatalog (every action lives here), ImageTools (Magick.NET),
-          MediaTools (FFmpeg), PdfTools (PDFium + PDFsharp), JobRunner, OutputPaths
+          MediaTools (FFmpeg), PdfTools (PDFium + PDFsharp), SizeTools, TextTools (Windows OCR),
+          ScanTools, JobRunner, OutputPaths
   Shell/  SingleInstance (mutex + pipe), ContextMenuRegistrar, GlobalMouseHook, StartupRegistration
-  UI/     CatWindow, CatSprites, ConvertWheel, BroMenu, ToastWindow, TrayIcon, Theme, Glass, PixelShape, WedgeGeometry, BroArt
+  UI/     CatWindow, CatSprites, ConvertWheel, ScanWindow, BroMenu, ToastWindow, TrayIcon, Theme, Glass, LiquidGlass, PixelShape, WedgeGeometry, BroArt
   Assets/ Fonts/PixelifySans.ttf (SIL Open Font License, see OFL.txt)
 ```
 
@@ -106,5 +111,6 @@ To add an action, add a `BroAction` in `ActionCatalog.Build()`, with `Group = Ac
 ## Known limits / next up
 
 - Windows 11 shows the entry under *Show more options*. Getting it into the new top-level menu needs an `IExplorerCommand` handler plus a signed sparse package.
-- Not supported yet: Word/Excel/PowerPoint documents (needs LibreOffice), PDF compression (needs Ghostscript).
+- Not supported yet: Word/Excel/PowerPoint documents (needs Office or LibreOffice).
+- The build output folder is `bin/<config>/net8.0-windows10.0.19041.0/win-x64/` (the Windows SDK target is needed for OCR).
 - Ideas: compress to a target size ("under 2 MB"), trim video, remove background, OCR (built into Windows), QR codes, rename in bulk.

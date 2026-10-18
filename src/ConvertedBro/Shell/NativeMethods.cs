@@ -64,6 +64,16 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern uint GetDpiForSystem();
 
+    [DllImport("dwmapi.dll")]
+    static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
+
+    /// <summary>Asks Windows for a dark title bar (DWMWA_USE_IMMERSIVE_DARK_MODE).</summary>
+    public static void UseDarkTitleBar(IntPtr hwnd)
+    {
+        int on = 1;
+        DwmSetWindowAttribute(hwnd, 20, ref on, sizeof(int));
+    }
+
     /// <summary>WDA_EXCLUDEFROMCAPTURE: the window stays on screen but screen captures skip it.</summary>
     public const uint WDA_NONE = 0, WDA_EXCLUDEFROMCAPTURE = 0x11;
 

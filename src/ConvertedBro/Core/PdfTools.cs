@@ -48,6 +48,39 @@ public static class PdfTools
         }
     }
 
+    public sealed record RenderedPage(MagickImage Image, double WidthPoints, double HeightPoints);
+
+    /// <summary>Renders every page on a white background. Scaling 1 is 72 DPI. Caller disposes the images.</summary>
+    public static List<RenderedPage> RenderPages(string input, double scaling, IProgress<double> progress)
+    {
+        lock (PdfiumGate)
+        {
+            using var doc = DocLib.Instance.GetDocReader(input, new PageDimensions(scaling));
+            int count = doc.GetPageCount();
+            var pages = new List<RenderedPage>(count);
+            for (int i = 0; i < count; i++)
+            {
+                using var page = doc.GetPageReader(i);
+                int w = page.GetPageWidth(), h = page.GetPageHeight();
+                var image = new MagickImage();
+                image.ReadPixels(page.GetImage(), new PixelReadSettings((uint)w, (uint)h, StorageType.Char, PixelMapping.BGRA));
+                ImageTools.FlattenOnWhite(image);
+                pages.Add(new RenderedPage(image, w / scaling, h / scaling));
+                progress.Report((i + 1) / (double)count);
+            }
+            return pages;
+        }
+    }
+
+    /// <summary>Joins already-processed images (e.g. scanned pages) into one PDF of A4 pages.</summary>
+    public static string ImagesToPdf(IReadOnlyList<MagickImage> images, string output)
+    {
+        using var result = new PdfDocument();
+        foreach (var image in images) AddImagePage(result, image, jpeg: true);
+        result.Save(output);
+        return output;
+    }
+
     /// <summary>Splits a PDF into one file per page, inside a new folder.</summary>
     public static IReadOnlyList<string> Split(string input, IProgress<double> progress)
     {
@@ -98,7 +131,11 @@ public static class PdfTools
     static void AddImagePage(PdfDocument doc, string imagePath)
     {
         using var image = ImageTools.Load(imagePath);
-        bool jpeg = FileKinds.IsJpeg(Path.GetExtension(imagePath));
+        AddImagePage(doc, image, FileKinds.IsJpeg(Path.GetExtension(imagePath)));
+    }
+
+    static void AddImagePage(PdfDocument doc, MagickImage image, bool jpeg)
+    {
         if (jpeg) image.Quality = 92;
         else ImageTools.FlattenOnWhite(image);
 

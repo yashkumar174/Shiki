@@ -52,7 +52,7 @@ public sealed class ConvertWheel : Window
     readonly Ellipse _hub = new() { Width = HubRadius * 2, Height = HubRadius * 2 };
     readonly SolidColorBrush _hubFill;
     readonly TextBlock _hubTitle = new(), _hubSub = new();
-    readonly Rectangle _dotFormats = new(), _dotTools = new();
+    readonly List<Rectangle> _pageDots = [];
     readonly StackPanel _dots = new() { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
     readonly DispatcherTimer _dwell = new() { Interval = TimeSpan.FromMilliseconds(520) };
     readonly DispatcherTimer _noFiles = new() { Interval = TimeSpan.FromMilliseconds(1400) };
@@ -62,8 +62,9 @@ public sealed class ConvertWheel : Window
     BitmapSource? _snapshot;
     readonly Image _glass = new() { Stretch = Stretch.Fill, IsHitTestVisible = false };
     int _glassVersion;
-    List<BroAction> _formats = [], _tools = [];
-    ActionGroup _page = ActionGroup.Format;
+    // Pages in order: formats, tools, size limits (only the ones that have something to offer).
+    List<(ActionGroup Group, List<BroAction> Actions)> _pages = [];
+    int _pageIndex;
     readonly List<Wedge> _wedges = [];
     Color _accent = Theme.Brand;
     int _hover = -1;
@@ -195,14 +196,6 @@ public sealed class ConvertWheel : Window
         _hubSub.MaxHeight = 32;
         _hubSub.Margin = new Thickness(0, 2, 0, 0);
 
-        foreach (var dot in new[] { _dotFormats, _dotTools })
-        {
-            dot.Width = dot.Height = _pixel ? _cell * 2 : 5;
-            dot.RadiusX = dot.RadiusY = _pixel ? 0 : 2.5;
-            dot.Margin = new Thickness(2.5, 7, 2.5, 0);
-            _dots.Children.Add(dot);
-        }
-
         _root.Children.Add(new StackPanel
         {
             VerticalAlignment = VerticalAlignment.Center,
@@ -217,15 +210,40 @@ public sealed class ConvertWheel : Window
     {
         _files = files;
         var actions = ActionCatalog.For(files);
-        _formats = actions.Where(a => a.Group == ActionGroup.Format).ToList();
-        _tools = actions.Where(a => a.Group == ActionGroup.Tool).ToList();
+        _pages = Enum.GetValues<ActionGroup>()
+            .Select(g => (g, actions.Where(a => a.Group == g).ToList()))
+            .Where(page => page.Item2.Count > 0)
+            .ToList();
+        _pageIndex = 0;
         _accent = Theme.Accent(ActionCatalog.DominantKind(files));
-        _page = _formats.Count > 0 ? ActionGroup.Format : ActionGroup.Tool;
+
+        _dots.Children.Clear();
+        _pageDots.Clear();
+        foreach (var _ in _pages)
+        {
+            var dot = new Rectangle
+            {
+                Width = _pixel ? _cell * 2 : 5,
+                Height = _pixel ? _cell * 2 : 5,
+                RadiusX = _pixel ? 0 : 2.5,
+                RadiusY = _pixel ? 0 : 2.5,
+                Margin = new Thickness(2.5, 7, 2.5, 0),
+            };
+            _pageDots.Add(dot);
+            _dots.Children.Add(dot);
+        }
         BuildWedges(animate: IsLoaded);
     }
 
-    List<BroAction> PageActions => _page == ActionGroup.Format ? _formats : _tools;
-    bool HasTwoPages => _formats.Count > 0 && _tools.Count > 0;
+    List<BroAction> PageActions => _pages.Count == 0 ? [] : _pages[_pageIndex].Actions;
+    bool HasTwoPages => _pages.Count > 1;
+
+    static string PageName(ActionGroup group) => group switch
+    {
+        ActionGroup.Format => "Formats",
+        ActionGroup.Tool => "Tools",
+        _ => "Size limit",
+    };
 
     void BuildWedges(bool animate, double fromAngle = -12)
     {
@@ -490,18 +508,18 @@ public sealed class ConvertWheel : Window
         }
         else if (_hubHot && HasTwoPages)
         {
-            _hubTitle.Text = _page == ActionGroup.Format ? "Tools" : "Formats";
+            _hubTitle.Text = PageName(_pages[(_pageIndex + 1) % _pages.Count].Group);
             _hubSub.Text = _mode == WheelMode.Drag ? "Hold here to switch" : "Click to switch";
         }
         else
         {
             SetHubTitleToFiles();
-            _hubSub.Text = _files.Count == 1 ? FileSummary(_files[0]) : (_page == ActionGroup.Format ? "Convert to…" : "Tools");
+            _hubSub.Text = _files.Count == 1 ? FileSummary(_files[0]) : PageName(_pages[_pageIndex].Group);
         }
 
         _dots.Visibility = HasTwoPages ? Visibility.Visible : Visibility.Collapsed;
-        _dotFormats.Fill = Theme.Brush(_page == ActionGroup.Format ? _accent : Theme.WithAlpha(_p.SubLabel, 0x70));
-        _dotTools.Fill = Theme.Brush(_page == ActionGroup.Tool ? _accent : Theme.WithAlpha(_p.SubLabel, 0x70));
+        for (int i = 0; i < _pageDots.Count; i++)
+            _pageDots[i].Fill = Theme.Brush(i == _pageIndex ? _accent : Theme.WithAlpha(_p.SubLabel, 0x70));
     }
 
     void SetHubTitleToFiles() =>
@@ -536,7 +554,7 @@ public sealed class ConvertWheel : Window
         timer.Tick += (_, _) =>
         {
             timer.Stop();
-            _page = _page == ActionGroup.Format ? ActionGroup.Tool : ActionGroup.Format;
+            _pageIndex = (_pageIndex + 1) % _pages.Count;
             BuildWedges(animate: true, fromAngle: -14);
             _switching = false;
             _leftHubOnce = false; // don't flip straight back while still resting on the hub

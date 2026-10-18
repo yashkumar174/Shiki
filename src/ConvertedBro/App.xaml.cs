@@ -57,6 +57,21 @@ public partial class App : Application
             Shutdown();
             return;
         }
+        if (args.Length == 2 && args[0] == "--scan-test")
+        {
+            // Dev aid: auto-detect the page and save it with every filter, plus the detected corners.
+            using var photo = ImageTools.Load(args[1]);
+            var corners = ScanTools.DetectPage(photo);
+            File.WriteAllText(args[1] + ".corners.txt", string.Join(" ", corners.Select(c => $"{c.X:0},{c.Y:0}")));
+            foreach (var filter in Enum.GetValues<ScanFilter>())
+            {
+                using var page = ScanTools.Process(photo, corners, 0, filter);
+                page.Quality = 88;
+                page.Write(OutputPaths.Next(args[1], ".jpg", $"scan {filter}"));
+            }
+            Shutdown();
+            return;
+        }
         if (args.Length > 0 && args[0] is "--register" or "--unregister")
         {
             if (args[0] == "--register") ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile(CatSprites.Skin(Settings.Load().Cat)));
@@ -166,6 +181,15 @@ public partial class App : Application
     {
         // Merges follow Explorer's name order, since launch order is random.
         if (action.Combine) files.Sort(NaturalComparer.Instance);
+        if (action.OpensEditor)
+        {
+            var photos = files.Where(action.Accepts).ToList();
+            if (photos.Count == 0) return;
+            var editor = new ScanWindow(photos);
+            editor.Show();
+            editor.Activate();
+            return;
+        }
         if (JobRunner.Start(action, files) == null)
             ToastHost.Show(ToastWindow.Message("Nothing to do", $"None of those files can be used for \"{action.Label}\"."));
     }

@@ -10,7 +10,7 @@ namespace ConvertedBro.Core;
 public delegate Task<IReadOnlyList<string>> ActionRunner(IReadOnlyList<string> inputs, IProgress<double> progress, CancellationToken ct);
 
 /// <summary>Which page of the wheel an action sits on.</summary>
-public enum ActionGroup { Format, Tool }
+public enum ActionGroup { Format, Tool, Size }
 
 /// <summary>One thing the bro can do to files, e.g. "to MP4".</summary>
 public sealed class BroAction
@@ -33,12 +33,18 @@ public sealed class BroAction
     /// <summary>Extra check on the whole selection before offering this on the wheel.</summary>
     public Func<IReadOnlyList<string>, bool>? OfferFor { get; init; }
     public required ActionRunner Run { get; init; }
+    /// <summary>Opens an editor window first (the scanner) instead of starting a job straight away.</summary>
+    public bool OpensEditor { get; init; }
 
     public bool Accepts(string path) => AcceptsExtension(Path.GetExtension(path));
 }
 
 public static class ActionCatalog
 {
+    // Declared before All: static fields initialise in order, and Build() reads this.
+    static readonly (long Bytes, string Id)[] SizeLimits =
+        [(100 * 1024, "100kb"), (200 * 1024, "200kb"), (1024 * 1024, "1mb"), (2 * 1024 * 1024, "2mb")];
+
     public static IReadOnlyList<BroAction> All { get; } = Build();
 
     public static BroAction? Find(string id) => All.FirstOrDefault(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
@@ -111,7 +117,7 @@ public static class ActionCatalog
             Label = "Compress",
             Short = "Compress",
             Hint = "Same look, smaller file",
-            Glyph = "",
+            Glyph = "îœ¿",
             Group = ActionGroup.Tool,
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico"),
@@ -123,7 +129,7 @@ public static class ActionCatalog
             Label = "Resize to 50%",
             Short = "Half size",
             Hint = "Half the width and height",
-            Glyph = "",
+            Glyph = "îœŸ",
             Group = ActionGroup.Tool,
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico"),
@@ -134,8 +140,8 @@ public static class ActionCatalog
             Id = "image-rotate",
             Label = "Rotate right",
             Short = "Rotate",
-            Hint = "Turn 90° clockwise",
-            Glyph = "",
+            Hint = "Turn 90Â° clockwise",
+            Glyph = "îž­",
             Group = ActionGroup.Tool,
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico"),
@@ -147,12 +153,42 @@ public static class ActionCatalog
             Label = "Remove metadata",
             Short = "Metadata",
             Hint = "Strip camera, date and location info",
-            Glyph = "",
+            Glyph = "î£¬",
             Group = ActionGroup.Tool,
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico", ".gif"),
             Run = PerFile(ImageTools.StripMetadata),
         });
+
+        list.Add(new BroAction
+        {
+            Id = "image-scan",
+            Label = "Scan documentâ€¦",
+            Short = "Scan",
+            Hint = "Crop, straighten and clean up a photo of paper",
+            Glyph = "\uE7A8",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Image,
+            AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico", ".gif"),
+            Combine = true,
+            OpensEditor = true,
+            Run = (_, _, _) => throw new InvalidOperationException("The scanner opens its own window."),
+        });
+        list.Add(CopyText(FileKind.Image, Kind(FileKind.Image, ".svg", ".ico")));
+
+        // Size limits for forms and uploads, on their own page.
+        foreach (var (bytes, id) in SizeLimits)
+            list.Add(new BroAction
+            {
+                Id = $"image-under-{id}",
+                Label = $"Shrink under {SizeTools.Label(bytes)}",
+                Short = SizeTools.Label(bytes),
+                Hint = $"Smallest change that fits under {SizeTools.Label(bytes)}",
+                Group = ActionGroup.Size,
+                Kind = FileKind.Image,
+                AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico", ".gif"),
+                Run = PerFile(input => SizeTools.FitImage(input, bytes)),
+            });
 
         // ---- Video ----
         void Video(string id, string label, string shortName, string hint, string ext, string[] args,
@@ -180,18 +216,18 @@ public static class ActionCatalog
         Video("video-gif", "to GIF", "GIF", "Looping GIF, 480 px wide", ".gif", MediaTools.ToGif);
         Video("video-mp3", "Extract audio (MP3)", "MP3", "Just the sound", ".mp3", MediaTools.ToMp3);
         Video("video-compress", "Compress", "Compress", "Smaller MP4, up to 1080p", ".mp4", MediaTools.CompressVideo, "small",
-            group: ActionGroup.Tool, glyph: "");
+            group: ActionGroup.Tool, glyph: "îœ¿");
         Video("video-half", "Resize to 50%", "Half size", "Half the width and height", ".mp4", MediaTools.HalfSize, "50%",
-            group: ActionGroup.Tool, glyph: "");
-        Video("video-rotate", "Rotate right", "Rotate", "Turn 90° clockwise", ".mp4", MediaTools.RotateRight, "rotated",
-            group: ActionGroup.Tool, glyph: "");
+            group: ActionGroup.Tool, glyph: "îœŸ");
+        Video("video-rotate", "Rotate right", "Rotate", "Turn 90Â° clockwise", ".mp4", MediaTools.RotateRight, "rotated",
+            group: ActionGroup.Tool, glyph: "îž­");
         list.Add(new BroAction
         {
             Id = "video-mute",
             Label = "Remove audio",
             Short = "Mute",
             Hint = "Same video, no sound",
-            Glyph = "",
+            Glyph = "î",
             Group = ActionGroup.Tool,
             Kind = FileKind.Video,
             AcceptsExtension = Kind(FileKind.Video),
@@ -229,7 +265,7 @@ public static class ActionCatalog
             Label = "Even out volume",
             Short = "Loudness",
             Hint = "Quiet and loud parts end up evenly loud",
-            Glyph = "",
+            Glyph = "î§",
             Group = ActionGroup.Tool,
             Kind = FileKind.Audio,
             AcceptsExtension = Kind(FileKind.Audio),
@@ -267,7 +303,7 @@ public static class ActionCatalog
             Label = "Split into pages",
             Short = "Split",
             Hint = "One PDF per page",
-            Glyph = "",
+            Glyph = "î£†",
             Group = ActionGroup.Tool,
             Kind = FileKind.Pdf,
             AcceptsExtension = Kind(FileKind.Pdf),
@@ -279,7 +315,7 @@ public static class ActionCatalog
             Label = "Merge",
             Short = "Merge",
             Hint = "Join PDFs and images in name order",
-            Glyph = "",
+            Glyph = "îœ›",
             Group = ActionGroup.Tool,
             Kind = FileKind.Pdf,
             AcceptsExtension = ext => FileKinds.OfExtension(ext) is FileKind.Pdf or FileKind.Image,
@@ -289,8 +325,36 @@ public static class ActionCatalog
             Run = (inputs, progress, ct) => Task.Run<IReadOnlyList<string>>(() => [PdfTools.Combine(inputs, progress)], ct),
         });
 
+        list.Add(CopyText(FileKind.Pdf, Kind(FileKind.Pdf)));
+        foreach (var (bytes, id) in SizeLimits)
+            list.Add(new BroAction
+            {
+                Id = $"pdf-under-{id}",
+                Label = $"Shrink under {SizeTools.Label(bytes)}",
+                Short = SizeTools.Label(bytes),
+                Hint = "Fits the limit; pages become images",
+                Group = ActionGroup.Size,
+                Kind = FileKind.Pdf,
+                AcceptsExtension = Kind(FileKind.Pdf),
+                Run = PerFileMany((input, progress) => [SizeTools.FitPdf(input, bytes, progress)]),
+            });
+
         return list;
     }
+
+    static BroAction CopyText(FileKind kind, Func<string, bool> accepts) => new()
+    {
+        Id = kind == FileKind.Pdf ? "pdf-text" : "image-text",
+        Label = "Copy text",
+        Short = "Copy text",
+        Hint = "Reads the text and puts it on the clipboard",
+        Glyph = "\uE8C8",
+        Group = ActionGroup.Tool,
+        Kind = kind,
+        AcceptsExtension = accepts,
+        Combine = true,
+        Run = TextTools.CopyText,
+    };
 
     static ActionRunner PerFile(Func<string, string> convert) =>
         PerFileMany((input, _) => [convert(input)]);

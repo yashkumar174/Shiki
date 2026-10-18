@@ -223,7 +223,7 @@ public sealed class ToastWindow : Window
                 SetShimmer(false);
                 AnimateBar(1);
                 _tileGlyph.Text = "îœ¾";
-                _status.Text = DoneText(_job.Outputs);
+                _status.Text = _job.Note ?? DoneText(_job.Outputs);
                 _buttons.Children.Clear();
                 if (_job.Outputs.Count > 0)
                 {

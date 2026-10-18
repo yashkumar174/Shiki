@@ -20,6 +20,8 @@ public sealed class Job
     public double Progress { get; private set; }
     public IReadOnlyList<string> Outputs { get; private set; } = [];
     public string? Error { get; private set; }
+    /// <summary>Optional one-liner for the toast, e.g. "Copied 214 words to the clipboard".</summary>
+    public string? Note { get; internal set; }
 
     public event Action<Job>? Changed;
 
@@ -42,6 +44,17 @@ public sealed class Job
         if (value - Progress < 0.01 && value < 1) return;
         Progress = value;
         Changed?.Invoke(this);
+    }
+}
+
+/// <summary>Lets a converter leave a note on the job it's running in.</summary>
+public static class JobNotes
+{
+    internal static readonly AsyncLocal<Job?> Current = new();
+
+    public static void Say(string note)
+    {
+        if (Current.Value is { } job) job.Note = note;
     }
 }
 
@@ -76,6 +89,7 @@ public static class JobRunner
             try
             {
                 job.Set(JobState.Running, 0);
+                JobNotes.Current.Value = job;
                 Log.Info($"Running {job.Action.Id} on {string.Join(", ", job.Inputs)}");
                 var progress = new ProgressSink(job.ReportProgress);
                 var outputs = await job.Action.Run(job.Inputs, progress, job.Cancel.Token);
