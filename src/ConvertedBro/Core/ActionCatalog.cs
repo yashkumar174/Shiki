@@ -9,22 +9,28 @@ namespace ConvertedBro.Core;
 
 public delegate Task<IReadOnlyList<string>> ActionRunner(IReadOnlyList<string> inputs, IProgress<double> progress, CancellationToken ct);
 
+/// <summary>Which page of the wheel an action sits on.</summary>
+public enum ActionGroup { Format, Tool }
+
 /// <summary>One thing the bro can do to files, e.g. "to MP4".</summary>
 public sealed class BroAction
 {
     public required string Id { get; init; }
     /// <summary>Text in the Explorer menu, e.g. "to MP4".</summary>
     public required string Label { get; init; }
-    /// <summary>Text on the radial bubble, e.g. "MP4".</summary>
+    /// <summary>Text on the wheel, e.g. "MP4" or "Compress".</summary>
     public required string Short { get; init; }
     public required string Hint { get; init; }
     public required FileKind Kind { get; init; }
+    public ActionGroup Group { get; init; } = ActionGroup.Format;
+    /// <summary>Segoe Fluent Icons glyph for tools; formats are text only.</summary>
+    public string? Glyph { get; init; }
     /// <summary>Which source extensions this action is offered for.</summary>
     public required Func<string, bool> AcceptsExtension { get; init; }
     /// <summary>True when all files go into a single run (merge); false runs once per file.</summary>
     public bool Combine { get; init; }
     public int MinFiles { get; init; } = 1;
-    /// <summary>Extra check on the whole selection before offering this in the radial menu.</summary>
+    /// <summary>Extra check on the whole selection before offering this on the wheel.</summary>
     public Func<IReadOnlyList<string>, bool>? OfferFor { get; init; }
     public required ActionRunner Run { get; init; }
 
@@ -37,12 +43,15 @@ public static class ActionCatalog
 
     public static BroAction? Find(string id) => All.FirstOrDefault(a => a.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
 
-    /// <summary>Actions that make sense for a dropped/selected set of files, best first.</summary>
+    /// <summary>The kind most of the selection is; its actions are the ones offered.</summary>
+    public static FileKind DominantKind(IReadOnlyList<string> files) =>
+        files.GroupBy(FileKinds.Of).Where(g => g.Key != FileKind.Unknown)
+            .OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefault();
+
+    /// <summary>Actions that make sense for a dropped/selected set of files, in catalog order.</summary>
     public static IReadOnlyList<BroAction> For(IReadOnlyList<string> files)
     {
-        // Offer the actions of the most common kind in the selection.
-        var kind = files.GroupBy(FileKinds.Of).Where(g => g.Key != FileKind.Unknown)
-            .OrderByDescending(g => g.Count()).Select(g => g.Key).FirstOrDefault();
+        var kind = DominantKind(files);
         if (kind == FileKind.Unknown) return [];
 
         return All.Where(a =>
@@ -81,10 +90,9 @@ public static class ActionCatalog
         });
 
         ImageTo(".png", "PNG", "Lossless, keeps transparency", ".png");
-        ImageTo(".jpg", "JPG", "Small photo, works everywhere", ".jpg", ".jpeg", ".jfif");
+        ImageTo(".jpg", "JPG", "Small photo that opens anywhere", ".jpg", ".jpeg", ".jfif");
         ImageTo(".webp", "WEBP", "Modern web image, tiny files", ".webp");
-        ImageTo(".ico", "ICO", "Windows icon, all sizes", ".ico");
-
+        ImageTo(".ico", "ICO", "Windows icon in every size", ".ico");
         list.Add(new BroAction
         {
             Id = "image-pdf",
@@ -96,12 +104,15 @@ public static class ActionCatalog
             Combine = true,
             Run = (inputs, progress, ct) => Task.Run<IReadOnlyList<string>>(() => [PdfTools.Combine(inputs, progress)], ct),
         });
+
         list.Add(new BroAction
         {
             Id = "image-compress",
             Label = "Compress",
-            Short = "Smaller",
+            Short = "Compress",
             Hint = "Same look, smaller file",
+            Glyph = "",
+            Group = ActionGroup.Tool,
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico"),
             Run = PerFile(ImageTools.Compress),
@@ -110,42 +121,78 @@ public static class ActionCatalog
         {
             Id = "image-half",
             Label = "Resize to 50%",
-            Short = "50%",
+            Short = "Half size",
             Hint = "Half the width and height",
+            Glyph = "",
+            Group = ActionGroup.Tool,
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico"),
             Run = PerFile(input => ImageTools.Resize(input, 50)),
         });
-
-        // ---- Video ----
-        void VideoTo(string id, string label, string shortName, string hint, string ext, string[] args,
-            string? suffix = null, Func<string, bool>? accepts = null) => list.Add(new BroAction
+        list.Add(new BroAction
         {
-            Id = id,
-            Label = label,
-            Short = shortName,
-            Hint = hint,
-            Kind = FileKind.Video,
-            AcceptsExtension = accepts ?? Kind(FileKind.Video),
-            Run = PerFileAsync((input, progress, ct) =>
-            {
-                var output = OutputPaths.Next(input, ext, suffix);
-                return (output, MediaTools.RunAsync(input, output, args, progress, ct));
-            }),
+            Id = "image-rotate",
+            Label = "Rotate right",
+            Short = "Rotate",
+            Hint = "Turn 90° clockwise",
+            Glyph = "",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Image,
+            AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico"),
+            Run = PerFile(ImageTools.RotateRight),
+        });
+        list.Add(new BroAction
+        {
+            Id = "image-strip",
+            Label = "Remove metadata",
+            Short = "Metadata",
+            Hint = "Strip camera, date and location info",
+            Glyph = "",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Image,
+            AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico", ".gif"),
+            Run = PerFile(ImageTools.StripMetadata),
         });
 
-        VideoTo("video-mp4", "to MP4", "MP4", "H.264, plays everywhere", ".mp4", MediaTools.ToMp4,
+        // ---- Video ----
+        void Video(string id, string label, string shortName, string hint, string ext, string[] args,
+            string? suffix = null, Func<string, bool>? accepts = null, ActionGroup group = ActionGroup.Format, string? glyph = null) =>
+            list.Add(new BroAction
+            {
+                Id = id,
+                Label = label,
+                Short = shortName,
+                Hint = hint,
+                Glyph = glyph,
+                Group = group,
+                Kind = FileKind.Video,
+                AcceptsExtension = accepts ?? Kind(FileKind.Video),
+                Run = PerFileAsync((input, progress, ct) =>
+                {
+                    var output = OutputPaths.Next(input, ext, suffix);
+                    return (output, MediaTools.RunAsync(input, output, args, progress, ct));
+                }),
+            });
+
+        Video("video-mp4", "to MP4", "MP4", "H.264, plays everywhere", ".mp4", MediaTools.ToMp4,
             accepts: ext => Kind(FileKind.Video, ".mp4")(ext) || ext.Equals(".gif", StringComparison.OrdinalIgnoreCase));
-        VideoTo("video-webm", "to WEBM", "WEBM", "VP9 for the web", ".webm", MediaTools.ToWebm, accepts: Kind(FileKind.Video, ".webm"));
-        VideoTo("video-gif", "to GIF", "GIF", "Looping GIF, 480px wide", ".gif", MediaTools.ToGif);
-        VideoTo("video-mp3", "Extract audio (MP3)", "MP3", "Just the sound", ".mp3", MediaTools.ToMp3);
-        VideoTo("video-compress", "Compress", "Smaller", "Smaller MP4, max 1080p", ".mp4", MediaTools.CompressVideo, "small");
+        Video("video-webm", "to WEBM", "WEBM", "VP9 for the web", ".webm", MediaTools.ToWebm, accepts: Kind(FileKind.Video, ".webm"));
+        Video("video-gif", "to GIF", "GIF", "Looping GIF, 480 px wide", ".gif", MediaTools.ToGif);
+        Video("video-mp3", "Extract audio (MP3)", "MP3", "Just the sound", ".mp3", MediaTools.ToMp3);
+        Video("video-compress", "Compress", "Compress", "Smaller MP4, up to 1080p", ".mp4", MediaTools.CompressVideo, "small",
+            group: ActionGroup.Tool, glyph: "");
+        Video("video-half", "Resize to 50%", "Half size", "Half the width and height", ".mp4", MediaTools.HalfSize, "50%",
+            group: ActionGroup.Tool, glyph: "");
+        Video("video-rotate", "Rotate right", "Rotate", "Turn 90° clockwise", ".mp4", MediaTools.RotateRight, "rotated",
+            group: ActionGroup.Tool, glyph: "");
         list.Add(new BroAction
         {
             Id = "video-mute",
             Label = "Remove audio",
             Short = "Mute",
             Hint = "Same video, no sound",
+            Glyph = "",
+            Group = ActionGroup.Tool,
             Kind = FileKind.Video,
             AcceptsExtension = Kind(FileKind.Video),
             Run = PerFileAsync((input, progress, ct) =>
@@ -172,10 +219,26 @@ public static class ActionCatalog
         });
 
         AudioTo(".mp3", "MP3", "Plays on anything", MediaTools.ToMp3);
-        AudioTo(".m4a", "M4A", "AAC, great for phones", MediaTools.ToM4a);
+        AudioTo(".m4a", "M4A", "AAC, great on phones", MediaTools.ToM4a);
         AudioTo(".wav", "WAV", "Uncompressed, for editing", MediaTools.ToWav);
         AudioTo(".flac", "FLAC", "Lossless, smaller than WAV", MediaTools.ToFlac);
         AudioTo(".ogg", "OGG", "Open format, Vorbis", MediaTools.ToOgg);
+        list.Add(new BroAction
+        {
+            Id = "audio-normalize",
+            Label = "Even out volume",
+            Short = "Loudness",
+            Hint = "Quiet and loud parts end up evenly loud",
+            Glyph = "",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Audio,
+            AcceptsExtension = Kind(FileKind.Audio),
+            Run = PerFileAsync((input, progress, ct) =>
+            {
+                var output = OutputPaths.Next(input, Path.GetExtension(input), "leveled");
+                return (output, MediaTools.RunAsync(input, output, MediaTools.Normalize, progress, ct));
+            }),
+        });
 
         // ---- PDF ----
         list.Add(new BroAction
@@ -193,7 +256,7 @@ public static class ActionCatalog
             Id = "pdf-jpg",
             Label = "Pages to JPG",
             Short = "JPG",
-            Hint = "Every page as a photo-sized image",
+            Hint = "Every page as a lighter image",
             Kind = FileKind.Pdf,
             AcceptsExtension = Kind(FileKind.Pdf),
             Run = PerFileMany((input, progress) => PdfTools.ToImages(input, ".jpg", progress)),
@@ -204,6 +267,8 @@ public static class ActionCatalog
             Label = "Split into pages",
             Short = "Split",
             Hint = "One PDF per page",
+            Glyph = "",
+            Group = ActionGroup.Tool,
             Kind = FileKind.Pdf,
             AcceptsExtension = Kind(FileKind.Pdf),
             Run = PerFileMany(PdfTools.Split),
@@ -213,7 +278,9 @@ public static class ActionCatalog
             Id = "pdf-merge",
             Label = "Merge",
             Short = "Merge",
-            Hint = "Join PDFs (and images) in order",
+            Hint = "Join PDFs and images in name order",
+            Glyph = "",
+            Group = ActionGroup.Tool,
             Kind = FileKind.Pdf,
             AcceptsExtension = ext => FileKinds.OfExtension(ext) is FileKind.Pdf or FileKind.Image,
             Combine = true,

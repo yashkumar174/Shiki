@@ -30,6 +30,8 @@ public partial class App : Application
     BuddyWindow? _buddy;
     TrayIcon? _tray;
     GlobalMouseHook? _hook;
+    ConvertWheel? _dragWheel;
+    BroMenu? _menu;
     bool _headless;
     readonly Dictionary<string, List<string>> _pending = new(StringComparer.OrdinalIgnoreCase);
     readonly DispatcherTimer _batchTimer = new() { Interval = BatchWindow };
@@ -139,7 +141,7 @@ public partial class App : Application
             if (key == "menu")
             {
                 NativeMethods.GetCursorPos(out var cursor);
-                ShowRadial(files, new Point(cursor.X, cursor.Y));
+                ShowWheel(files, new Point(cursor.X, cursor.Y));
                 continue;
             }
             var action = ActionCatalog.Find(key);
@@ -160,14 +162,60 @@ public partial class App : Application
             ToastHost.Show(ToastWindow.Message("Nothing to do", $"None of those files can be used for \"{action.Label}\"."));
     }
 
-    public void ShowRadial(IReadOnlyList<string> files, Point centerPx)
+    public void ShowWheel(IReadOnlyList<string> files, Point centerPx)
     {
         if (files.Count == 0) return;
-        _buddy?.CancelReturn();
-        var menu = new RadialMenuWindow(files, ActionCatalog.For(files), centerPx);
-        menu.ActionChosen += action => StartJob(action, files.ToList());
-        menu.Closed += (_, _) => _buddy?.ReturnHome();
-        menu.Show();
+        var wheel = new ConvertWheel(ConvertWheel.WheelMode.Click, centerPx, files);
+        wheel.ActionChosen += (action, chosen) => StartJob(action, chosen.ToList());
+        wheel.Show();
+    }
+
+    /// <summary>Shift + drag: open the wheel right under the cursor so the file can be dropped on a wedge.</summary>
+    void OpenDragWheel(int xPx, int yPx)
+    {
+        _dragWheel?.CloseAnimated();
+        var wheel = new ConvertWheel(ConvertWheel.WheelMode.Drag, new Point(xPx, yPx));
+        wheel.ActionChosen += (action, files) => StartJob(action, files.ToList());
+        wheel.Closed += (_, _) => { if (_dragWheel == wheel) _dragWheel = null; };
+        _dragWheel = wheel;
+        _buddy?.Notice(true);
+        wheel.Show();
+    }
+
+    void ShowMenu(Point anchorPx)
+    {
+        _menu?.CloseAnimated();
+        bool visible = _buddy?.IsVisible ?? false;
+        _menu = new BroMenu(anchorPx, "Drop files on me, or Shift + drag one anywhere.",
+        [
+            new MenuEntry("", "Convert files…", PickFiles),
+            new MenuEntry(visible ? "" : "", visible ? "Hide the bro" : "Show the bro", () => SetBuddyVisible(!visible)),
+            null,
+            new MenuEntry("", "Right-click menu in Explorer", ToggleExplorerMenu, ContextMenuRegistrar.IsRegistered),
+            new MenuEntry("", "Shift + drag opens the wheel", ToggleShiftDrag, () => _settings.ShiftDragSummon),
+            new MenuEntry("", "Start with Windows", () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath), StartupRegistration.IsEnabled),
+            null,
+            new MenuEntry("", "Open log folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Log.DataDir}\"") { UseShellExecute = true })),
+            new MenuEntry("", "Quit", () => Shutdown()),
+        ]);
+        _menu.Closed += (_, _) => _menu = null;
+        _menu.Show();
+    }
+
+    void ToggleExplorerMenu()
+    {
+        bool on = !ContextMenuRegistrar.IsRegistered();
+        if (on) ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile());
+        else ContextMenuRegistrar.Unregister();
+        ToastHost.Show(ToastWindow.Message(on ? "Added to Explorer" : "Removed from Explorer",
+            on ? "Right-click a file, choose Show more options, then Convert with Bro." : "Convert with Bro is no longer in the right-click menu."));
+    }
+
+    void ToggleShiftDrag()
+    {
+        _settings.ShiftDragSummon = !_settings.ShiftDragSummon;
+        _settings.Save();
+        if (_settings.ShiftDragSummon) _hook?.Start(); else _hook?.Stop();
     }
 
     // ---- Buddy mode ----
@@ -179,42 +227,24 @@ public partial class App : Application
         _idleTimer.Stop();
 
         _tray = new TrayIcon();
-        _tray.ToggleBuddy += () => SetBuddyVisible(!(_buddy?.IsVisible ?? false));
-        _tray.PickFiles += PickFiles;
-        _tray.ExplorerMenuChanged += on =>
-        {
-            if (on) ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile());
-            else ContextMenuRegistrar.Unregister();
-            ToastHost.Show(ToastWindow.Message(on ? "Explorer menu added" : "Explorer menu removed",
-                on ? "Right-click a file → Show more options → Convert with Bro." : "The right-click entry is gone."));
-            SyncTray();
-        };
-        _tray.StartupChanged += on => { StartupRegistration.Set(on, ExePath); SyncTray(); };
-        _tray.ShiftDragChanged += on =>
-        {
-            _settings.ShiftDragSummon = on;
-            _settings.Save();
-            if (on) _hook?.Start(); else _hook?.Stop();
-        };
-        _tray.OpenDataFolder += () => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Log.DataDir}\"") { UseShellExecute = true });
-        _tray.Quit += () => Shutdown();
+        _tray.Clicked += () => SetBuddyVisible(!(_buddy?.IsVisible ?? false));
+        _tray.MenuRequested += ShowMenu;
 
         _buddy = new BuddyWindow(_settings);
-        _buddy.FilesDropped += (paths, center) => ShowRadial(FileList.Expand(paths), center);
-        _buddy.MenuRequested += () => _tray.ShowMenuAtCursor();
+        _buddy.FilesDropped += (paths, center) => ShowWheel(FileList.Expand(paths), center);
+        _buddy.MenuRequested += ShowMenu;
         _buddy.PickFilesRequested += PickFiles;
         ToastHost.Avoid = () => _buddy is { IsVisible: true } b ? new Rect(b.Left, b.Top, b.Width, b.Height) : null;
         if (_settings.BuddyVisible) _buddy.Show();
 
         _hook = new GlobalMouseHook();
-        _hook.ShiftDragStarted += (x, y) => Dispatcher.BeginInvoke(() =>
+        _hook.ShiftDragStarted += (x, y) => Dispatcher.BeginInvoke(() => OpenDragWheel(x, y));
+        _hook.DragEnded += () => Dispatcher.BeginInvoke(() =>
         {
-            if (_buddy is { } b && _settings.BuddyVisible) b.SummonNear(x, y);
+            _dragWheel?.OnDragEnded();
+            _buddy?.Notice(false);
         });
-        _hook.DragEnded += () => Dispatcher.BeginInvoke(() => _buddy?.OnSummonDragEnded());
         if (_settings.ShiftDragSummon) _hook.Start();
-
-        SyncTray();
     }
 
     void SetBuddyVisible(bool visible)
@@ -223,11 +253,7 @@ public partial class App : Application
         if (visible) _buddy.Show(); else _buddy.Hide();
         _settings.BuddyVisible = visible;
         _settings.Save();
-        SyncTray();
     }
-
-    void SyncTray() => _tray?.Sync(_buddy?.IsVisible ?? false, ContextMenuRegistrar.IsRegistered(),
-        StartupRegistration.IsEnabled(), _settings.ShiftDragSummon);
 
     void PickFiles()
     {
@@ -240,7 +266,7 @@ public partial class App : Application
         if (dialog.ShowDialog() != true) return;
         NativeMethods.GetCursorPos(out var cursor);
         var center = _buddy is { IsVisible: true } b ? b.CenterPx() : new Point(cursor.X, cursor.Y);
-        ShowRadial(dialog.FileNames, center);
+        ShowWheel(dialog.FileNames, center);
     }
 
     void ExitIfIdle()

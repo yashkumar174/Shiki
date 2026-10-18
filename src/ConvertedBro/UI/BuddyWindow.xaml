@@ -5,7 +5,7 @@
         Width="140" Height="140"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="NoResize" Topmost="True" ShowInTaskbar="False" ShowActivated="False"
-        AllowDrop="True" ToolTip="Drop files on me · right-click for options">
+        AllowDrop="True" UseLayoutRounding="True">
     <Grid x:Name="Root" RenderTransformOrigin="0.5,0.5">
         <Grid.RenderTransform>
             <ScaleTransform x:Name="RootScale" ScaleX="1" ScaleY="1" />
@@ -14,46 +14,87 @@
         <!-- Nearly invisible disc so drops land anywhere around the bro, not only on his pixels. -->
         <Ellipse Width="134" Height="134" Fill="#01000000" />
 
-        <Ellipse x:Name="Glow" Width="128" Height="128" Opacity="0" IsHitTestVisible="False">
+        <Ellipse x:Name="Glow" Width="136" Height="136" Opacity="0" IsHitTestVisible="False">
             <Ellipse.Fill>
                 <RadialGradientBrush>
-                    <GradientStop Color="#B08B7CFF" Offset="0.55" />
+                    <GradientStop Color="#C08B7CFF" Offset="0.5" />
                     <GradientStop Color="#008B7CFF" Offset="1" />
                 </RadialGradientBrush>
             </Ellipse.Fill>
         </Ellipse>
 
-        <Ellipse x:Name="BusyRing" Width="110" Height="110" Opacity="0" IsHitTestVisible="False"
-                 Stroke="#B9F5FF" StrokeThickness="3" StrokeDashArray="5 4" StrokeDashCap="Round"
+        <Ellipse x:Name="BusyRing" Width="112" Height="112" Opacity="0" IsHitTestVisible="False"
+                 StrokeThickness="2.5" StrokeDashArray="0 6 18 6" StrokeDashCap="Round"
                  RenderTransformOrigin="0.5,0.5">
+            <Ellipse.Stroke>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Color="#B9F5FF" Offset="0" />
+                    <GradientStop Color="#8B7CFF" Offset="1" />
+                </LinearGradientBrush>
+            </Ellipse.Stroke>
             <Ellipse.RenderTransform>
                 <RotateTransform x:Name="BusyRotate" />
             </Ellipse.RenderTransform>
         </Ellipse>
 
-        <Ellipse Width="70" Height="12" VerticalAlignment="Bottom" Margin="0,0,0,16" Fill="#55000000" IsHitTestVisible="False">
-            <Ellipse.Effect>
-                <BlurEffect Radius="8" />
-            </Ellipse.Effect>
+        <!-- Ground shadow: shrinks a little as the bro floats up. -->
+        <Ellipse x:Name="Shadow" Width="66" Height="11" VerticalAlignment="Bottom" Margin="0,0,0,17"
+                 IsHitTestVisible="False" RenderTransformOrigin="0.5,0.5">
+            <Ellipse.Fill>
+                <RadialGradientBrush>
+                    <GradientStop Color="#70000000" Offset="0" />
+                    <GradientStop Color="#00000000" Offset="1" />
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+            <Ellipse.RenderTransform>
+                <ScaleTransform x:Name="ShadowScale" />
+            </Ellipse.RenderTransform>
         </Ellipse>
 
-        <Grid x:Name="Body" Width="88" Height="88" RenderTransformOrigin="0.5,0.5" Cursor="Hand">
+        <Grid x:Name="Body" Width="88" Height="88" RenderTransformOrigin="0.5,1" Cursor="Hand">
             <Grid.RenderTransform>
                 <TransformGroup>
+                    <ScaleTransform x:Name="BodyBreath" />
                     <ScaleTransform x:Name="BodySquash" />
                     <TranslateTransform x:Name="BodyBob" />
                 </TransformGroup>
             </Grid.RenderTransform>
 
+            <!-- Body: base colour, then a soft light from the top-left and a shade at the bottom. -->
             <Ellipse>
                 <Ellipse.Fill>
-                    <LinearGradientBrush StartPoint="0.2,0" EndPoint="0.8,1">
-                        <GradientStop Color="#A08BFF" Offset="0" />
-                        <GradientStop Color="#5B48F2" Offset="1" />
+                    <LinearGradientBrush StartPoint="0.25,0" EndPoint="0.75,1">
+                        <GradientStop Color="#A693FF" Offset="0" />
+                        <GradientStop Color="#7564FF" Offset="0.55" />
+                        <GradientStop Color="#5442EC" Offset="1" />
                     </LinearGradientBrush>
                 </Ellipse.Fill>
             </Ellipse>
-            <Ellipse Width="40" Height="20" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="16,9,0,0" Fill="#40FFFFFF" />
+            <Ellipse>
+                <Ellipse.Fill>
+                    <RadialGradientBrush GradientOrigin="0.3,0.22" Center="0.32,0.25" RadiusX="0.62" RadiusY="0.62">
+                        <GradientStop Color="#55FFFFFF" Offset="0" />
+                        <GradientStop Color="#00FFFFFF" Offset="1" />
+                    </RadialGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+            <Ellipse>
+                <Ellipse.Fill>
+                    <LinearGradientBrush StartPoint="0.5,0.55" EndPoint="0.5,1">
+                        <GradientStop Color="#00281C8C" Offset="0" />
+                        <GradientStop Color="#55281C8C" Offset="1" />
+                    </LinearGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
+            <Ellipse Stroke="#30FFFFFF" StrokeThickness="1" />
+            <Ellipse Width="30" Height="14" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="19,10,0,0">
+                <Ellipse.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="#70FFFFFF" Offset="0" />
+                        <GradientStop Color="#00FFFFFF" Offset="1" />
+                    </LinearGradientBrush>
+                </Ellipse.Fill>
+            </Ellipse>
 
             <Canvas Width="88" Height="88">
                 <!-- Open eyes; blink by squashing this canvas. -->
@@ -79,20 +120,35 @@
                       StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                       Data="M 24,42 Q 31.5,31 39,42 M 49,42 Q 56.5,31 64,42" />
 
-                <Ellipse Canvas.Left="15" Canvas.Top="50" Width="12" Height="7" Fill="#FF8FB1" Opacity="0.55" />
-                <Ellipse Canvas.Left="61" Canvas.Top="50" Width="12" Height="7" Fill="#FF8FB1" Opacity="0.55" />
+                <Ellipse Canvas.Left="15" Canvas.Top="50" Width="12" Height="7" Opacity="0.6">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#FF9DBE" Offset="0" />
+                            <GradientStop Color="#00FF9DBE" Offset="1" />
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
+                <Ellipse Canvas.Left="61" Canvas.Top="50" Width="12" Height="7" Opacity="0.6">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#FF9DBE" Offset="0" />
+                            <GradientStop Color="#00FF9DBE" Offset="1" />
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
 
                 <Path x:Name="Smile" Stroke="#1E1B3A" StrokeThickness="3.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
                       Data="M 35,56 Q 44,65 53,56" />
-                <Ellipse x:Name="MouthO" Canvas.Left="38" Canvas.Top="53" Width="12" Height="13" Fill="#1E1B3A" Opacity="0" />
+                <Ellipse x:Name="MouthO" Canvas.Left="38.5" Canvas.Top="53" Width="11" Height="12" Fill="#1E1B3A" Opacity="0" />
             </Canvas>
         </Grid>
 
         <Border x:Name="Badge" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,18,16,0"
-                MinWidth="22" Height="22" CornerRadius="11" Background="#FF5D73" Padding="6,0"
+                MinWidth="22" Height="22" CornerRadius="11" Background="#FF5A6E" Padding="6,0"
+                BorderBrush="#30FFFFFF" BorderThickness="1"
                 Visibility="Collapsed" IsHitTestVisible="False">
-            <TextBlock x:Name="BadgeText" Foreground="White" FontWeight="Bold" FontSize="12"
-                       FontFamily="{StaticResource BroFont}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            <TextBlock x:Name="BadgeText" Foreground="White" FontWeight="SemiBold" FontSize="12"
+                       FontFamily="Segoe UI Variable Text, Segoe UI" HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Border>
     </Grid>
 </Window>

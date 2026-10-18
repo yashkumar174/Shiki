@@ -29,7 +29,18 @@ public static partial class MediaTools
         ["-c:v", "libx264", "-preset", "medium", "-crf", "28", "-pix_fmt", "yuv420p",
          "-vf", "scale='min(1920,iw)':-2", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"];
 
+    public static readonly string[] HalfSize =
+        ["-c:v", "libx264", "-preset", "medium", "-crf", "23", "-pix_fmt", "yuv420p",
+         "-vf", "scale=trunc(iw/4)*2:trunc(ih/4)*2", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart"];
+
+    public static readonly string[] RotateRight =
+        ["-c:v", "libx264", "-preset", "medium", "-crf", "20", "-pix_fmt", "yuv420p",
+         "-vf", "transpose=1", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart"];
+
     public static readonly string[] Mute = ["-c:v", "copy", "-an"];
+
+    // loudnorm resamples to 192 kHz internally, so set a normal output rate.
+    public static readonly string[] Normalize = ["-vn", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", "-ar", "48000"];
 
     public static readonly string[] ToMp3 = ["-vn", "-c:a", "libmp3lame", "-q:a", "2"];
     public static readonly string[] ToWav = ["-vn", "-c:a", "pcm_s16le"];

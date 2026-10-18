@@ -83,6 +83,28 @@ public static class ImageTools
         return output;
     }
 
+    public static string RotateRight(string input)
+    {
+        var output = OutputPaths.Next(input, Path.GetExtension(input), "rotated");
+        using var image = Load(input);
+        image.Rotate(90);
+        if (FileKinds.IsJpeg(Path.GetExtension(input))) image.Quality = 92;
+        image.Write(output);
+        return output;
+    }
+
+    /// <summary>Removes EXIF (camera, date, GPS location) and other embedded profiles.</summary>
+    public static string StripMetadata(string input)
+    {
+        var output = OutputPaths.Next(input, Path.GetExtension(input), "clean");
+        // Load applies the camera rotation first, so the photo still looks the same once the tag is gone.
+        using var image = Load(input);
+        image.Strip();
+        if (FileKinds.IsJpeg(Path.GetExtension(input))) image.Quality = 92;
+        image.Write(output);
+        return output;
+    }
+
     /// <summary>Loads a single frame with phone-camera rotation applied.</summary>
     public static MagickImage Load(string input)
     {
