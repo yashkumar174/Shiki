@@ -46,6 +46,7 @@ public sealed class ToastWindow : Window
     // A brush, not an Image: the toast sizes itself to its content, and the glass must not count as content.
     readonly Border _glass = new() { IsHitTestVisible = false };
     readonly DispatcherTimer _glassRefresh = new() { Interval = TimeSpan.FromMilliseconds(900) };
+    LiveGlass? _live;
     Border? _card;
     readonly DispatcherTimer _autoClose = new();
     bool _closing, _shimmering;
@@ -95,14 +96,14 @@ public sealed class ToastWindow : Window
         {
             if (!_pixel)
             {
-                RenderGlass(Glass.Capture(Glass.ToPixels(this, new Rect(Left, Top, Width, ActualHeight))));
-                _glassRefresh.Start();
+                if (LiveGlass.Enabled) StartLiveGlass();
+                else RenderGlass(Glass.Capture(Glass.ToPixels(this, new Rect(Left, Top, Width, ActualHeight))));
             }
             AnimateIn();
         };
         // Keep the glass in step with what's behind it (it moves when cards restack, and the desktop changes).
         _glassRefresh.Tick += (_, _) => RefreshGlass();
-        Closed += (_, _) => _glassRefresh.Stop();
+        Closed += (_, _) => { _glassRefresh.Stop(); _live?.Dispose(); };
 
         _autoClose.Tick += (_, _) => CloseAnimated();
         MouseEnter += (_, _) => { _autoClose.Stop(); FadeClose(1); };
@@ -401,6 +402,27 @@ public sealed class ToastWindow : Window
         var fade = new DoubleAnimation(0, TimeSpan.FromMilliseconds(170)) { EasingFunction = ease };
         fade.Completed += (_, _) => Close();
         BeginAnimation(OpacityProperty, fade);
+    }
+
+    void StartLiveGlass()
+    {
+        var pixels = Glass.ToPixels(this, new Rect(Left, Top, Width, ActualHeight));
+        _live = new LiveGlass(this, source => _glass.Background = new ImageBrush(source) { Stretch = Stretch.Fill }, fps: 20);
+        _live.SetPlan(GlassPlan.Create(GlassShapes.Field(pixels.Width, pixels.Height, ToastShape(pixels)), pixels.Width, pixels.Height, ToastStyle(pixels)));
+        _live.Start();
+    }
+
+    Func<double, double, double> ToastShape(Int32Rect pixels)
+    {
+        double scale = pixels.Width / Width;
+        var card = new Rect(Pad * scale, Pad * scale, (Width - Pad * 2) * scale, (pixels.Height / scale - Pad * 2) * scale);
+        return GlassShapes.RoundedRect(card, 18 * scale);
+    }
+
+    LiquidGlassStyle ToastStyle(Int32Rect pixels)
+    {
+        double scale = pixels.Width / Width;
+        return ConvertWheel.GlassStyle(_p, bezel: 18 * scale, refraction: 18 * scale, frost: 10);
     }
 
     void RenderGlass(BitmapSource? snapshot)

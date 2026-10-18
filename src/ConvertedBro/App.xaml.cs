@@ -93,6 +93,7 @@ public partial class App : Application
         _instance.StartServer();
         _settings = Settings.Load();
         Theme.Style = _settings.Style;
+        LiveGlass.Enabled = _settings.LiveGlass;
         _batchTimer.Tick += (_, _) => FlushBatches();
 
         JobRunner.JobStarted += job => Dispatcher.BeginInvoke(() =>
@@ -233,6 +234,7 @@ public partial class App : Application
             null,
             new MenuEntry("\uE8B7", "Right-click menu in Explorer", ToggleExplorerMenu, ContextMenuRegistrar.IsRegistered),
             new MenuEntry("\uE7C9", "Shift + drag opens the wheel", ToggleShiftDrag, () => _settings.ShiftDragSummon),
+            .. (Theme.Arcade ? Array.Empty<object?>() : [new MenuEntry("\uE895", "Glass follows what's behind", ToggleLiveGlass, () => _settings.LiveGlass)]),
             new MenuEntry("\uE7E8", "Start with Windows", () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath), StartupRegistration.IsEnabled),
             null,
             new MenuEntry("\uE81C", "Open log folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Log.DataDir}\"") { UseShellExecute = true })),
@@ -274,6 +276,13 @@ public partial class App : Application
         else ContextMenuRegistrar.Unregister();
         ToastHost.Show(ToastWindow.Message(on ? "Added to Explorer" : "Removed from Explorer",
             on ? "Right-click a file, choose Show more options, then Convert with Bro." : "Convert with Bro is no longer in the right-click menu."));
+    }
+
+    void ToggleLiveGlass()
+    {
+        _settings.LiveGlass = !_settings.LiveGlass;
+        _settings.Save();
+        LiveGlass.Enabled = _settings.LiveGlass;
     }
 
     void ToggleShiftDrag()

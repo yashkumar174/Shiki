@@ -13,6 +13,8 @@ public sealed class Settings
     public string Style { get; set; } = "arcade";
     public bool BuddyVisible { get; set; } = true;
     public bool ShiftDragSummon { get; set; } = true;
+    /// <summary>Glass look: keep the glass in step with what's behind it (hides popups from screen recordings).</summary>
+    public bool LiveGlass { get; set; } = true;
 
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");
 

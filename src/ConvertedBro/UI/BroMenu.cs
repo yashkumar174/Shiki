@@ -37,6 +37,7 @@ public sealed class BroMenu : Window
     readonly Grid _host = new();
     readonly Grid _outer = new();
     readonly Image _glassImage = new() { Stretch = Stretch.Fill, IsHitTestVisible = false };
+    LiveGlass? _live;
     readonly Border _panel;
     readonly TranslateTransform _slide = new();
     readonly DispatcherTimer _outsideClick = new() { Interval = TimeSpan.FromMilliseconds(40) };
@@ -91,7 +92,7 @@ public sealed class BroMenu : Window
                 || (NativeMethods.GetAsyncKeyState(NativeMethods.VK_RBUTTON) & 0x8000) != 0;
             if (pressed && !_panel.IsMouseOver) CloseAnimated();
         };
-        Closed += (_, _) => _outsideClick.Stop();
+        Closed += (_, _) => { _outsideClick.Stop(); _live?.Dispose(); };
     }
 
     void PlaceAndBuild()
@@ -122,13 +123,21 @@ public sealed class BroMenu : Window
         else
         {
             // Liquid glass over the whole window, so its soft shadow can fall outside the panel.
-            var snapshot = Glass.Capture(Glass.ToPixels(this, new Rect(Left, Top, Width, Height)));
-            if (snapshot != null)
+            var pixels = Glass.ToPixels(this, new Rect(Left, Top, Width, Height));
+            double scale = pixels.Width / Width;
+            var shape = GlassShapes.RoundedRect(new Rect(Pad * scale, Pad * scale, rect.Width * scale, rect.Height * scale), _radius * scale);
+            var glassStyle = ConvertWheel.GlassStyle(_p, bezel: 22 * scale, refraction: 22 * scale, frost: 9);
+            var plan = GlassPlan.Create(GlassShapes.Field(pixels.Width, pixels.Height, shape), pixels.Width, pixels.Height, glassStyle);
+            var snapshot = LiveGlass.Enabled ? null : Glass.Capture(pixels);
+            if (LiveGlass.Enabled)
             {
-                double scale = snapshot.PixelWidth / Width;
-                var shape = GlassShapes.RoundedRect(new Rect(Pad * scale, Pad * scale, rect.Width * scale, rect.Height * scale), _radius * scale);
-                var glassStyle = ConvertWheel.GlassStyle(_p, bezel: 22 * scale, refraction: 22 * scale, frost: 9);
-                _glassImage.Source = LiquidGlass.Render(snapshot, GlassShapes.Field(snapshot.PixelWidth, snapshot.PixelHeight, shape), glassStyle);
+                _live = new LiveGlass(this, source => _glassImage.Source = source);
+                _live.SetPlan(plan);
+                _live.Start();
+            }
+            else if (snapshot != null)
+            {
+                _glassImage.Source = plan.Render(snapshot);
             }
             else
             {

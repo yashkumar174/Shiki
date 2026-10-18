@@ -55,7 +55,9 @@ Pick one in the menu:
 3. Give the rim a convex squircle profile, `f(x) = (1 − (1 − x)⁴)^¼`, and bend each ray by Snell's law (air 1.0 → glass 1.5). The sideways offset says where to sample the snapshot, so the rims bend the desktop and the middle stays clear. Red and blue are sampled slightly apart for a hint of colour fringing.
 4. Frost a little, lift saturation, tint, then add a specular rim light from the upper left (and a softer one on the far side) plus a soft drop shadow.
 
-Toasts stay on screen for a while, so they refresh their glass about once a second: the window is excluded from screen capture for a moment (`SetWindowDisplayAffinity`), which lets it see the desktop behind itself without disappearing.
+**Live glass.** The glass follows what's behind it while a popup is open (a video playing, a window moving). Each glass window is excluded from screen capture (`SetWindowDisplayAffinity`, it stays visible on screen), so `LiveGlass` can keep grabbing the area behind it on a background thread. Everything that depends only on the shape (refraction offsets, rim light, shadow) is worked out once in a `GlassPlan`; each frame then only halves and frosts the snapshot and resamples it, and only when the background actually changed. Roughly 7 ms of maths plus about 15 ms for the Windows screen grab per frame, so 25–40 fps depending on size.
+
+Side effect: while live glass is on, the wheel, menu and toasts don't appear in screenshots or screen recordings. Turn off *Glass follows what's behind* in the menu to get a still snapshot instead (and show up in recordings). For a frame dump while tuning, set `CONVERTEDBRO_GLASS_DUMP` to a folder.
 
 The hovered wedge is lit in the colour of the file type: tangerine for images, iris for video, mint for audio, coral for PDF. Design tokens live in `UI/Theme.cs`.
 

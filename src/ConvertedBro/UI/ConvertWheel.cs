@@ -60,6 +60,8 @@ public sealed class ConvertWheel : Window
 
     IReadOnlyList<string> _files;
     BitmapSource? _snapshot;
+    LiveGlass? _live;
+    Int32Rect _glassPixels;
     readonly Image _glass = new() { Stretch = Stretch.Fill, IsHitTestVisible = false };
     int _glassVersion;
     // Pages in order: formats, tools, size limits (only the ones that have something to offer).
@@ -118,7 +120,7 @@ public sealed class ConvertWheel : Window
         _dwell.Tick += (_, _) => { _dwell.Stop(); SwitchPage(); };
         _noFiles.Tick += (_, _) => { _noFiles.Stop(); if (_files.Count == 0) CloseAnimated(); };
         _outsideClick.Tick += (_, _) => CloseOnOutsideClick();
-        Closed += (_, _) => { _dwell.Stop(); _noFiles.Stop(); _outsideClick.Stop(); };
+        Closed += (_, _) => { _dwell.Stop(); _noFiles.Stop(); _outsideClick.Stop(); _live?.Dispose(); };
     }
 
     // ---- Construction ----
@@ -279,7 +281,7 @@ public sealed class ConvertWheel : Window
                 if (animate) wedge.AnimateIn(i * 14, fromAngle);
             }
         }
-        if (!_pixel && _snapshot != null) RenderGlass();
+        if (!_pixel && (_snapshot != null || _live != null)) RenderGlass();
         UpdateHub();
     }
 
@@ -298,8 +300,17 @@ public sealed class ConvertWheel : Window
         Top = Snap(Math.Clamp(center.Y - C, area.Top - margin, area.Bottom - Size + margin));
         if (_pixel) return;
 
+        _glassPixels = Glass.ToPixels(this, new Rect(Left, Top, Size, Size));
+        if (LiveGlass.Enabled)
+        {
+            // Live: keep re-capturing what's behind us while we're open.
+            _live = new LiveGlass(this, source => _glass.Source = source);
+            _live.Start();
+            RenderGlass();
+            return;
+        }
         // Snapshot what's behind us before we become visible; the glass bends this picture.
-        _snapshot = Glass.Capture(Glass.ToPixels(this, new Rect(Left, Top, Size, Size)));
+        _snapshot = Glass.Capture(_glassPixels);
         if (_snapshot == null)
             _glassHost.Children.Add(Glass.Build(null, new EllipseGeometry(new Point(C, C), DiscRadius, DiscRadius), _p));
         else
@@ -312,25 +323,30 @@ public sealed class ConvertWheel : Window
     /// </summary>
     void RenderGlass()
     {
-        var snapshot = _snapshot!;
+        var snapshot = _snapshot;
+        var live = _live;
         int version = ++_glassVersion;
         int count = Math.Max(1, PageActions.Count);
-        double scale = snapshot.PixelWidth / Size;
+        int w = _glassPixels.Width, h = _glassPixels.Height;
+        double scale = w / Size;
         var style = GlassStyle(_p, bezel: 20 * scale, refraction: 28 * scale, frost: 4);
         var center = new Point(C * scale, C * scale);
         double step = Math.PI * 2 / count;
         var shape = GlassShapes.Union(
             GlassShapes.Wedges(center, InnerRadius * scale, OuterRadius * scale, count, -Math.PI / 2 - step / 2, LiquidGap * scale, LiquidCorner * scale),
             GlassShapes.Circle(center, HubRadius * scale));
-        int w = snapshot.PixelWidth, h = snapshot.PixelHeight;
-        System.Threading.Tasks.Task.Run(() => LiquidGlass.Render(snapshot, GlassShapes.Field(w, h, shape), style))
+        System.Threading.Tasks.Task.Run(() => GlassPlan.Create(GlassShapes.Field(w, h, shape), w, h, style))
             .ContinueWith(t =>
             {
                 if (t.IsFaulted) { Log.Error("Liquid glass failed", t.Exception); return; }
+                var plan = t.Result;
+                // Live glass renders frames itself; a snapshot is rendered once, here.
+                var still = live == null && snapshot != null ? plan.Render(snapshot) : null;
                 Dispatcher.BeginInvoke(() =>
                 {
                     if (version != _glassVersion) return;
-                    _glass.Source = t.Result;
+                    if (live != null) live.SetPlan(plan);
+                    else if (still != null) _glass.Source = still;
                 });
             });
     }
