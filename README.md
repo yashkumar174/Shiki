@@ -117,6 +117,23 @@ Needs the .NET 8 SDK. On this machine it's installed at `%USERPROFILE%\.dotnet` 
 
 FFmpeg is not in the repo. Put `ffmpeg.exe` and its DLLs in `tools/ffmpeg/` (the BtbN `win64-gpl-shared` build) and the build copies them next to the exe. The app also finds `ffmpeg.exe` on PATH.
 
+### Installer
+
+```bash
+powershell -ExecutionPolicy Bypass -File build/make-installer.ps1
+```
+
+This publishes the app and packs it with [Velopack](https://velopack.io) (MIT; `dotnet tool install -g vpk`) into `Releases/ConvertedBroApp-win-Setup.exe` (about 120 MB, most of it FFmpeg and the AI runtimes). The version comes from `<Version>` in the project file, or `-Version 1.0.1`.
+
+What Setup.exe does:
+
+- Installs for the current user, no admin prompt, to `%LOCALAPPDATA%\ConvertedBroApp` (the app's own data stays in `%LOCALAPPDATA%\ConvertedBro`), shows a splash with the cat, and installs the .NET 8 Desktop Runtime if it's missing.
+- Adds **Converted Bro** to the Start menu, turns on *Start with Windows* (`--background`: just the cat at sign-in) and adds the Explorer right-click menu, then opens the dashboard.
+- Registers an uninstaller in Settings → Apps. Uninstalling removes the app, the shortcut, the startup entry and the Explorer menu; settings, history, signatures and the background model stay, in case it comes back (delete `%LOCALAPPDATA%\ConvertedBro` to remove them too).
+- The build also writes the files Velopack needs for one-click updates later (`releases.win.json`, the `.nupkg`).
+
+Setup.exe isn't code-signed, so a copy downloaded from the internet gets Windows SmartScreen's "Windows protected your PC" (More info → Run anyway). Signing needs a code-signing certificate (`vpk pack --signParams`). The bundled FFmpeg is the GPL build: fine for personal use; sharing the installer publicly means following the GPL (or switching to an LGPL build).
+
 Command line (what the Explorer menu calls):
 
 ```

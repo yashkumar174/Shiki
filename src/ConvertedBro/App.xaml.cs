@@ -11,6 +11,7 @@ using ConvertedBro.Core;
 using ConvertedBro.Shell;
 using ConvertedBro.UI;
 using ConvertedBro.UI.Dashboard;
+using Velopack;
 
 namespace ConvertedBro;
 
@@ -49,6 +50,26 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // The installer (Velopack) runs the app with special arguments around install, update and
+        // uninstall; these hooks do their bit and exit. A normal start goes straight through.
+        VelopackApp.Build()
+            .OnAfterInstallFastCallback(_ =>
+            {
+                StartupRegistration.Set(true, ExePath);
+                ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile(CatSprites.Skin(Settings.Load().Cat)));
+            })
+            .OnAfterUpdateFastCallback(_ =>
+            {
+                if (ContextMenuRegistrar.IsRegistered()) ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile(CatSprites.Skin(Settings.Load().Cat)));
+                if (StartupRegistration.IsEnabled()) StartupRegistration.Set(true, ExePath);
+            })
+            .OnBeforeUninstallFastCallback(_ =>
+            {
+                // Leave nothing pointing at the removed exe. Settings, history and models stay.
+                ContextMenuRegistrar.Unregister();
+                StartupRegistration.Set(false, ExePath);
+            })
+            .Run();
         base.OnStartup(e);
         DispatcherUnhandledException += (_, ex) =>
         {
@@ -117,6 +138,13 @@ public partial class App : Application
             Log.Info($"pdf-test: locked {locked}; plain={PdfSecurity.TryPassword(args[1], "x")} wrong={PdfSecurity.TryPassword(locked, "nope")} right={PdfSecurity.TryPassword(locked, "test123")}");
             Log.Info($"pdf-test: unlocked {PdfSecurity.Unlock(locked, "test123", none)}");
             Log.Info($"pdf-test: numbered {PdfSecurity.AddPageNumbers(args[1], none)}");
+            Shutdown();
+            return;
+        }
+        if (args.Length == 2 && args[0] == "--export-icon")
+        {
+            // Dev aid: the app icon (Mochi) for the exe and the installer.
+            BroArt.WriteIcon(CatSprites.Skin("mochi"), args[1]);
             Shutdown();
             return;
         }
