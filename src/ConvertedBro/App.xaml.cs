@@ -35,7 +35,7 @@ public partial class App : Application
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
     Hotkeys? _hotkeys;
-    int _snipHotkeyId = -1, _colourHotkeyId = -1;
+    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1;
     SnipWindow? _snip;
     ColourPickerWindow? _picker;
     Point _menuAnchor;
@@ -116,6 +116,13 @@ public partial class App : Application
             Log.Info($"pdf-test: locked {locked}; plain={PdfSecurity.TryPassword(args[1], "x")} wrong={PdfSecurity.TryPassword(locked, "nope")} right={PdfSecurity.TryPassword(locked, "test123")}");
             Log.Info($"pdf-test: unlocked {PdfSecurity.Unlock(locked, "test123", none)}");
             Log.Info($"pdf-test: numbered {PdfSecurity.AddPageNumbers(args[1], none)}");
+            Shutdown();
+            return;
+        }
+        if (args.Length == 1 && args[0] == "--desktop-selection-test")
+        {
+            // Dev aid: what's selected on the desktop, read the way the convert shortcut reads it.
+            Log.Info($"desktop selection: {string.Join(" | ", ExplorerSelection.FromDesktop())}");
             Shutdown();
             return;
         }
@@ -236,6 +243,11 @@ public partial class App : Application
                 EnterBuddyMode();
                 ShowSettings();
                 break;
+            case "selected":
+                // Same as the convert shortcut: the files selected in the Explorer window in front.
+                EnterBuddyMode();
+                ConvertSelection();
+                break;
             default:
                 var files = args.Where(a => File.Exists(a) || Directory.Exists(a)).ToArray();
                 if (files.Length > 0) Queue("menu", files);
@@ -323,7 +335,7 @@ public partial class App : Application
         _menu?.CloseAnimated();
         _menuAnchor = anchorPx;
         bool visible = _buddy?.IsVisible ?? false;
-        _menu = new BroMenu(anchorPx, "Drop files on me, or Shift + drag one anywhere.",
+        _menu = new BroMenu(anchorPx, $"Drop files on me, Shift + drag one, or select files and press {_settings.ConvertHotkey}.",
         [
             new MenuEntry("\uE8E5", "Convert files…", PickFiles),
             new MenuEntry("\uE77F", "Paste from clipboard", PasteToCat),
@@ -391,6 +403,7 @@ public partial class App : Application
         if (_settingsWindow != null) { _settingsWindow.Activate(); return; }
         _settingsWindow = new SettingsWindow(
             [
+                new ShortcutSetting("Convert selected files", () => _settings.ConvertHotkey, text => ChangeHotkey(text, () => _settings.ConvertHotkey, v => _settings.ConvertHotkey = v)),
                 new ShortcutSetting("Snip and convert", () => _settings.SnipHotkey, text => ChangeHotkey(text, () => _settings.SnipHotkey, v => _settings.SnipHotkey = v)),
                 new ShortcutSetting("Pick a colour", () => _settings.ColourHotkey, text => ChangeHotkey(text, () => _settings.ColourHotkey, v => _settings.ColourHotkey = v)),
             ],
@@ -408,8 +421,8 @@ public partial class App : Application
     bool ChangeHotkey(string text, Func<string> get, Action<string> set)
     {
         var previous = get();
-        // The two shortcuts can't share keys.
-        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey)) return false;
+        // Shortcuts can't share keys.
+        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey)) return false;
         set(text);
         if (BindHotkeys(quiet: true))
         {
@@ -468,12 +481,13 @@ public partial class App : Application
         BindHotkeys(quiet: false);
     }
 
-    /// <summary>(Re)binds both shortcuts from settings. Unless quiet, says which one another app owns.</summary>
+    /// <summary>(Re)binds every shortcut from settings. Unless quiet, says which one another app owns.</summary>
     bool BindHotkeys(bool quiet)
     {
         bool snip = Bind(ref _snipHotkeyId, _settings.SnipHotkey, StartSnip, quiet);
         bool colour = Bind(ref _colourHotkeyId, _settings.ColourHotkey, StartColourPicker, quiet);
-        return snip && colour;
+        bool convert = Bind(ref _convertHotkeyId, _settings.ConvertHotkey, ConvertSelection, quiet);
+        return snip && colour && convert;
     }
 
     bool Bind(ref int id, string text, Action handler, bool quiet)
@@ -491,6 +505,22 @@ public partial class App : Application
             ToastHost.Show(ToastWindow.Message($"{hotkey} is taken",
                 "Another app already uses that shortcut. Pick a different one in Settings."));
         return false;
+    }
+
+    // ---- Convert what's selected ----
+
+    /// <summary>The shortcut's job: the wheel, at the mouse, for whatever is selected in Explorer or on the desktop.</summary>
+    void ConvertSelection()
+    {
+        var selected = ExplorerSelection.FromForeground();
+        if (selected is { Count: > 0 })
+        {
+            NativeMethods.GetCursorPos(out var cursor);
+            ShowWheel(FileList.Expand(selected), new Point(cursor.X, cursor.Y));
+            return;
+        }
+        ToastHost.Show(ToastWindow.Message(selected == null ? "Select files in File Explorer" : "Nothing selected",
+            $"Click a file in File Explorer or on the desktop, then press {_settings.ConvertHotkey}."));
     }
 
     // ---- Colour picker ----

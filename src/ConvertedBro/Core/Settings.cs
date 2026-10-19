@@ -19,6 +19,8 @@ public sealed class Settings
     public string SnipHotkey { get; set; } = "Ctrl+Shift+Q";
     /// <summary>Global shortcut for the colour picker. Not Ctrl+Shift+C: terminals copy and browsers inspect with that.</summary>
     public string ColourHotkey { get; set; } = "Ctrl+Alt+C";
+    /// <summary>Global shortcut that opens the wheel on the files selected in Explorer or on the desktop.</summary>
+    public string ConvertHotkey { get; set; } = "Ctrl+Alt+X";
 
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");
 

@@ -1,7 +1,7 @@
 # Converted Bro
 
 A little pixel cat for Windows that converts files without opening a browser.
-Shift + drag a file anywhere and drop it on a format, drop it on the cat, or right-click it in Explorer.
+Select a file and press Ctrl+Alt+X, Shift + drag it anywhere and drop it on a format, drop it on the cat, or right-click it in Explorer.
 Everything runs locally: nothing is uploaded anywhere.
 
 Inspired by [Tangerine](https://x.com/th2049) for macOS.
@@ -38,6 +38,7 @@ Outputs go next to the original and never overwrite anything (`photo (1).jpg`, `
 
 ## Ways to use it
 
+- **Select and press Ctrl+Alt+X.** Select files in File Explorer (any tab) or on the desktop, press Ctrl+Alt+X, and the wheel opens at the mouse. Press a wedge's number or click it; Tab switches pages. Change the shortcut in Settings.
 - **Shift + drag.** Start dragging a file anywhere and hold Shift: the wheel opens right under the cursor. Drop the file on a wedge. To reach the tools, rest on the centre for half a second while dragging.
 - **Drop on the cat.** Drag files onto the cat (even while it's hiding) and the wheel opens next to it. Click a wedge or press its number; click the centre, scroll, or press Tab to switch pages.
 - **Right-click in Explorer.** Right-click a file → *Show more options* (or Shift + right-click) → **Convert with Bro**. Select many files and they're handled as one batch (a multi-select "Merge" makes one PDF).
@@ -98,11 +99,12 @@ ConvertedBro.exe paste                    give the clipboard to the cat
 ConvertedBro.exe pick                     pick a colour from the screen
 ConvertedBro.exe qr [text]                open the QR maker
 ConvertedBro.exe settings                 open Settings
+ConvertedBro.exe selected                 the wheel for what's selected in the Explorer window in front
 ConvertedBro.exe --register               add the Explorer right-click menu (current user, no admin)
 ConvertedBro.exe --unregister             remove it
 ```
 
-Dev aids (run and exit, results in the log): `--export-sprites <folder>`, `--scan-test <photo>`, `--pdf-test <pdf>`, `--sign-test <pdf> <signature photo>`, `--form-test <exam|passport|visa|signature> <photo> [white]`, `--cutout-test <folder of jpgs>`, `--qr-test <text> <out.png>`.
+Dev aids (run and exit, results in the log): `--export-sprites <folder>`, `--scan-test <photo>`, `--pdf-test <pdf>`, `--sign-test <pdf> <signature photo>`, `--form-test <exam|passport|visa|signature> <photo> [white]`, `--cutout-test <folder of jpgs>`, `--qr-test <text> <out.png>`, `--desktop-selection-test`.
 
 Only one ConvertedBro runs per user. Extra launches (Explorer starts one per selected file) pass their files to it over a named pipe, and they're batched for 0.7 s. When started from Explorer without the bro running, it works quietly and exits when done.
 
@@ -115,7 +117,7 @@ src/ConvertedBro/
   Core/   FileKind, ActionCatalog (every action lives here), ImageTools (Magick.NET),
           MediaTools (FFmpeg), PdfTools (PDFium + PDFsharp), SizeTools, TextTools (Windows OCR),
           ScanTools, Cutout (background removal, ONNX Runtime), FormPhotos, ArchiveTools, QrTools, JobRunner, OutputPaths
-  Shell/  SingleInstance (mutex + pipe), ContextMenuRegistrar, GlobalMouseHook, StartupRegistration
+  Shell/  SingleInstance (mutex + pipe), ContextMenuRegistrar, GlobalMouseHook, StartupRegistration, Hotkeys, ExplorerSelection
   UI/     CatWindow, CatSprites, ConvertWheel, ScanWindow, CutoutWindow, FormPhotoWindow, ColourPickerWindow, QrWindow, BroMenu, ToastWindow, TrayIcon, Theme, Glass, LiquidGlass, PixelShape, WedgeGeometry, BroArt
   Assets/ Fonts/PixelifySans.ttf (SIL Open Font License, see OFL.txt)
 ```
