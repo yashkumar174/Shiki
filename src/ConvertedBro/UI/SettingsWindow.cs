@@ -21,7 +21,7 @@ public sealed record OutputSetting(Func<string?> GetFolder, Action<string?> SetF
 /// <summary>Shortcuts and the main switches, in one place.</summary>
 public sealed class SettingsWindow : Window
 {
-    readonly Palette _p = Theme.Current;
+    readonly Palette _p = Theme.Editor;
     readonly TextBlock _error = UiKit.Error();
     (ShortcutSetting Setting, Border Chip)? _recording;
 
@@ -109,7 +109,7 @@ public sealed class SettingsWindow : Window
     void PickFolder()
     {
         var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Where should results go?", InitialDirectory = Directory.Exists(_lastFolder) ? _lastFolder : null };
-        if (dialog.ShowDialog(this) != true) return;
+        if (dialog.ShowDialog(GetWindow(_folderPath) ?? this) != true) return;
         _lastFolder = dialog.FolderName;
         _output.SetFolder(_lastFolder);
         ShowMode();
@@ -121,7 +121,7 @@ public sealed class SettingsWindow : Window
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(new TextBlock { Text = label, FontFamily = Theme.LabelFont, FontSize = 14, Foreground = Theme.Brush(_p.Text) });
+        text.Children.Add(new TextBlock { Text = label, FontFamily = Theme.TextFont, FontSize = 14, Foreground = Theme.Brush(_p.Text) });
         var sub = UiKit.Body(hint, 11.5);
         sub.Margin = new Thickness(0, 2, 12, 0);
         text.Children.Add(sub);

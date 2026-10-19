@@ -43,8 +43,8 @@ public sealed class ScanWindow : Window
         public double Scale => FullSize.Width / Preview.Width;
     }
 
-    readonly Palette _p = Theme.Current;
-    readonly bool _pixel = Theme.Current.Pixel;
+    readonly Palette _p = Theme.Editor;
+    readonly bool _pixel = Theme.Editor.Pixel;
     readonly List<Page> _pages = [];
     int _index;
     ScanFilter _filter = ScanFilter.Color;
@@ -124,7 +124,13 @@ public sealed class ScanWindow : Window
 
         SourceInitialized += (_, _) => NativeMethods.UseDarkTitleBar(new WindowInteropHelper(this).Handle);
         // Opened from Explorer or the wheel: come to the front even if another app has focus.
-        Loaded += (_, _) => { NativeMethods.ForceForeground(new WindowInteropHelper(this).Handle); Activate(); };
+        Loaded += (_, _) =>
+        {
+            var handle = new WindowInteropHelper(this).Handle;
+            if (handle == IntPtr.Zero) return; // inside the dashboard
+            NativeMethods.ForceForeground(handle);
+            Activate();
+        };
         KeyDown += OnKeyDown;
         Closed += (_, _) => { foreach (var page in _pages) page.Preview.Dispose(); };
 
@@ -315,7 +321,7 @@ public sealed class ScanWindow : Window
         var side = new DockPanel { Margin = new Thickness(22, 24, 22, 22), LastChildFill = false };
 
         var top = new StackPanel();
-        top.Children.Add(Text("Scan", Theme.TitleFont, 22, _p.Text, _pixel ? FontWeights.Normal : FontWeights.SemiBold));
+        top.Children.Add(Text("Scan", Theme.DisplayFont, 22, _p.Text, _pixel ? FontWeights.Normal : FontWeights.SemiBold));
         _status.FontFamily = Theme.TextFont;
         _status.FontSize = 12.5;
         _status.Foreground = Theme.Brush(_p.SubtleText);
@@ -323,7 +329,7 @@ public sealed class ScanWindow : Window
         _status.Margin = new Thickness(0, 4, 0, 0);
         top.Children.Add(_status);
 
-        _pager.FontFamily = Theme.LabelFont;
+        _pager.FontFamily = Theme.TextFont;
         _pager.FontSize = 13;
         _pager.Foreground = Theme.Brush(_p.Text);
         _pager.VerticalAlignment = VerticalAlignment.Center;
@@ -387,7 +393,7 @@ public sealed class ScanWindow : Window
         if (_resultChip != null) Select(_resultChip, _showResult);
     }
 
-    void Select(Border chip, bool on) => chip.BorderBrush = Theme.Brush(on ? Theme.Brand : Colors.Transparent);
+    void Select(Border chip, bool on) => chip.BorderBrush = Theme.Brush(on ? Theme.EditorAccent : Colors.Transparent);
 
     void UpdatePager()
     {
@@ -406,14 +412,14 @@ public sealed class ScanWindow : Window
 
     TextBlock Heading(string text)
     {
-        var heading = Text(text, Theme.LabelFont, 12.5, _p.SubtleText, FontWeights.Normal);
+        var heading = Text(text, Theme.TextFont, 12.5, _p.SubtleText, FontWeights.Normal);
         heading.Margin = new Thickness(0, 22, 0, 8);
         return heading;
     }
 
     FrameworkElement Button(string label, Action onClick, bool primary = false, bool icon = false, bool stretch = false)
     {
-        var accent = Theme.Brand;
+        var accent = Theme.EditorAccent;
         var rest = primary ? accent : _p.RowHover;
         var hot = primary ? Theme.Lighten(accent, 0.12) : Theme.Lighten(_p.RowHover, 0.08);
         var background = new SolidColorBrush(rest);
@@ -430,9 +436,9 @@ public sealed class ScanWindow : Window
             Child = new TextBlock
             {
                 Text = label,
-                FontFamily = icon ? Theme.IconFont : Theme.LabelFont,
+                FontFamily = icon ? Theme.IconFont : Theme.TextFont,
                 FontSize = icon ? 12 : 13,
-                Foreground = primary ? Brushes.White : Theme.Brush(_p.Text),
+                Foreground = Theme.Brush(primary ? Theme.EditorAccentText : _p.Text),
                 HorizontalAlignment = HorizontalAlignment.Center,
             },
         };

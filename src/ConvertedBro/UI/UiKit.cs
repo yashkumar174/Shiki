@@ -11,7 +11,7 @@ namespace ConvertedBro.UI;
 /// <summary>Shared pieces for the app's own windows, in the current look (Arcade or Glass).</summary>
 public static class UiKit
 {
-    static Palette P => Theme.Current;
+    static Palette P => Theme.Editor;
 
     /// <summary>Solid background, dark title bar, right fonts; brings the window to the front when shown.</summary>
     public static void Prepare(Window window)
@@ -21,13 +21,20 @@ public static class UiKit
         window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
         if (P.Pixel) TextOptions.SetTextRenderingMode(window, TextRenderingMode.Aliased);
         window.SourceInitialized += (_, _) => { if (P.Dark) NativeMethods.UseDarkTitleBar(new WindowInteropHelper(window).Handle); };
-        window.Loaded += (_, _) => { NativeMethods.ForceForeground(new WindowInteropHelper(window).Handle); window.Activate(); };
+        window.Loaded += (_, _) =>
+        {
+            // Inside the dashboard the window is never shown on its own: nothing to bring forward.
+            var handle = new WindowInteropHelper(window).Handle;
+            if (handle == IntPtr.Zero) return;
+            NativeMethods.ForceForeground(handle);
+            window.Activate();
+        };
     }
 
     public static TextBlock Title(string text) => new()
     {
         Text = text,
-        FontFamily = Theme.TitleFont,
+        FontFamily = Theme.DisplayFont,
         FontSize = 21,
         FontWeight = P.Pixel ? FontWeights.Normal : FontWeights.SemiBold,
         Foreground = Theme.Brush(P.Text),
@@ -46,7 +53,7 @@ public static class UiKit
     public static TextBlock Heading(string text) => new()
     {
         Text = text,
-        FontFamily = Theme.LabelFont,
+        FontFamily = Theme.TextFont,
         FontSize = 12.5,
         Foreground = Theme.Brush(P.SubtleText),
         Margin = new Thickness(0, 18, 0, 8),
@@ -82,15 +89,15 @@ public static class UiKit
             Padding = new Thickness(10, 7, 10, 7),
             Child = input,
         };
-        input.GotKeyboardFocus += (_, _) => frame.BorderBrush = Theme.Brush(Theme.Brand);
+        input.GotKeyboardFocus += (_, _) => frame.BorderBrush = Theme.Brush(Theme.EditorAccent);
         input.LostKeyboardFocus += (_, _) => frame.BorderBrush = Theme.Brush(P.SurfaceBorder);
         return frame;
     }
 
     public static Border Button(string label, Action onClick, bool primary = false, bool icon = false, bool stretch = false)
     {
-        var rest = primary ? Theme.Brand : P.RowHover;
-        var hot = primary ? Theme.Lighten(Theme.Brand, 0.12) : Theme.Lighten(P.RowHover, 0.08);
+        var rest = primary ? Theme.EditorAccent : P.RowHover;
+        var hot = primary ? Theme.Lighten(Theme.EditorAccent, 0.12) : Theme.Lighten(P.RowHover, 0.08);
         var background = new SolidColorBrush(rest);
         var button = new Border
         {
@@ -105,9 +112,9 @@ public static class UiKit
             Child = new TextBlock
             {
                 Text = label,
-                FontFamily = icon ? Theme.IconFont : Theme.LabelFont,
+                FontFamily = icon ? Theme.IconFont : Theme.TextFont,
                 FontSize = icon ? 13 : 13,
-                Foreground = primary ? Brushes.White : Theme.Brush(P.Text),
+                Foreground = Theme.Brush(primary ? Theme.EditorAccentText : P.Text),
                 HorizontalAlignment = HorizontalAlignment.Center,
             },
         };
@@ -118,7 +125,7 @@ public static class UiKit
     }
 
     /// <summary>Outlines a chip when it's the selected one.</summary>
-    public static void Select(Border chip, bool on) => chip.BorderBrush = Theme.Brush(on ? Theme.Brand : Colors.Transparent);
+    public static void Select(Border chip, bool on) => chip.BorderBrush = Theme.Brush(on ? Theme.EditorAccent : Colors.Transparent);
 
     public static StackPanel Row(params UIElement[] children)
     {

@@ -30,7 +30,7 @@ public sealed class SignWindow : Window
         public Rect Box { get; set; }
     }
 
-    readonly Palette _p = Theme.Current;
+    readonly Palette _p = Theme.Editor;
     readonly string _file;
     readonly List<Stamp> _stamps = [];
     readonly Grid _stage = new() { ClipToBounds = true, Background = Theme.Brush(Color.FromRgb(0x0E, 0x0E, 0x10)) };
@@ -138,7 +138,7 @@ public sealed class SignWindow : Window
 
     void DrawSignature()
     {
-        var pad = new SignaturePadWindow { Owner = this };
+        var pad = new SignaturePadWindow { Owner = GetWindow(_stage) ?? this };
         pad.ShowDialog();
         if (pad.Saved) LoadSignature();
     }
@@ -206,11 +206,11 @@ public sealed class SignWindow : Window
             Canvas.SetTop(image, box.Y);
             _canvas.Children.Add(image);
             if (stamp != _active) continue;
-            var frame = new System.Windows.Shapes.Rectangle { Width = box.Width, Height = box.Height, Stroke = Theme.Brush(Theme.Brand), StrokeThickness = 1.5, StrokeDashArray = [4, 3], IsHitTestVisible = false };
+            var frame = new System.Windows.Shapes.Rectangle { Width = box.Width, Height = box.Height, Stroke = Theme.Brush(Theme.EditorAccent), StrokeThickness = 1.5, StrokeDashArray = [4, 3], IsHitTestVisible = false };
             Canvas.SetLeft(frame, box.X);
             Canvas.SetTop(frame, box.Y);
             _canvas.Children.Add(frame);
-            var corner = new System.Windows.Shapes.Rectangle { Width = 12, Height = 12, Fill = Brushes.White, Stroke = Theme.Brush(Theme.Brand), StrokeThickness = 2, IsHitTestVisible = false };
+            var corner = new System.Windows.Shapes.Rectangle { Width = 12, Height = 12, Fill = Brushes.White, Stroke = Theme.Brush(Theme.EditorAccent), StrokeThickness = 2, IsHitTestVisible = false };
             Canvas.SetLeft(corner, box.Right - 6);
             Canvas.SetTop(corner, box.Bottom - 6);
             _canvas.Children.Add(corner);

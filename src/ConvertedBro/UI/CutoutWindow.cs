@@ -36,7 +36,7 @@ public sealed class CutoutWindow : Window
         ("Red", Color.FromRgb(0xD9, 0x37, 0x2B)),
     ];
 
-    readonly Palette _p = Theme.Current;
+    readonly Palette _p = Theme.Editor;
     readonly string _file;
     readonly CancellationTokenSource _closing = new();
 
@@ -114,7 +114,7 @@ public sealed class CutoutWindow : Window
         var top = new StackPanel();
         top.Children.Add(UiKit.Title("Remove background"));
         top.Children.Add(_status);
-        _fill = new Border { Background = Theme.Brush(Theme.Brand), HorizontalAlignment = HorizontalAlignment.Left, Width = 0, RenderTransform = _fillMove };
+        _fill = new Border { Background = Theme.Brush(Theme.EditorAccent), HorizontalAlignment = HorizontalAlignment.Left, Width = 0, RenderTransform = _fillMove };
         _track = new Border
         {
             Height = 4,
@@ -526,7 +526,7 @@ public sealed class CutoutWindow : Window
             Child = label == null ? null : new TextBlock
             {
                 Text = label,
-                FontFamily = Theme.LabelFont,
+                FontFamily = Theme.TextFont,
                 FontSize = 15,
                 Foreground = Theme.Brush(_p.Text),
                 HorizontalAlignment = HorizontalAlignment.Center,

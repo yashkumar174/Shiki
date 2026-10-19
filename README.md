@@ -47,7 +47,8 @@ Open it by launching ConvertedBro.exe, clicking the tray icon, or with *Open Con
 - **Tools**: every tool by kind of file. "Convert to" and "Shrink under" chips, then tiles; pick one and choose the files. Capture tools (snip, colour picker, QR, paste) are at the top.
 - **History**: every job ever, grouped by day, with search (Ctrl+F) and filters. Removing a line only forgets it; the files stay. Kept in `%LOCALAPPDATA%\ConvertedBro\history.json` (the newest 2,000).
 - **Set up Converted Bro**: a checklist in the sidebar (Explorer menu, the Ctrl+Alt+X shortcut, results folder, start with Windows) that checks the real state and does each step when clicked. It goes away when everything's done.
-- **Settings** still opens the settings window for now. Click the cat at the bottom of the sidebar to switch cats.
+- **Editors inside**: Pages, Sign, Remove background, Scan, Form photos, Lock/Unlock and the QR maker open as pages in the dashboard (in its look, with a back arrow), wherever you start them: the wheel, the cat, Explorer or Tools. Step to another page and the editor waits in the sidebar; opening a different editor replaces it. Esc goes back.
+- **Settings** is a page too. Peeking at it never closes an open editor. Click the cat at the bottom of the sidebar to switch cats.
 
 *Start with Windows* starts quietly (`--background`): just the cat, no window. `ConvertedBro.exe dashboard [home|tools|history]` opens a page.
 

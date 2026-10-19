@@ -180,6 +180,7 @@ public partial class App : Application
         _instance.MessageReceived += a => Dispatcher.BeginInvoke(() => Handle(a));
         _instance.StartServer();
         _settings = Settings.Load();
+        Theme.EditorDark = _settings.DashboardDark ?? DashPalette.WindowsIsDark();
         OutputPaths.Folder = _settings.OutputFolder;
         OutputPaths.SortByType = _settings.SortOutputs;
         Theme.Style = _settings.Style;
@@ -267,6 +268,10 @@ public partial class App : Application
                 EnterBuddyMode();
                 ShowDashboard(args.Length > 1 && Enum.TryParse<DashPage>(args[1], true, out var page) ? page : DashPage.Home);
                 break;
+            case "snapshot" when args.Length == 2:
+                // Dev aid: save what the dashboard shows to a PNG.
+                _dashboard?.Snapshot(args[1]);
+                break;
             case "catmenu":
                 // Dev aid: the cat's menu at the mouse, as a right-click would open it.
                 EnterBuddyMode();
@@ -333,8 +338,8 @@ public partial class App : Application
             var editor = action.Editor(accepted);
             if (editor != null)
             {
-                editor.Show();
-                editor.Activate();
+                // Editors live in the dashboard now, wherever they were started from.
+                InDashboard(editor);
                 return;
             }
         }
@@ -504,7 +509,7 @@ public partial class App : Application
 
     void ShowSettings()
     {
-        if (_settingsWindow != null) { _settingsWindow.Activate(); return; }
+        if (_settingsWindow != null) { InDashboard(_settingsWindow, isSettings: true); return; }
         _settingsWindow = new SettingsWindow(
             new OutputSetting(
                 () => _settings.OutputFolder,
@@ -535,7 +540,7 @@ public partial class App : Application
                 new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
             ]);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
-        _settingsWindow.Show();
+        InDashboard(_settingsWindow, isSettings: true);
     }
 
     /// <summary>Tries a new shortcut from the settings window; puts the old one back if it's taken.</summary>
@@ -670,6 +675,14 @@ public partial class App : Application
         _dashboard.Show(page);
     }
 
+    /// <summary>Opens the dashboard with this editor (or settings) inside it.</summary>
+    void InDashboard(Window window, bool isSettings = false)
+    {
+        _menu?.CloseAnimated();
+        if (_dashboard == null) ShowDashboard();
+        _dashboard!.ShowWindow(window, isSettings);
+    }
+
     // ---- Convert what's selected ----
 
     /// <summary>The shortcut's job: the wheel, at the mouse, for whatever is selected in Explorer or on the desktop.</summary>
@@ -737,7 +750,7 @@ public partial class App : Application
         _qr?.Close();
         _qr = new QrWindow(text);
         _qr.Closed += (_, _) => _qr = null;
-        _qr.Show();
+        InDashboard(_qr);
     }
 
     // ---- Paste ----

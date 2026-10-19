@@ -43,7 +43,7 @@ public sealed class QrWindow : Window
         _frame = new Border
         {
             Background = Brushes.White,
-            CornerRadius = new CornerRadius(Theme.Current.Pixel ? 0 : 14),
+            CornerRadius = new CornerRadius(Theme.Editor.Pixel ? 0 : 14),
             Padding = new Thickness(10),
             Margin = new Thickness(0, 16, 0, 0),
             HorizontalAlignment = HorizontalAlignment.Center,

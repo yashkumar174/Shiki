@@ -35,7 +35,7 @@ public sealed class PdfPagesWindow : Window
         public TextBlock? Number { get; set; }
     }
 
-    readonly Palette _p = Theme.Current;
+    readonly Palette _p = Theme.Editor;
     readonly IReadOnlyList<string> _files;
     readonly List<PageItem> _pages = [];
     readonly WrapPanel _grid = new() { Margin = new Thickness(16) };
@@ -169,7 +169,7 @@ public sealed class PdfPagesWindow : Window
         var number = new TextBlock
         {
             Text = _files.Count > 1 ? $"{position + 1}  ·  {Path.GetFileNameWithoutExtension(page.File)} p{page.Index + 1}" : $"{position + 1}",
-            FontFamily = Theme.LabelFont,
+            FontFamily = Theme.TextFont,
             FontSize = 12,
             Foreground = Theme.Brush(_p.SubtleText),
             HorizontalAlignment = HorizontalAlignment.Center,
@@ -236,23 +236,23 @@ public sealed class PdfPagesWindow : Window
             Rebuild();
             SelectPage(moving);
         };
-        if (page == _selected) card.BorderBrush = Theme.Brush(Theme.Brand);
+        if (page == _selected) card.BorderBrush = Theme.Brush(Theme.EditorAccent);
         return card;
     }
 
     /// <summary>Shows which side of a card a dragged page will land on.</summary>
     void Highlight(Border card, int side) =>
         card.BorderBrush = side == 0
-            ? Theme.Brush(card.Tag == _selected ? Theme.Brand : Colors.Transparent)
+            ? Theme.Brush(card.Tag == _selected ? Theme.EditorAccent : Colors.Transparent)
             : new LinearGradientBrush(
-                side < 0 ? Theme.Brand : Colors.Transparent,
-                side < 0 ? Colors.Transparent : Theme.Brand, 0);
+                side < 0 ? Theme.EditorAccent : Colors.Transparent,
+                side < 0 ? Colors.Transparent : Theme.EditorAccent, 0);
 
     void SelectPage(PageItem page)
     {
         if (_selected?.Card != null) _selected.Card.BorderBrush = Brushes.Transparent;
         _selected = page;
-        if (page.Card != null) page.Card.BorderBrush = Theme.Brush(Theme.Brand);
+        if (page.Card != null) page.Card.BorderBrush = Theme.Brush(Theme.EditorAccent);
     }
 
     void Rotate(PageItem page)

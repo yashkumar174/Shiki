@@ -24,7 +24,7 @@ public sealed class FormPhotoWindow : Window
 {
     const double PreviewMax = 1600;
 
-    readonly Palette _p = Theme.Current;
+    readonly Palette _p = Theme.Editor;
     readonly string _file;
     FormPreset _preset;
     MagickImage? _preview;
@@ -61,7 +61,7 @@ public sealed class FormPhotoWindow : Window
         MinHeight = 520;
         UiKit.Prepare(this);
 
-        _handle.Stroke = Theme.Brush(Theme.Brand);
+        _handle.Stroke = Theme.Brush(Theme.EditorAccent);
         _handle.StrokeThickness = 2;
         RenderOptions.SetBitmapScalingMode(_photo, BitmapScalingMode.HighQuality);
         foreach (UIElement e in new UIElement[] { _photo, _dim, _guide, _frame, _handle }) _canvas.Children.Add(e);

@@ -107,6 +107,51 @@ public static class Theme
 
     public static Palette Current => Arcade ? ArcadePalette : _system;
 
+    // ---- The dashboard's look, shared by the editors and settings that live inside it ----
+
+    /// <summary>Light or dark for the dashboard and its editors; set from settings (or Windows).</summary>
+    public static bool EditorDark { get; set; }
+    public static Palette Editor => EditorDark ? FlowNight : FlowLight;
+    /// <summary>Wispr Flow's warm orange; text on it is near-black.</summary>
+    public static readonly Color EditorAccent = Color.FromRgb(0xF6, 0xA9, 0x45);
+    public static readonly Color EditorAccentText = Color.FromRgb(0x1C, 0x1B, 0x19);
+
+    static readonly Palette FlowLight = new()
+    {
+        Dark = false,
+        GlassTint = Color.FromRgb(0xFB, 0xFA, 0xF8),
+        GlassRim = Color.FromRgb(0xE7, 0xE3, 0xDD),
+        WedgeRest = Color.FromRgb(0xFF, 0xFF, 0xFF),
+        WedgeEdge = Color.FromRgb(0xE7, 0xE3, 0xDD),
+        Label = Color.FromRgb(0x1C, 0x1B, 0x19),
+        SubLabel = Color.FromRgb(0x6D, 0x68, 0x62),
+        HubPill = Color.FromRgb(0xEC, 0xE9, 0xE4),
+        Surface = Color.FromRgb(0xFB, 0xFA, 0xF8),
+        SurfaceBorder = Color.FromRgb(0xE7, 0xE3, 0xDD),
+        RowHover = Color.FromRgb(0xEC, 0xE9, 0xE4),
+        Text = Color.FromRgb(0x1C, 0x1B, 0x19),
+        SubtleText = Color.FromRgb(0x6D, 0x68, 0x62),
+        Track = Color.FromRgb(0xE6, 0xE2, 0xDC),
+    };
+
+    static readonly Palette FlowNight = new()
+    {
+        Dark = true,
+        GlassTint = Color.FromRgb(0x1A, 0x19, 0x18),
+        GlassRim = Color.FromRgb(0x2E, 0x2B, 0x28),
+        WedgeRest = Color.FromRgb(0x21, 0x1F, 0x1D),
+        WedgeEdge = Color.FromRgb(0x2E, 0x2B, 0x28),
+        Label = Color.FromRgb(0xF2, 0xEF, 0xEA),
+        SubLabel = Color.FromRgb(0xA6, 0xA0, 0x98),
+        HubPill = Color.FromRgb(0x25, 0x23, 0x20),
+        Surface = Color.FromRgb(0x1A, 0x19, 0x18),
+        SurfaceBorder = Color.FromRgb(0x2E, 0x2B, 0x28),
+        RowHover = Color.FromRgb(0x25, 0x23, 0x20),
+        Text = Color.FromRgb(0xF2, 0xEF, 0xEA),
+        SubtleText = Color.FromRgb(0xA6, 0xA0, 0x98),
+        Track = Color.FromRgb(0x2C, 0x2A, 0x27),
+    };
+
     static Theme()
     {
         SystemEvents.UserPreferenceChanged += (_, e) =>

@@ -105,7 +105,7 @@ public sealed class SignaturePadWindow : Window
         var stack = new StackPanel { Margin = new Thickness(24, 22, 24, 22) };
         stack.Children.Add(UiKit.Title("Draw your signature"));
         stack.Children.Add(UiKit.Body("Sign in the box. It's saved on this PC for next time; nothing is uploaded."));
-        var pad = new Border { Margin = new Thickness(0, 16, 0, 0), BorderThickness = new Thickness(2), BorderBrush = Theme.Brush(Theme.Current.SurfaceBorder), Child = _ink };
+        var pad = new Border { Margin = new Thickness(0, 16, 0, 0), BorderThickness = new Thickness(2), BorderBrush = Theme.Brush(Theme.Editor.SurfaceBorder), Child = _ink };
         stack.Children.Add(pad);
 
         var inks = UiKit.Row(

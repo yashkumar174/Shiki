@@ -54,6 +54,16 @@ public sealed class DashboardWindow : Window
     string? _historySearch;
     Border? _maxButton;
 
+    // An editor or settings window living inside the dashboard. It keeps its own logic; only its
+    // content moves here. Stepping to another page parks it (the sidebar offers a way back).
+    // Two slots: an editor and settings, so peeking at settings never throws away an edit.
+    sealed class Hosted(Window window, FrameworkElement frame)
+    {
+        public Window Window { get; } = window;
+        public FrameworkElement Frame { get; } = frame;
+    }
+    Hosted? _editor, _settingsPage, _showing;
+
     public DashboardWindow(DashboardHost host)
     {
         _host = host;
@@ -89,11 +99,19 @@ public sealed class DashboardWindow : Window
         };
         History.Changed += OnHistoryChanged;
         Names.Found += OnHistoryChanged;
-        Closed += (_, _) => { History.Changed -= OnHistoryChanged; Names.Found -= OnHistoryChanged; };
+        Closed += (_, _) =>
+        {
+            History.Changed -= OnHistoryChanged;
+            Names.Found -= OnHistoryChanged;
+            _settingsPage?.Window.Close();
+            _editor?.Window.Close();
+        };
         PreviewKeyDown += (_, e) =>
         {
+            if (_showing != null) { Forward(e, Keyboard.PreviewKeyDownEvent); return; }
             if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { _historySearch ??= ""; Show(DashPage.History); e.Handled = true; }
         };
+        KeyDown += (_, e) => { if (_showing != null && !e.Handled) Forward(e, Keyboard.KeyDownEvent); };
         ApplyTheme();
     }
 
@@ -104,6 +122,7 @@ public sealed class DashboardWindow : Window
     void ApplyTheme()
     {
         _p = DarkWanted ? DashPalette.Night : DashPalette.Light;
+        Theme.EditorDark = _p.Dark;
         _k = new DashKit(_p);
         Background = DashKit.B(_p.Canvas);
         Rebuild();
@@ -112,6 +131,9 @@ public sealed class DashboardWindow : Window
     public void Show(DashPage page)
     {
         _page = page;
+        // Settings has nothing to lose: leaving it closes it. Editors are parked instead.
+        _settingsPage?.Window.Close();
+        _showing = null;
         Rebuild();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         if (!IsVisible) base.Show();
@@ -156,10 +178,135 @@ public sealed class DashboardWindow : Window
         // Pages open at the top, even if something inside takes focus and asks to be shown.
         scroll.Loaded += (_, _) => scroll.ScrollToTop();
         scroll.RequestBringIntoView += (_, e) => { if (!scroll.IsMouseOver) e.Handled = true; };
-        panel.Child = scroll;
+        if (_showing != null)
+        {
+            if (_showing.Frame.Parent is Decorator old) old.Child = null;
+            panel.Child = _showing.Frame;
+        }
+        else panel.Child = scroll;
+        // Round the content's corners to match the panel (ClipToBounds alone clips square).
+        panel.SizeChanged += (_, _) =>
+        {
+            if (panel.Child is FrameworkElement inner)
+                inner.Clip = new RectangleGeometry(new Rect(0, 0, Math.Max(0, panel.ActualWidth - 2), Math.Max(0, panel.ActualHeight - 2)), 23, 23);
+        };
         Grid.SetRow(panel, 1);
         Grid.SetColumn(panel, 1);
         _root.Children.Add(panel);
+    }
+
+    // ---- Editors and settings inside the dashboard ----
+
+    /// <summary>
+    /// Moves a window's content into the dashboard. The window itself is never shown: it keeps
+    /// running its own code, gets its keys forwarded, and when it closes itself (Save, Cancel,
+    /// Done) the dashboard goes back to where it was.
+    /// </summary>
+    public void ShowWindow(Window window, bool isSettings = false)
+    {
+        var existing = isSettings ? _settingsPage : _editor;
+        if (existing?.Window == window)
+        {
+            _showing = existing;
+            Rebuild();
+            Bring();
+            return;
+        }
+        // A new editor replaces the old one (settings only replaces settings).
+        existing?.Window.Close();
+        if (window.Content is not UIElement content) return;
+        window.Content = null;
+        var hosted = new Hosted(window, Frame(window, content, isSettings));
+        if (isSettings) _settingsPage = hosted; else _editor = hosted;
+        _showing = hosted;
+        window.Closed += (_, _) =>
+        {
+            bool wasShowing = _showing == hosted;
+            if (_editor == hosted) _editor = null;
+            if (_settingsPage == hosted) _settingsPage = null;
+            // Closing settings goes back to the editor, if one is open; anything else to the page.
+            if (wasShowing) _showing = isSettings ? _editor : null;
+            Rebuild();
+        };
+        // The window's own Loaded handlers (focus a box, measure the stage) run once its content shows.
+        if (content is FrameworkElement element)
+        {
+            void Once(object? sender, RoutedEventArgs e)
+            {
+                element.Loaded -= Once;
+                window.RaiseEvent(new RoutedEventArgs(FrameworkElement.LoadedEvent, window));
+            }
+            element.Loaded += Once;
+        }
+        Rebuild();
+        Bring();
+    }
+
+    /// <summary>Dev aid: the window as it looks right now, even when it's behind others.</summary>
+    public void Snapshot(string path)
+    {
+        var dpi = VisualTreeHelper.GetDpi(this);
+        int w = (int)(ActualWidth * dpi.DpiScaleX), h = (int)(ActualHeight * dpi.DpiScaleY);
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap(w, h, dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+        var fill = new DrawingVisual();
+        using (var dc = fill.RenderOpen()) dc.DrawRectangle(Background, null, new Rect(0, 0, ActualWidth, ActualHeight));
+        bitmap.Render(fill);
+        bitmap.Render(_root);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+        using var file = System.IO.File.Create(path);
+        encoder.Save(file);
+    }
+
+    void Bring()
+    {
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        if (!IsVisible) base.Show();
+        // Opened from the wheel or Explorer: come to the front even though another app has focus.
+        Shell.NativeMethods.ForceForeground(new WindowInteropHelper(this).Handle);
+        Activate();
+    }
+
+    FrameworkElement Frame(Window window, UIElement content, bool isSettings)
+    {
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition());
+        if (!isSettings)
+        {
+            var head = new DockPanel { Margin = new Thickness(18, 14, 22, 4) };
+            var back = _k.IconButton("\uE72B", () => window.Close(), "Back (Esc)", 14, _p.Muted);
+            DockPanel.SetDock(back, Dock.Left);
+            head.Children.Add(back);
+            var title = _k.Text(window.Title, 15, weight: FontWeights.SemiBold);
+            title.Margin = new Thickness(8, 0, 0, 1);
+            title.VerticalAlignment = VerticalAlignment.Center;
+            head.Children.Add(title);
+            grid.Children.Add(head);
+        }
+        // Dialog-sized windows (settings, QR, passwords) sit at a readable width; editors fill.
+        bool dialog = window.SizeToContent != SizeToContent.Manual || window.ResizeMode == ResizeMode.NoResize;
+        UIElement body = content;
+        if (dialog)
+        {
+            var holder = new Border { Child = content, MaxWidth = Math.Max(window.Width, 480), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(isSettings ? 26 : 14, isSettings ? 22 : 0, 26, 26) };
+            var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = holder };
+            scroll.Resources.Add(typeof(ScrollBar), ThinScrollBar());
+            body = scroll;
+        }
+        Grid.SetRow(body, 1);
+        grid.Children.Add(body);
+        return grid;
+    }
+
+    /// <summary>Hands a key to the hosted window's own handlers, as if it had focus itself.</summary>
+    void Forward(KeyEventArgs e, RoutedEvent routed)
+    {
+        var source = e.InputSource ?? PresentationSource.FromVisual(this);
+        if (source == null) return;
+        var copy = new KeyEventArgs(e.KeyboardDevice, source, e.Timestamp, e.Key == Key.System ? e.SystemKey : e.Key) { RoutedEvent = routed };
+        _showing!.Window.RaiseEvent(copy);
+        if (copy.Handled) e.Handled = true;
     }
 
     UIElement Page() => _page switch
@@ -259,10 +406,17 @@ public sealed class DashboardWindow : Window
 
         var top = new StackPanel();
         top.Children.Add(Logo());
+        if (_editor is { } editor)
+        {
+            // The open editor, so it's one click away after looking at another page.
+            var name = editor.Window.Title.Split(':')[0].Trim();
+            if (name.Length > 24) name = name[..23] + "\u2026";
+            top.Children.Add(NavItem("\uE70F", name, _showing == editor, () => { _showing = editor; Rebuild(); }, null, editor.Window.Title));
+        }
         top.Children.Add(Nav("\uE80F", "Home", DashPage.Home));
         top.Children.Add(Nav("\uE90F", "Tools", DashPage.Tools));
         top.Children.Add(Nav("\uE81C", "History", DashPage.History));
-        top.Children.Add(NavAction("\uE713", "Settings", _host.OpenSettings));
+        top.Children.Add(NavItem("\uE713", "Settings", _showing != null && _showing == _settingsPage, _host.OpenSettings, null, "Settings"));
         if (!_collapsed && SetupCard() is { } setup) top.Children.Add(setup);
         DockPanel.SetDock(top, Dock.Top);
         dock.Children.Add(top);
@@ -300,7 +454,7 @@ public sealed class DashboardWindow : Window
     }
 
     Border Nav(string glyph, string label, DashPage page) =>
-        NavItem(glyph, label, _page == page, () => Show(page), null, label);
+        NavItem(glyph, label, _page == page && _showing == null, () => Show(page), null, label);
 
     Border NavAction(string glyph, string label, Action action) => NavItem(glyph, label, false, action, null, label);
 
