@@ -191,7 +191,7 @@ public partial class App : Application
         {
             ToastHost.Show(new ToastWindow(job));
             _buddy?.SetBusy(JobRunner.ActiveCount);
-            if (TotalBytes(job.Inputs) > BigFile) _buddy?.Startle();
+            ReactToSize(job.Inputs);
         });
         JobRunner.JobFinished += job => Dispatcher.BeginInvoke(() =>
         {
@@ -326,7 +326,7 @@ public partial class App : Application
     public void ShowWheel(IReadOnlyList<string> files, Point centerPx)
     {
         if (files.Count == 0) return;
-        if (TotalBytes(files) > BigFile) _buddy?.Startle();
+        ReactToSize(files);
         var wheel = new ConvertWheel(ConvertWheel.WheelMode.Click, centerPx, files);
         wheel.ActionChosen += (action, chosen) => StartJob(action, chosen.ToList());
         wheel.Show();
@@ -338,6 +338,7 @@ public partial class App : Application
         _dragWheel?.CloseAnimated();
         var wheel = new ConvertWheel(ConvertWheel.WheelMode.Drag, new Point(xPx, yPx));
         wheel.ActionChosen += (action, files) => StartJob(action, files.ToList());
+        wheel.FilesArrived += ReactToSize;
         wheel.Closed += (_, _) => { if (_dragWheel == wheel) _dragWheel = null; };
         _dragWheel = wheel;
         _buddy?.Notice(true);
@@ -383,6 +384,24 @@ public partial class App : Application
 
     const long BigFile = 1L << 30; // 1 GB: big enough to make the cat jump
     static readonly int[] Milestones = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+
+    readonly HashSet<string> _startledFor = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Big files make the cat jump, once: when they reach the wheel or, failing that, when the
+    /// job starts (Explorer's menu, say). The same files don't startle it twice.
+    /// </summary>
+    void ReactToSize(IReadOnlyList<string> paths)
+    {
+        var files = paths.Where(File.Exists).ToList();
+        if (files.Count == 0 || files.All(_startledFor.Contains) || TotalBytes(files) <= BigFile) return;
+        if (_startledFor.Count > 500) _startledFor.Clear();
+        _startledFor.UnionWith(files);
+        _buddy?.Startle();
+    }
+
+    /// <summary>Above the cat when it's showing (so the wheel doesn't cover it), else the fallback.</summary>
+    Point CatSpot(Point fallback) => _buddy is { IsVisible: true } cat ? cat.WheelSpotPx(ConvertWheel.DiscRadiusDip) : fallback;
 
     static long TotalBytes(IEnumerable<string> paths) =>
         paths.Sum(p => { try { return File.Exists(p) ? new FileInfo(p).Length : 0; } catch (IOException) { return 0; } });
@@ -543,7 +562,7 @@ public partial class App : Application
         _tray.MenuRequested += ShowMenu;
 
         _buddy = new CatWindow(_settings);
-        _buddy.FilesDropped += (paths, center) => ShowWheel(FileList.Expand(paths), center);
+        _buddy.FilesDropped += (paths, center) => ShowWheel(FileList.Expand(paths), CatSpot(center));
         _buddy.MenuRequested += ShowMenu;
         _buddy.PickFilesRequested += PickFiles;
         ToastHost.Avoid = () => _buddy is { IsVisible: true } b ? new Rect(b.Left, b.Top, b.Width, b.Height) : null;
@@ -673,7 +692,7 @@ public partial class App : Application
     {
         _menu?.CloseAnimated();
         NativeMethods.GetCursorPos(out var cursor);
-        var centre = _buddy is { IsVisible: true } b ? b.CenterPx() : new Point(cursor.X, cursor.Y);
+        var centre = CatSpot(new Point(cursor.X, cursor.Y));
         try
         {
             if (Clipboard.ContainsFileDropList())
@@ -760,8 +779,7 @@ public partial class App : Application
         };
         if (dialog.ShowDialog() != true) return;
         NativeMethods.GetCursorPos(out var cursor);
-        var center = _buddy is { IsVisible: true } b ? b.CenterPx() : new Point(cursor.X, cursor.Y);
-        ShowWheel(dialog.FileNames, center);
+        ShowWheel(dialog.FileNames, CatSpot(new Point(cursor.X, cursor.Y)));
     }
 
     void ExitIfIdle()

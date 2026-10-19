@@ -73,6 +73,11 @@ public sealed class ConvertWheel : Window
     bool _hubHot, _leftHubOnce, _chosen, _closing, _switching;
 
     public event Action<BroAction, IReadOnlyList<string>>? ActionChosen;
+    /// <summary>A drag reached the wheel and its files are known (Shift + drag).</summary>
+    public event Action<IReadOnlyList<string>>? FilesArrived;
+
+    /// <summary>The visible disc's radius, so others can place the wheel beside things.</summary>
+    public static double DiscRadiusDip => DiscRadius;
 
     public ConvertWheel(WheelMode mode, Point centerPx, IReadOnlyList<string>? files = null)
     {
@@ -630,6 +635,7 @@ public sealed class ConvertWheel : Window
         {
             _noFiles.Stop();
             SetFiles(FileList.Expand(paths));
+            FilesArrived?.Invoke(_files);
         }
         OnDragOver(sender, e);
     }

@@ -212,7 +212,7 @@ public sealed class CatWindow : Window
     public void Startle()
     {
         if (DateTime.Now < _startleCooldown) return;
-        _startleCooldown = DateTime.Now.AddSeconds(8);
+        _startleCooldown = DateTime.Now.AddSeconds(2);
         _asleep = false;
         _startled = 12;
         Touch();
@@ -320,6 +320,17 @@ public sealed class CatWindow : Window
         fade.Completed += (_, _) => _floats.Children.Remove(image);
         shift.BeginAnimation(TranslateTransform.YProperty, up);
         image.BeginAnimation(OpacityProperty, fade);
+    }
+
+    /// <summary>
+    /// Where to centre the wheel (physical pixels) so it sits just above the cat instead of
+    /// covering it: the cat stays in view and reacts while you choose.
+    /// </summary>
+    public Point WheelSpotPx(double discRadiusDip)
+    {
+        double scale = NativeMethods.SystemScale;
+        double catTop = Top + (CatTop - HopRoom) * _cell;
+        return new Point((Left + Width / 2) * scale, (catTop - discRadiusDip - 4) * scale);
     }
 
     /// <summary>The cat's centre as it sits on the edge, in physical pixels.</summary>
