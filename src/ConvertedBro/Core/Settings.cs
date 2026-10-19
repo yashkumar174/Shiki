@@ -17,6 +17,8 @@ public sealed class Settings
     public bool LiveGlass { get; set; } = true;
     /// <summary>Global shortcut for snip and convert, e.g. "Ctrl+Shift+Q".</summary>
     public string SnipHotkey { get; set; } = "Ctrl+Shift+Q";
+    /// <summary>Global shortcut for the colour picker. Not Ctrl+Shift+C: terminals copy and browsers inspect with that.</summary>
+    public string ColourHotkey { get; set; } = "Ctrl+Alt+C";
 
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");
 

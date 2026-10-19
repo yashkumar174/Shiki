@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace ConvertedBro.Core;
 
-public enum FileKind { Unknown, Image, Video, Audio, Pdf }
+public enum FileKind { Unknown, Image, Video, Audio, Pdf, Archive }
 
 public static class FileKinds
 {
@@ -15,6 +15,7 @@ public static class FileKinds
         [FileKind.Video] = [".mp4", ".mkv", ".mov", ".avi", ".webm", ".wmv", ".flv", ".m4v", ".3gp", ".mpg", ".mpeg", ".ts"],
         [FileKind.Audio] = [".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma", ".aiff", ".amr"],
         [FileKind.Pdf] = [".pdf"],
+        [FileKind.Archive] = [".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".xz"],
     };
 
     static readonly Dictionary<string, FileKind> ByExtension = Extensions

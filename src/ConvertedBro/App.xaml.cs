@@ -4,6 +4,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ConvertedBro.Core;
 using ConvertedBro.Shell;
@@ -33,8 +35,9 @@ public partial class App : Application
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
     Hotkeys? _hotkeys;
-    int _snipHotkeyId = -1;
+    int _snipHotkeyId = -1, _colourHotkeyId = -1;
     SnipWindow? _snip;
+    ColourPickerWindow? _picker;
     Point _menuAnchor;
     bool _headless;
     readonly Dictionary<string, List<string>> _pending = new(StringComparer.OrdinalIgnoreCase);
@@ -113,6 +116,24 @@ public partial class App : Application
             Log.Info($"pdf-test: locked {locked}; plain={PdfSecurity.TryPassword(args[1], "x")} wrong={PdfSecurity.TryPassword(locked, "nope")} right={PdfSecurity.TryPassword(locked, "test123")}");
             Log.Info($"pdf-test: unlocked {PdfSecurity.Unlock(locked, "test123", none)}");
             Log.Info($"pdf-test: numbered {PdfSecurity.AddPageNumbers(args[1], none)}");
+            Shutdown();
+            return;
+        }
+        if (args.Length == 3 && args[0] == "--qr-test")
+        {
+            // Dev aid: make a QR code, then read it back as is, small and inverted on a busy picture.
+            File.WriteAllBytes(args[2], QrTools.MakePng(args[1]));
+            using var plain = new ImageMagick.MagickImage(args[2]);
+            Log.Info($"qr-test plain: {string.Join(" | ", QrTools.Read(plain))}");
+            using var scene = new ImageMagick.MagickImage("plasma:", 1600, 1000);
+            using var small = (ImageMagick.MagickImage)plain.Clone();
+            small.Negate();
+            small.Resize(new ImageMagick.Percentage(35));
+            small.Rotate(8);
+            scene.Composite(small, 700, 400, ImageMagick.CompositeOperator.Over);
+            scene.Blur(0, 0.8);
+            scene.Write(Path.ChangeExtension(args[2], ".scene.png"));
+            Log.Info($"qr-test scene: {string.Join(" | ", QrTools.Read(scene))}");
             Shutdown();
             return;
         }
@@ -198,6 +219,22 @@ public partial class App : Application
                 break;
             case "menu" when args.Length >= 2:
                 Queue("menu", args[1..]);
+                break;
+            case "pick":
+                EnterBuddyMode();
+                StartColourPicker();
+                break;
+            case "qr":
+                EnterBuddyMode();
+                ShowQr(string.Join(" ", args[1..]));
+                break;
+            case "paste":
+                EnterBuddyMode();
+                PasteToCat();
+                break;
+            case "settings":
+                EnterBuddyMode();
+                ShowSettings();
                 break;
             default:
                 var files = args.Where(a => File.Exists(a) || Directory.Exists(a)).ToArray();
@@ -289,7 +326,10 @@ public partial class App : Application
         _menu = new BroMenu(anchorPx, "Drop files on me, or Shift + drag one anywhere.",
         [
             new MenuEntry("\uE8E5", "Convert files…", PickFiles),
+            new MenuEntry("\uE77F", "Paste from clipboard", PasteToCat),
             new MenuEntry("\uE924", $"Snip and convert ({_settings.SnipHotkey})", StartSnip),
+            new MenuEntry("\uE790", $"Pick a colour ({_settings.ColourHotkey})", StartColourPicker),
+            new MenuEntry("\uED14", "Make a QR code…", () => ShowQr("")),
             new MenuEntry(visible ? "\uE7B3" : "\uE890", visible ? "Hide the cat" : "Show the cat", () => SetBuddyVisible(!visible)),
             null,
             new MenuChoice("Cat", CatSprites.Skins.Select(k => new ChoiceOption(k.Id, $"{k.Name}: {k.Description}", CatSprites.Head(k))).ToList(),
@@ -350,20 +390,10 @@ public partial class App : Application
     {
         if (_settingsWindow != null) { _settingsWindow.Activate(); return; }
         _settingsWindow = new SettingsWindow(
-            () => _settings.SnipHotkey,
-            text =>
-            {
-                var previous = _settings.SnipHotkey;
-                _settings.SnipHotkey = text;
-                if (RegisterSnipHotkeyQuietly())
-                {
-                    _settings.Save();
-                    return true;
-                }
-                _settings.SnipHotkey = previous;
-                RegisterSnipHotkeyQuietly();
-                return false;
-            },
+            [
+                new ShortcutSetting("Snip and convert", () => _settings.SnipHotkey, text => ChangeHotkey(text, () => _settings.SnipHotkey, v => _settings.SnipHotkey = v)),
+                new ShortcutSetting("Pick a colour", () => _settings.ColourHotkey, text => ChangeHotkey(text, () => _settings.ColourHotkey, v => _settings.ColourHotkey = v)),
+            ],
             [
                 new SettingSwitch("Right-click menu in Explorer", "Convert with Bro, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu),
                 new SettingSwitch("Shift + drag opens the wheel", "Hold Shift while dragging any file.", () => _settings.ShiftDragSummon, ToggleShiftDrag),
@@ -374,15 +404,21 @@ public partial class App : Application
         _settingsWindow.Show();
     }
 
-    /// <summary>Re-registers the snip shortcut without the "taken" toast (the settings window says it inline).</summary>
-    bool RegisterSnipHotkeyQuietly()
+    /// <summary>Tries a new shortcut from the settings window; puts the old one back if it's taken.</summary>
+    bool ChangeHotkey(string text, Func<string> get, Action<string> set)
     {
-        if (_hotkeys == null) return false;
-        if (_snipHotkeyId > 0) _hotkeys.Unregister(_snipHotkeyId);
-        _snipHotkeyId = -1;
-        if (Hotkey.Parse(_settings.SnipHotkey) is not { } hotkey || !_hotkeys.Register(hotkey, StartSnip, out int id)) return false;
-        _snipHotkeyId = id;
-        return true;
+        var previous = get();
+        // The two shortcuts can't share keys.
+        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey)) return false;
+        set(text);
+        if (BindHotkeys(quiet: true))
+        {
+            _settings.Save();
+            return true;
+        }
+        set(previous);
+        BindHotkeys(quiet: true);
+        return false;
     }
 
     void ToggleLiveGlass()
@@ -428,29 +464,159 @@ public partial class App : Application
         if (_settings.ShiftDragSummon) _hook.Start();
 
         _hotkeys = new Hotkeys();
-        RegisterSnipHotkey();
+        BindHotkeys(quiet: false);
     }
 
-    /// <summary>(Re)binds the snip shortcut from settings; says so if another app already owns it.</summary>
-    public bool RegisterSnipHotkey()
+    /// <summary>(Re)binds both shortcuts from settings. Unless quiet, says which one another app owns.</summary>
+    bool BindHotkeys(bool quiet)
+    {
+        bool snip = Bind(ref _snipHotkeyId, _settings.SnipHotkey, StartSnip, quiet);
+        bool colour = Bind(ref _colourHotkeyId, _settings.ColourHotkey, StartColourPicker, quiet);
+        return snip && colour;
+    }
+
+    bool Bind(ref int id, string text, Action handler, bool quiet)
     {
         if (_hotkeys == null) return false;
-        if (_snipHotkeyId > 0) _hotkeys.Unregister(_snipHotkeyId);
-        _snipHotkeyId = -1;
-        if (Hotkey.Parse(_settings.SnipHotkey) is not { } hotkey) return false;
-        if (_hotkeys.Register(hotkey, StartSnip, out int id))
+        if (id > 0) _hotkeys.Unregister(id);
+        id = -1;
+        if (Hotkey.Parse(text) is not { } hotkey) return false;
+        if (_hotkeys.Register(hotkey, handler, out int newId))
         {
-            _snipHotkeyId = id;
+            id = newId;
             return true;
         }
-        ToastHost.Show(ToastWindow.Message($"{hotkey} is taken",
-            "Another app already uses that shortcut. Pick a different one in Settings."));
+        if (!quiet)
+            ToastHost.Show(ToastWindow.Message($"{hotkey} is taken",
+                "Another app already uses that shortcut. Pick a different one in Settings."));
         return false;
+    }
+
+    // ---- Colour picker ----
+
+    public void StartColourPicker()
+    {
+        if (_picker != null || _snip != null) return;
+        _menu?.CloseAnimated();
+        _picker = new ColourPickerWindow();
+        _picker.Closed += (_, _) => _picker = null;
+        _picker.Picked += OnColourPicked;
+        _picker.Show();
+    }
+
+    void OnColourPicked(Color colour)
+    {
+        var hex = ColourPickerWindow.Hex(colour);
+        var rgb = ColourPickerWindow.Rgb(colour);
+        var hsl = ColourPickerWindow.Hsl(colour);
+        bool copied = TrySetClipboard(hex);
+        ToastWindow? toast = null;
+        toast = ToastWindow.Message(copied ? $"{hex} copied" : hex, $"{rgb}   {hsl}", colour,
+            ("Copy RGB", () => { if (TrySetClipboard(rgb)) toast!.SetMessage($"Copied {rgb}"); }),
+            ("Copy HSL", () => { if (TrySetClipboard(hsl)) toast!.SetMessage($"Copied {hsl}"); }),
+            ("Pick again", () => { toast!.CloseAnimated(); StartColourPicker(); }));
+        ToastHost.Show(toast);
+    }
+
+    static bool TrySetClipboard(string text)
+    {
+        try
+        {
+            ClipboardTools.Retry(() => Clipboard.SetText(text));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Could not set the clipboard", ex);
+            return false;
+        }
+    }
+
+    // ---- QR codes ----
+
+    QrWindow? _qr;
+
+    void ShowQr(string text)
+    {
+        _menu?.CloseAnimated();
+        _qr?.Close();
+        _qr = new QrWindow(text);
+        _qr.Closed += (_, _) => _qr = null;
+        _qr.Show();
+    }
+
+    // ---- Paste ----
+
+    /// <summary>
+    /// Whatever is on the clipboard goes to the cat: copied files open the wheel, a copied picture
+    /// (a screenshot, an image from a browser) is saved and opens the wheel, text becomes a QR code.
+    /// </summary>
+    void PasteToCat()
+    {
+        _menu?.CloseAnimated();
+        NativeMethods.GetCursorPos(out var cursor);
+        var centre = _buddy is { IsVisible: true } b ? b.CenterPx() : new Point(cursor.X, cursor.Y);
+        try
+        {
+            if (Clipboard.ContainsFileDropList())
+            {
+                var files = Clipboard.GetFileDropList().Cast<string>().ToList();
+                ShowWheel(FileList.Expand(files), centre);
+                return;
+            }
+            if (Clipboard.ContainsImage() || Clipboard.ContainsData("PNG"))
+            {
+                ShowWheel([SavePastedImage()], centre);
+                return;
+            }
+            if (Clipboard.ContainsText())
+            {
+                var text = Clipboard.GetText().Trim();
+                var path = text.Trim('"');
+                if ((File.Exists(path) || Directory.Exists(path)) && !path.Contains('\n'))
+                {
+                    ShowWheel(FileList.Expand([path]), centre);
+                    return;
+                }
+                if (text.Length > 0)
+                {
+                    ShowQr(text);
+                    return;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Paste failed", ex);
+            ToastHost.Show(ToastWindow.Message("Couldn't read the clipboard", "Another app may be holding it. Try again."));
+            return;
+        }
+        ToastHost.Show(ToastWindow.Message("Nothing to paste", "Copy a file, a picture or some text first."));
+    }
+
+    /// <summary>Saves the clipboard picture in Pictures\Converted Bro, like snips.</summary>
+    static string SavePastedImage()
+    {
+        var folder = Directory.CreateDirectory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Converted Bro")).FullName;
+        var file = Path.Combine(folder, $"Pasted {DateTime.Now:yyyy-MM-dd HH.mm.ss}.png");
+        // Browsers and design apps put a real PNG (with transparency) on the clipboard; prefer it.
+        if (Clipboard.GetData("PNG") is MemoryStream png)
+        {
+            File.WriteAllBytes(file, png.ToArray());
+            return file;
+        }
+        // A plain bitmap (screenshots): its alpha channel is often garbage, so drop it.
+        var image = Clipboard.GetImage() ?? throw new InvalidOperationException("The clipboard picture couldn't be read.");
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(new FormatConvertedBitmap(image, PixelFormats.Bgr32, null, 0)));
+        using var stream = File.Create(file);
+        encoder.Save(stream);
+        return file;
     }
 
     public void StartSnip()
     {
-        if (_snip != null) return;
+        if (_snip != null || _picker != null) return;
         _menu?.CloseAnimated();
         _snip = new SnipWindow();
         _snip.Closed += (_, _) => _snip = null;

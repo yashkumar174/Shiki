@@ -245,6 +245,7 @@ public sealed class ConvertWheel : Window
         ActionGroup.Format => "Formats",
         ActionGroup.Tool => "Tools",
         ActionGroup.Form => "Form photos",
+        ActionGroup.Files => "Files",
         _ => "Size limit",
     };
 
@@ -531,7 +532,7 @@ public sealed class ConvertWheel : Window
         else
         {
             SetHubTitleToFiles();
-            _hubSub.Text = _files.Count == 1 ? FileSummary(_files[0]) : PageName(_pages[_pageIndex].Group);
+            _hubSub.Text = Picked is [var only] ? FileSummary(only) : PageName(_pages[_pageIndex].Group);
         }
 
         _dots.Visibility = HasTwoPages ? Visibility.Visible : Visibility.Collapsed;
@@ -539,11 +540,20 @@ public sealed class ConvertWheel : Window
             _pageDots[i].Fill = Theme.Brush(i == _pageIndex ? _accent : Theme.WithAlpha(_p.SubLabel, 0x70));
     }
 
-    void SetHubTitleToFiles() =>
-        _hubTitle.Text = _files.Count == 1 ? IOPath.GetFileNameWithoutExtension(_files[0]) : $"{_files.Count} files";
+    /// <summary>What was picked (a folder counts once, not as its contents).</summary>
+    IReadOnlyList<string> Picked => FileList.TopLevel(_files);
+
+    void SetHubTitleToFiles()
+    {
+        var picked = Picked;
+        _hubTitle.Text = picked.Count == 1
+            ? (Directory.Exists(picked[0]) ? IOPath.GetFileName(picked[0].TrimEnd('\\')) : IOPath.GetFileNameWithoutExtension(picked[0]))
+            : $"{picked.Count} {(picked.Any(Directory.Exists) ? "items" : "files")}";
+    }
 
     static string FileSummary(string path)
     {
+        if (Directory.Exists(path)) return "Folder";
         var ext = IOPath.GetExtension(path).TrimStart('.').ToUpperInvariant();
         try
         {

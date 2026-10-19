@@ -10,7 +10,7 @@ namespace ConvertedBro.Core;
 public delegate Task<IReadOnlyList<string>> ActionRunner(IReadOnlyList<string> inputs, IProgress<double> progress, CancellationToken ct);
 
 /// <summary>Which page of the wheel an action sits on.</summary>
-public enum ActionGroup { Format, Tool, Size, Form }
+public enum ActionGroup { Format, Tool, Size, Form, Files }
 
 /// <summary>One thing the bro can do to files, e.g. "to MP4".</summary>
 public sealed class BroAction
@@ -30,6 +30,8 @@ public sealed class BroAction
     /// <summary>True when all files go into a single run (merge); false runs once per file.</summary>
     public bool Combine { get; init; }
     public int MinFiles { get; init; } = 1;
+    /// <summary>Works on anything, folders included (zip): offered whatever the selection is.</summary>
+    public bool AnyFile { get; init; }
     /// <summary>Extra check on the whole selection before offering this on the wheel.</summary>
     public Func<IReadOnlyList<string>, bool>? OfferFor { get; init; }
     public required ActionRunner Run { get; init; }
@@ -40,7 +42,7 @@ public sealed class BroAction
     /// </summary>
     public Func<IReadOnlyList<string>, System.Windows.Window?>? Editor { get; init; }
 
-    public bool Accepts(string path) => AcceptsExtension(Path.GetExtension(path));
+    public bool Accepts(string path) => AnyFile || (!Directory.Exists(path) && AcceptsExtension(Path.GetExtension(path)));
 }
 
 public static class ActionCatalog
@@ -64,10 +66,10 @@ public static class ActionCatalog
     public static IReadOnlyList<BroAction> For(IReadOnlyList<string> files)
     {
         var kind = DominantKind(files);
-        if (kind == FileKind.Unknown) return [];
-
         return All.Where(a =>
         {
+            if (a.AnyFile) return files.Count > 0;
+            if (kind == FileKind.Unknown) return false;
             var accepted = files.Where(a.Accepts).ToList();
             return accepted.Any(f => FileKinds.Of(f) == kind) && accepted.Count >= a.MinFiles && (a.OfferFor?.Invoke(files) ?? true);
         }).ToList();
@@ -205,6 +207,19 @@ public static class ActionCatalog
             },
         });
         list.Add(CopyText(FileKind.Image, Kind(FileKind.Image, ".svg", ".ico")));
+        list.Add(new BroAction
+        {
+            Id = "image-qr-read",
+            Label = "Read QR code",
+            Short = "Read QR",
+            Hint = "Copy what a QR code or barcode in the picture says",
+            Glyph = "\uED14",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Image,
+            AcceptsExtension = Kind(FileKind.Image, ".svg"),
+            Combine = true,
+            Run = (inputs, _, ct) => Task.Run<IReadOnlyList<string>>(() => { ReadCodes(inputs); return []; }, ct),
+        });
         list.Add(new BroAction
         {
             Id = "image-copy",
@@ -383,6 +398,34 @@ public static class ActionCatalog
         });
 
         list.Add(CopyText(FileKind.Pdf, Kind(FileKind.Pdf)));
+
+        // ---- Archives and any files ----
+        list.Add(new BroAction
+        {
+            Id = "archive-extract",
+            Label = "Extract here",
+            Short = "Extract",
+            Hint = "Unpack zip, 7z, rar and tar next to the archive",
+            Glyph = "\uE8B7",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Archive,
+            AcceptsExtension = Kind(FileKind.Archive),
+            Run = PerFileMany((input, progress) => [ArchiveTools.Extract(input, progress, CancellationToken.None)]),
+        });
+        list.Add(new BroAction
+        {
+            Id = "zip",
+            Label = "Zip",
+            Short = "Zip",
+            Hint = "Pack everything into one .zip",
+            Glyph = "\uF012",
+            Group = ActionGroup.Files,
+            Kind = FileKind.Unknown,
+            AnyFile = true,
+            Combine = true,
+            AcceptsExtension = _ => true,
+            Run = (inputs, progress, ct) => Task.Run<IReadOnlyList<string>>(() => [ArchiveTools.Zip(inputs, progress, ct)], ct),
+        });
         list.Add(new BroAction
         {
             Id = "pdf-pages",
@@ -479,6 +522,27 @@ public static class ActionCatalog
         Combine = true,
         Run = TextTools.CopyText,
     };
+
+    static void ReadCodes(IReadOnlyList<string> inputs)
+    {
+        var texts = new List<string>();
+        foreach (var input in inputs)
+        {
+            using var image = ImageTools.Load(input);
+            texts.AddRange(QrTools.Read(image));
+        }
+        if (texts.Count == 0)
+        {
+            JobNotes.Say("No QR code or barcode found");
+            return;
+        }
+        var all = string.Join(Environment.NewLine, texts.Distinct());
+        System.Windows.Application.Current.Dispatcher.Invoke(() => ClipboardTools.Retry(() => System.Windows.Clipboard.SetText(all)));
+        var first = texts[0].Trim();
+        var shown = first.Length > 60 ? first[..57] + "…" : first;
+        JobNotes.Say(texts.Count == 1 ? $"Copied: {shown}" : $"Copied {texts.Count} codes, starting with: {shown}");
+        if (QrTools.IsLink(first)) JobNotes.Link(first);
+    }
 
     static ActionRunner PerFile(Func<string, string> convert) =>
         PerFileMany((input, _) => [convert(input)]);

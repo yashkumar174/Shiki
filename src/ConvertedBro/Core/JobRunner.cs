@@ -22,6 +22,8 @@ public sealed class Job
     public string? Error { get; private set; }
     /// <summary>Optional one-liner for the toast, e.g. "Copied 214 words to the clipboard".</summary>
     public string? Note { get; internal set; }
+    /// <summary>A web address the result points to (a QR code's link), offered as "Open link".</summary>
+    public string? Link { get; internal set; }
 
     public event Action<Job>? Changed;
 
@@ -55,6 +57,11 @@ public static class JobNotes
     public static void Say(string note)
     {
         if (Current.Value is { } job) job.Note = note;
+    }
+
+    public static void Link(string url)
+    {
+        if (Current.Value is { } job) job.Link = url;
     }
 }
 

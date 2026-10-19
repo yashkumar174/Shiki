@@ -11,22 +11,18 @@ namespace ConvertedBro.UI;
 /// <summary>A switch in the settings window: a label and how to read and flip it.</summary>
 public sealed record SettingSwitch(string Label, string Hint, Func<bool> IsOn, Action Toggle);
 
+/// <summary>A global shortcut in the settings window. Set returns false when another app owns it.</summary>
+public sealed record ShortcutSetting(string Label, Func<string> Get, Func<string, bool> Set);
+
 /// <summary>Shortcuts and the main switches, in one place.</summary>
 public sealed class SettingsWindow : Window
 {
     readonly Palette _p = Theme.Current;
-    readonly Func<string> _getSnip;
-    readonly Func<string, bool> _setSnip;
-    readonly Border _shortcut;
-    readonly TextBlock _shortcutText;
     readonly TextBlock _error = UiKit.Error();
-    bool _recording;
+    (ShortcutSetting Setting, Border Chip)? _recording;
 
-    /// <param name="setSnip">Applies a new shortcut; returns false if another app owns it.</param>
-    public SettingsWindow(Func<string> getSnip, Func<string, bool> setSnip, IReadOnlyList<SettingSwitch> switches)
+    public SettingsWindow(IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches)
     {
-        _getSnip = getSnip;
-        _setSnip = setSnip;
         Title = "Converted Bro settings";
         Width = 520;
         SizeToContent = SizeToContent.Height;
@@ -37,9 +33,12 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(UiKit.Title("Settings"));
 
         stack.Children.Add(UiKit.Heading("Shortcuts"));
-        _shortcut = UiKit.Button(getSnip(), StartRecording);
-        _shortcutText = (TextBlock)_shortcut.Child;
-        stack.Children.Add(Line("Snip and convert", "Click, then press the keys you want.", _shortcut));
+        foreach (var shortcut in shortcuts)
+        {
+            Border? chip = null;
+            chip = UiKit.Button(shortcut.Get(), () => StartRecording(shortcut, chip!));
+            stack.Children.Add(Line(shortcut.Label, "Click, then press the keys you want.", chip));
+        }
         stack.Children.Add(_error);
 
         stack.Children.Add(UiKit.Heading("Behaviour"));
@@ -89,17 +88,18 @@ public sealed class SettingsWindow : Window
         UiKit.Select(chip, on);
     }
 
-    void StartRecording()
+    void StartRecording(ShortcutSetting setting, Border chip)
     {
-        _recording = true;
-        _shortcutText.Text = "Press keys…";
-        UiKit.Select(_shortcut, true);
+        if (_recording is { } previous) Finish(previous.Setting.Get());
+        _recording = (setting, chip);
+        ((TextBlock)chip.Child).Text = "Press keys…";
+        UiKit.Select(chip, true);
         _error.Visibility = Visibility.Collapsed;
     }
 
     void OnKey(object sender, KeyEventArgs e)
     {
-        if (!_recording)
+        if (_recording is not { } recording)
         {
             if (e.Key == Key.Escape) Close();
             return;
@@ -108,7 +108,7 @@ public sealed class SettingsWindow : Window
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (key == Key.Escape)
         {
-            Finish(_getSnip());
+            Finish(recording.Setting.Get());
             return;
         }
         // Wait for a real key; modifiers alone aren't a shortcut.
@@ -121,19 +121,20 @@ public sealed class SettingsWindow : Window
             return;
         }
         var text = new Hotkey(modifiers, key).ToString();
-        if (_setSnip(text)) Finish(text);
+        if (recording.Setting.Set(text)) Finish(text);
         else
         {
-            _error.Text = $"{text} is already used by another app. Try a different one.";
+            _error.Text = $"{text} is already in use. Try a different one.";
             _error.Visibility = Visibility.Visible;
-            Finish(_getSnip());
+            Finish(recording.Setting.Get());
         }
     }
 
     void Finish(string shown)
     {
-        _recording = false;
-        _shortcutText.Text = shown;
-        UiKit.Select(_shortcut, false);
+        if (_recording is not { } recording) return;
+        _recording = null;
+        ((TextBlock)recording.Chip.Child).Text = shown;
+        UiKit.Select(recording.Chip, false);
     }
 }

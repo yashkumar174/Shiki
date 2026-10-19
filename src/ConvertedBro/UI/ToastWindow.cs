@@ -40,7 +40,8 @@ public sealed class ToastWindow : Window
     readonly Rectangle _bar = new() { HorizontalAlignment = HorizontalAlignment.Left, RadiusX = 1.5, RadiusY = 1.5, Width = 0 };
     readonly Rectangle _shimmer = new() { HorizontalAlignment = HorizontalAlignment.Left, RadiusX = 1.5, RadiusY = 1.5, Width = 72, Opacity = 0 };
     readonly TranslateTransform _shimmerMove = new();
-    readonly StackPanel _buttons = new() { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0) };
+    // Wraps rather than clipping when a job offers more buttons than fit on one line.
+    readonly WrapPanel _buttons = new() { Margin = new Thickness(0, 10, 0, 0) };
     readonly Border _close = new();
     readonly TranslateTransform _slide = new(28, 0);
     // A brush, not an Image: the toast sizes itself to its content, and the glass must not count as content.
@@ -66,6 +67,28 @@ public sealed class ToastWindow : Window
         toast.StartAutoClose(TimeSpan.FromSeconds(5));
         return toast;
     }
+
+    /// <summary>A message with its own buttons, and optionally a colour in place of the icon tile.</summary>
+    public static ToastWindow Message(string title, string message, Color? swatch, params (string Label, Action Click)[] buttons)
+    {
+        var toast = new ToastWindow(title, message, FileKind.Unknown, swatch == null ? "" : "", showProgress: false);
+        if (swatch is { } colour)
+        {
+            toast._tile.Background = Theme.Brush(colour);
+            toast._tile.BorderBrush = Theme.Brush(Color.FromArgb(0x50, 255, 255, 255));
+            toast._tile.BorderThickness = new Thickness(1);
+        }
+        for (int i = 0; i < buttons.Length; i++)
+        {
+            var (label, click) = buttons[i];
+            toast.AddButton(label, click, primary: i == 0);
+        }
+        toast.StartAutoClose(TimeSpan.FromSeconds(8));
+        return toast;
+    }
+
+    /// <summary>Changes the status line, e.g. to confirm a button did its job.</summary>
+    public void SetMessage(string message) => _status.Text = message;
 
     ToastWindow(string title, string message, FileKind kind, string glyph, bool showProgress)
     {
@@ -226,10 +249,13 @@ public sealed class ToastWindow : Window
                 _tileGlyph.Text = "\uE73E";
                 _status.Text = _job.Note ?? DoneText(_job.Outputs);
                 _buttons.Children.Clear();
+                if (_job.Link is { } link) AddButton("Open link", () => Launch(link, null), primary: true);
                 if (_job.Outputs.Count > 0)
                 {
-                    AddButton(_job.Outputs.Count == 1 ? "Open" : "Open folder", () => Open(_job.Outputs), primary: true);
-                    AddButton("Show in folder", () => ShowInFolder(_job.Outputs[0]), primary: false);
+                    var outputs = _job.Outputs;
+                    AddButton(outputs.Count == 1 ? "Open" : "Open folder", () => Open(outputs), primary: true);
+                    AddButton("Copy", () => CopyOutputs(outputs), primary: false);
+                    AddButton("Show in folder", () => ShowInFolder(outputs[0]), primary: false);
                 }
                 StartAutoClose(TimeSpan.FromSeconds(8));
                 break;
@@ -327,8 +353,8 @@ public sealed class ToastWindow : Window
         {
             Background = background,
             CornerRadius = new CornerRadius(_pixel ? 0 : 6),
-            Padding = new Thickness(11, 5, 11, 6),
-            Margin = new Thickness(0, 0, 6, 0),
+            Padding = new Thickness(9, 5, 9, 6),
+            Margin = new Thickness(0, 0, 5, 5),
             Cursor = Cursors.Hand,
             Child = new TextBlock
             {
@@ -349,6 +375,23 @@ public sealed class ToastWindow : Window
     void FadeClose(double to) => _close.BeginAnimation(OpacityProperty, new DoubleAnimation(to, TimeSpan.FromMilliseconds(120)));
 
     static void ShowInFolder(string path) => Launch("explorer.exe", $"/select,\"{path}\"");
+
+    /// <summary>Puts the results on the clipboard and says so on the button.</summary>
+    void CopyOutputs(IReadOnlyList<string> outputs)
+    {
+        try
+        {
+            ClipboardTools.CopyFiles(outputs);
+            if (_buttons.Children.OfType<Border>().FirstOrDefault(b => b.Child is TextBlock { Text: "Copy" }) is { Child: TextBlock label }) label.Text = "Copied";
+            _autoClose.Stop();
+            StartAutoClose(TimeSpan.FromSeconds(3));
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Could not copy the results", ex);
+            _status.Text = "Another app is holding the clipboard. Try again.";
+        }
+    }
 
     static void Open(IReadOnlyList<string> outputs)
     {

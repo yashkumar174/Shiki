@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -35,6 +36,19 @@ public static class ClipboardTools
             Retry(() => Clipboard.SetDataObject(data, true));
         });
         JobNotes.Say("Copied the image, paste it anywhere");
+    }
+
+    /// <summary>A finished job's results: one picture pastes as a picture, anything else as files.</summary>
+    public static void CopyFiles(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 1 && File.Exists(paths[0]) && FileKinds.Of(paths[0]) == FileKind.Image && !paths[0].EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+        {
+            CopyImage(paths[0]);
+            return;
+        }
+        var list = new StringCollection();
+        foreach (var path in paths) list.Add(path);
+        Application.Current.Dispatcher.Invoke(() => Retry(() => Clipboard.SetFileDropList(list)));
     }
 
     /// <summary>Another app may hold the clipboard for a moment; try a few times.</summary>

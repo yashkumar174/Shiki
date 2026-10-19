@@ -8,14 +8,16 @@ Inspired by [Tangerine](https://x.com/th2049) for macOS.
 
 ## What it does
 
-The wheel has up to four pages: **formats** (what to convert to), **tools** (what to do to the file), **size limit** (make it fit an upload limit) and **form photos** (exact sizes for exam, passport and visa forms).
+The wheel has up to five pages: **formats** (what to convert to), **tools** (what to do to the file), **size limit** (make it fit an upload limit), **form photos** (exact sizes for exam, passport and visa forms) and **files** (zip anything, folders included).
 
 | Files | Formats | Tools | Size limit |
 |---|---|---|---|
-| Images (png, jpg, webp, heic, avif, gif, bmp, tiff, ico, svg) | PNG, JPG, WEBP, ICO, PDF (all images into one A4 PDF) | Remove background, Scan, Copy text, Copy image, Compress, Half size, Rotate, Remove metadata (camera, date, GPS) | 100 KB, 200 KB, 1 MB, 2 MB; form photos: Exam photo, Passport, Visa, Signature |
+| Images (png, jpg, webp, heic, avif, gif, bmp, tiff, ico, svg) | PNG, JPG, WEBP, ICO, PDF (all images into one A4 PDF) | Remove background, Scan, Copy text, Read QR, Copy image, Compress, Half size, Rotate, Remove metadata (camera, date, GPS) | 100 KB, 200 KB, 1 MB, 2 MB; form photos: Exam photo, Passport, Visa, Signature |
 | Video (mp4, mov, mkv, avi, webm, …) | MP4, WEBM, GIF, MP3 | Compress (up to 1080p), Half size, Rotate, Mute | |
 | Audio (mp3, wav, m4a, flac, ogg, …) | MP3, M4A, WAV, FLAC, OGG | Even out volume | |
 | PDF | Pages to PNG, Pages to JPG | Copy text, Edit pages, Sign, Unlock, Lock, Page numbers, Split into pages, Merge (PDFs and images, in name order) | 100 KB, 200 KB, 1 MB, 2 MB |
+| Archives (zip, 7z, rar, tar, tar.gz, …) | | Extract here | |
+| Anything, folders too | | Zip (on the Files page) | |
 
 - **Size limit** finds the highest quality that fits (binary search on JPEG/WEBP quality, then a smaller picture if even the lowest quality is too big). PDFs are re-rendered page by page, so their pages become pictures.
 - **Copy text** uses the OCR engine built into Windows (offline) and puts the text on the clipboard. It reads the languages installed in Windows.
@@ -26,6 +28,10 @@ The wheel has up to four pages: **formats** (what to convert to), **tools** (wha
 - **Page numbers**: "3 / 10" centred at the bottom of each page.
 - **Remove background**: runs offline on your own PC with BiRefNet (MIT). The model (115 MB) downloads the first time you use it, to `%LOCALAPPDATA%\ConvertedBro\models`. One photo opens an editor: the cut-out on a checkerboard, a background swatch row (transparent, white, black, grey, blue, red, or any colour), and a touch-up brush (Erase / Restore, S–XL, `[` `]` to resize, Ctrl+Z to undo, scroll to zoom, right-drag to pan, "Hold to compare" for the original). Save gives `name (no background).png`, or a JPG on a colour; Copy puts it on the clipboard. Several photos at once are cut out straight to transparent PNGs. The mask is refined at full resolution (guided filter) and the old background's colour is cleaned out of soft edges, so hair and fur don't get a halo. It uses the graphics card through DirectML when it can (about 4 s a photo on a GTX 1650; the first one after a while takes longer while the card warms up) and the processor otherwise.
 - **Form photos**: Exam photo (3.5 × 4.5 cm, 20–50 KB), Passport (2 × 2 in), Visa (35 × 45 mm), Signature (3.5 × 1.5 cm, 10–20 KB). The crop starts centred on the face (Windows' built-in face detector, offline) or on the signature's ink; drag or scroll to adjust. The JPG gets the right pixel size and DPI, and the highest quality inside the size range (a tiny file is padded with an empty comment to reach a minimum). **White background** swaps whatever is behind you for plain white.
+- **Paste onto the cat** (*Paste from clipboard* in its menu): copied files open the wheel, a copied picture (a screenshot, an image from a browser) is saved in `Pictures\Converted Bro` and opens the wheel, and copied text opens the QR maker. Every finished job's card has **Copy**: one picture pastes as a picture, anything else as files.
+- **Pick a colour** (Ctrl+Alt+C, changeable in Settings): the screen freezes with a magnifier under the cursor; click to copy the hex (`#1E90FF`), and the card offers RGB and HSL too. Arrow keys nudge one pixel (Shift for ten), Enter picks, Esc cancels. It isn't Ctrl+Shift+C because terminals copy and browsers inspect with that.
+- **QR codes**: *Make a QR code* in the cat's menu turns a link or any text into a QR code as you type (save as PNG or copy). **Read QR** on any picture or snip reads QR codes and barcodes (light-on-dark too), copies what they say and offers *Open link* for a web address.
+- **Zip / Extract**: Zip packs files and whole folders into one `.zip` named after the first item (photos and videos are stored without recompressing, which is faster and no bigger). Extract unpacks zip, 7z, rar, tar and compressed tarballs next to the archive: a single folder inside comes out as itself, anything else goes into a folder named after the archive. Entries that try to escape the folder (`..\..\`) are skipped. Password-protected archives aren't supported.
 - **Scan** opens an editor: auto-detect places four corners on the page (paper is bright and colourless: Otsu threshold, biggest blob, extreme corners), you drag them where needed (a loupe magnifies the corner), pick *Clean colour*, *Black and white* or *Original*, rotate, preview the result, and save one PDF or one image per photo. Cleanup straightens the page with a perspective warp and divides by a blurred copy of itself, which evens out shadows and turns the paper white.
 
 Outputs go next to the original and never overwrite anything (`photo (1).jpg`, `clip (small).mp4`, `report (pages)\page-01.png`).
@@ -36,7 +42,7 @@ Outputs go next to the original and never overwrite anything (`photo (1).jpg`, `
 - **Drop on the cat.** Drag files onto the cat (even while it's hiding) and the wheel opens next to it. Click a wedge or press its number; click the centre, scroll, or press Tab to switch pages.
 - **Right-click in Explorer.** Right-click a file → *Show more options* (or Shift + right-click) → **Convert with Bro**. Select many files and they're handled as one batch (a multi-select "Merge" makes one PDF).
 - **Double-click the cat**, or *Convert files…* in its menu, to pick files from a dialog.
-- **Right-click the cat** or the tray icon for the menu: pick a cat, pick a look, Explorer menu, Shift + drag, start with Windows, quit.
+- **Right-click the cat** or the tray icon for the menu: paste, snip, pick a colour, make a QR code, pick a cat, pick a look, Explorer menu, Shift + drag, start with Windows, quit.
 
 ## The cat
 
@@ -88,11 +94,15 @@ Command line (what the Explorer menu calls):
 ConvertedBro.exe                          start the bro + tray icon
 ConvertedBro.exe run <action-id> <files>  run one action, e.g. run video-mp4 "a.mov"
 ConvertedBro.exe menu <files>             show the format ring at the cursor
+ConvertedBro.exe paste                    give the clipboard to the cat
+ConvertedBro.exe pick                     pick a colour from the screen
+ConvertedBro.exe qr [text]                open the QR maker
+ConvertedBro.exe settings                 open Settings
 ConvertedBro.exe --register               add the Explorer right-click menu (current user, no admin)
 ConvertedBro.exe --unregister             remove it
 ```
 
-Dev aids (run and exit, results in the log): `--export-sprites <folder>`, `--scan-test <photo>`, `--pdf-test <pdf>`, `--sign-test <pdf> <signature photo>`, `--form-test <exam|passport|visa|signature> <photo> [white]`, `--cutout-test <folder of jpgs>`.
+Dev aids (run and exit, results in the log): `--export-sprites <folder>`, `--scan-test <photo>`, `--pdf-test <pdf>`, `--sign-test <pdf> <signature photo>`, `--form-test <exam|passport|visa|signature> <photo> [white]`, `--cutout-test <folder of jpgs>`, `--qr-test <text> <out.png>`.
 
 Only one ConvertedBro runs per user. Extra launches (Explorer starts one per selected file) pass their files to it over a named pipe, and they're batched for 0.7 s. When started from Explorer without the bro running, it works quietly and exits when done.
 
@@ -104,9 +114,9 @@ Logs and settings: `%LOCALAPPDATA%\ConvertedBro\`.
 src/ConvertedBro/
   Core/   FileKind, ActionCatalog (every action lives here), ImageTools (Magick.NET),
           MediaTools (FFmpeg), PdfTools (PDFium + PDFsharp), SizeTools, TextTools (Windows OCR),
-          ScanTools, Cutout (background removal, ONNX Runtime), FormPhotos, JobRunner, OutputPaths
+          ScanTools, Cutout (background removal, ONNX Runtime), FormPhotos, ArchiveTools, QrTools, JobRunner, OutputPaths
   Shell/  SingleInstance (mutex + pipe), ContextMenuRegistrar, GlobalMouseHook, StartupRegistration
-  UI/     CatWindow, CatSprites, ConvertWheel, ScanWindow, CutoutWindow, FormPhotoWindow, BroMenu, ToastWindow, TrayIcon, Theme, Glass, LiquidGlass, PixelShape, WedgeGeometry, BroArt
+  UI/     CatWindow, CatSprites, ConvertWheel, ScanWindow, CutoutWindow, FormPhotoWindow, ColourPickerWindow, QrWindow, BroMenu, ToastWindow, TrayIcon, Theme, Glass, LiquidGlass, PixelShape, WedgeGeometry, BroArt
   Assets/ Fonts/PixelifySans.ttf (SIL Open Font License, see OFL.txt)
 ```
 
@@ -115,6 +125,7 @@ To add an action, add a `BroAction` in `ActionCatalog.Build()`, with `Group = Ac
 ## Licensing notes
 
 - Magick.NET: Apache-2.0. Docnet.Core / PDFium: MIT / BSD. Pixelify Sans: SIL Open Font License 1.1.
+- SharpCompress: MIT. QRCoder: MIT. ZXing.Net: Apache-2.0.
 - ONNX Runtime (DirectML): MIT. BiRefNet model weights: MIT (downloaded at first use from the onnx-community conversion on Hugging Face, not bundled).
 - The cats are original pixel art made for this project.
 - **PDFsharp is pinned to 6.2.4 on purpose.** 6.5.0 switched to AGPL/commercial and refuses to run without a license.
