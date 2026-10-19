@@ -191,11 +191,14 @@ public partial class App : Application
         {
             ToastHost.Show(new ToastWindow(job));
             _buddy?.SetBusy(JobRunner.ActiveCount);
+            if (TotalBytes(job.Inputs) > BigFile) _buddy?.Startle();
         });
         JobRunner.JobFinished += job => Dispatcher.BeginInvoke(() =>
         {
             _buddy?.SetBusy(JobRunner.ActiveCount);
-            if (job.State == JobState.Done) _buddy?.Celebrate();
+            if (job.State != JobState.Done) return;
+            if (RecordStats(job)) _buddy?.Party();
+            else _buddy?.Celebrate();
         });
 
         if (args.Length == 0)
@@ -244,6 +247,16 @@ public partial class App : Application
             case "settings":
                 EnterBuddyMode();
                 ShowSettings();
+                break;
+            case "catmenu":
+                // Dev aid: the cat's menu at the mouse, as a right-click would open it.
+                EnterBuddyMode();
+                NativeMethods.GetCursorPos(out var at);
+                ShowMenu(new Point(at.X, at.Y));
+                break;
+            case "cat" when args.Length == 2:
+                EnterBuddyMode();
+                _buddy?.Act(args[1]);
                 break;
             case "selected":
                 // Same as the convert shortcut: the files selected in the Explorer window in front.
@@ -313,6 +326,7 @@ public partial class App : Application
     public void ShowWheel(IReadOnlyList<string> files, Point centerPx)
     {
         if (files.Count == 0) return;
+        if (TotalBytes(files) > BigFile) _buddy?.Startle();
         var wheel = new ConvertWheel(ConvertWheel.WheelMode.Click, centerPx, files);
         wheel.ActionChosen += (action, chosen) => StartJob(action, chosen.ToList());
         wheel.Show();
@@ -360,10 +374,58 @@ public partial class App : Application
             new MenuEntry("\uE713", "Settings…", ShowSettings),
             new MenuEntry("\uE81C", "Open log folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Log.DataDir}\"") { UseShellExecute = true })),
             new MenuEntry("\uE711", "Quit", () => Shutdown()),
-        ], CatSprites.Head(Skin));
+        ], CatSprites.Head(Skin), Skin.Name, StatsLine());
         _menu.Closed += (_, _) => _menu = null;
         _menu.Show();
     }
+
+    // ---- The cat's tally ----
+
+    const long BigFile = 1L << 30; // 1 GB: big enough to make the cat jump
+    static readonly int[] Milestones = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+
+    static long TotalBytes(IEnumerable<string> paths) =>
+        paths.Sum(p => { try { return File.Exists(p) ? new FileInfo(p).Length : 0; } catch (IOException) { return 0; } });
+
+    /// <summary>Counts a finished job; returns true when it crossed a milestone (and says so).</summary>
+    bool RecordStats(Job job)
+    {
+        var inputs = job.Inputs.Where(File.Exists).ToList();
+        if (inputs.Count == 0) return false;
+        int before = _settings.FilesDone;
+        _settings.FilesDone += inputs.Count;
+        // Saved space: only where the results are files and came out smaller than what went in.
+        var outputs = job.Outputs.Where(File.Exists).ToList();
+        if (outputs.Count > 0)
+        {
+            long saved = TotalBytes(inputs) - TotalBytes(outputs);
+            if (saved > 0) _settings.BytesSaved += saved;
+        }
+        _settings.Save();
+
+        int? reached = null;
+        foreach (var milestone in Milestones)
+            if (before < milestone && _settings.FilesDone >= milestone) reached = milestone;
+        // Past the list: every 10,000.
+        if (reached == null && _settings.FilesDone >= 20000 && _settings.FilesDone / 10000 > before / 10000) reached = _settings.FilesDone / 10000 * 10000;
+        if (reached is not { } count) return false;
+        var soFar = _settings.BytesSaved >= 1 << 20 ? $" {FormatBytes(_settings.BytesSaved)} saved so far." : "";
+        ToastHost.Show(ToastWindow.Message($"{count:N0} files converted!", $"{Skin.Name} is very proud.{soFar} Thanks for keeping me busy."));
+        return true;
+    }
+
+    string? StatsLine()
+    {
+        if (_settings.FilesDone == 0) return null;
+        var files = $"{_settings.FilesDone:N0} {(_settings.FilesDone == 1 ? "file" : "files")} converted";
+        return _settings.BytesSaved >= 1 << 20 ? $"{files}, {FormatBytes(_settings.BytesSaved)} saved" : files;
+    }
+
+    static string FormatBytes(long bytes) => bytes switch
+    {
+        < 1L << 30 => $"{bytes / 1024.0 / 1024:0} MB",
+        _ => $"{bytes / 1024.0 / 1024 / 1024:0.0} GB",
+    };
 
     void SetCat(string id)
     {

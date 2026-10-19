@@ -39,6 +39,18 @@ Results never overwrite anything (`photo (1).jpg`, `clip (small).mp4`, `report (
 - **One folder** (the default): everything lands in `C:\Users\<you>\Converted Bro` (outside OneDrive, so big videos don't get synced), or any folder you pick with *Change…*. Turn on **Sort by type** to get `Images`, `Videos`, `Audio`, `PDFs`, `Archives` and `Extracted` subfolders. Snips, pasted pictures and QR codes go there too. *Open results folder* is in the cat's menu.
 - **Next to the original**: each result sits beside the file it came from (snips then go to `Pictures\Converted Bro`).
 
+## The cat
+
+The cat hides below the taskbar edge with its ears and paws showing, and comes up when there's something to do. It also has moods:
+
+- **Sleep.** After 5 quiet minutes (2 at night, 10 pm to 6 am) it slumps, lets go of the edge and Z's drift up. Hover to wake it: it pops up with a yawn. Any drop, job or shortcut wakes it too.
+- **Big files.** Drop or start something over 1 GB and it's startled: wide eyes, a "!" and a hop.
+- **Hard work.** It drums its paws while converting; past 8 seconds it squeezes its eyes shut and sweats, and a long job ends with a double hop and sparkles.
+- **Petting.** Rub the mouse back and forth over its head: happy eyes and hearts. Six seconds straight is too much: a frown and a tail flick, and no petting for a moment.
+- **Counter.** Its menu shows the tally under its name ("142 files converted, 1.3 GB saved"; saved counts only results that came out smaller). At 10, 25, 50, 100, 250, 500, 1,000 files and so on it throws a little party.
+
+Dev aid: `ConvertedBro.exe cat <sleep|startle|purr|grumpy|strain|party>` acts out a mood; `ConvertedBro.exe catmenu` opens its menu at the mouse.
+
 ## Ways to use it
 
 - **Select and press Ctrl+Alt+X.** Select files in File Explorer (any tab) or on the desktop, press Ctrl+Alt+X, and the wheel opens at the mouse. Press a wedge's number or click it; Tab switches pages. Change the shortcut in Settings.

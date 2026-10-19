@@ -25,6 +25,9 @@ public sealed class Settings
     public string? OutputFolder { get; set; } = OutputPaths.DefaultFolder;
     /// <summary>In the results folder, sort into Images, Videos, Audio, PDFs…</summary>
     public bool SortOutputs { get; set; }
+    /// <summary>The cat's tally: files it has handled, and bytes saved where results came out smaller.</summary>
+    public int FilesDone { get; set; }
+    public long BytesSaved { get; set; }
 
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");
 

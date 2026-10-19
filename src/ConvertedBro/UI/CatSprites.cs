@@ -6,8 +6,11 @@ using System.Windows.Media.Imaging;
 
 namespace ConvertedBro.UI;
 
-public enum CatPose { Idle, LookLeft, LookRight, Blink, Pop, Happy, TapLeft, TapRight }
-public enum PeekPose { Idle, LeftPaw, RightPaw }
+public enum CatPose { Idle, LookLeft, LookRight, Blink, Pop, Happy, TapLeft, TapRight, Yawn, Startled, StrainLeft, StrainRight, Purr, Grumpy, GrumpyFlick }
+public enum PeekPose { Idle, LeftPaw, RightPaw, Sleep }
+
+/// <summary>Little sprites that float up from the cat: sleep, love, surprise, effort, joy.</summary>
+public enum Floater { Z, Heart, Alert, Sweat, Sparkle }
 
 /// <summary>A cat's colours and markings. All cats share one body shape.</summary>
 public sealed class CatSkin
@@ -56,7 +59,7 @@ public static class CatSprites
         "...kkkkkkkkkkkkkk...",
     ];
 
-    // Patches are (row, column, pixels); '.' leaves the pixel underneath alone.
+    // Patches are (row, column, pixels); '.' leaves the pixel underneath alone, 'x' clears it.
     static readonly Dictionary<CatPose, (int, int, string)[]> Poses = new()
     {
         [CatPose.Idle] = [],
@@ -72,6 +75,28 @@ public static class CatSprites
         // Bongo paws while working; the eyes follow each tap so it reads at a small size.
         [CatPose.TapLeft] = [(17, 4, "fff"), (18, 4, "kkk"), (7, 3, "EWb"), (8, 3, "EEb"), (7, 13, "EWb"), (8, 13, "EEb")],
         [CatPose.TapRight] = [(17, 13, "fff"), (18, 13, "kkk"), (7, 4, "bEW"), (8, 4, "bEE"), (7, 14, "bEW"), (8, 14, "bEE")],
+        // Waking up: eyes shut, a big yawn.
+        [CatPose.Yawn] = [(7, 4, "bb"), (8, 4, "kk"), (7, 14, "bb"), (8, 14, "kk"), (10, 7, ".kkkk."), (11, 7, "kmmmmk"), (12, 7, "kmMMmk"), (13, 7, ".kkkk.")],
+        // A huge file: wide eyes and a little "o".
+        [CatPose.Startled] = [(6, 3, "EEE"), (7, 3, "EWE"), (8, 3, "EEE"), (6, 13, "EEE"), (7, 13, "EWE"), (8, 13, "EEE"), (11, 9, "kk"), (12, 8, "kmmk"), (13, 9, "kk")],
+        // A long job: eyes squeezed into > <, paws drumming hard.
+        [CatPose.StrainLeft] = [(17, 4, "fff"), (18, 4, "kkk"), (7, 4, "Eb"), (8, 4, "bE"), (7, 14, "bE"), (8, 14, "Eb")],
+        [CatPose.StrainRight] = [(17, 13, "fff"), (18, 13, "kkk"), (7, 4, "Eb"), (8, 4, "bE"), (7, 14, "bE"), (8, 14, "Eb")],
+        // Being petted: happy closed eyes.
+        [CatPose.Purr] = [(7, 3, "bkb"), (8, 3, "kbk"), (7, 13, "bkb"), (8, 13, "kbk")],
+        // Petted too long: flat eyes, a frown, and the tail flicks.
+        [CatPose.Grumpy] = [(7, 4, "bb"), (8, 4, "EE"), (7, 14, "bb"), (8, 14, "EE"), (10, 8, "bkkb"), (11, 8, "kbbk")],
+        [CatPose.GrumpyFlick] = [(7, 4, "bb"), (8, 4, "EE"), (7, 14, "bb"), (8, 14, "EE"), (10, 8, "bkkb"), (11, 8, "kbbk"), (13, 18, "kk"), (14, 17, "kpk"), (15, 19, "x")],
+    };
+
+    static readonly Dictionary<Floater, (string[] Art, Color Fill)> Floaters = new()
+    {
+        // No outline: a mid violet shows on dark taskbars and light wallpapers alike.
+        [Floater.Z] = (["WWWW", "..W.", ".W..", "WWWW"], Color.FromRgb(0x9A, 0x8C, 0xFF)),
+        [Floater.Heart] = ([".kk.kk.", "kWWkWWk", "kWWWWWk", ".kWWWk.", "..kWk..", "...k..."], Color.FromRgb(0xFF, 0x5C, 0x8A)),
+        [Floater.Alert] = (["kkk", "kWk", "kWk", "kWk", "kkk", "kWk", "kkk"], Color.FromRgb(0xFF, 0xD4, 0x47)),
+        [Floater.Sweat] = ([".k.", "kWk", "kWk", ".k."], Color.FromRgb(0x7E, 0xC8, 0xFF)),
+        [Floater.Sparkle] = ([".W.", "WWW", ".W."], Color.FromRgb(0xFF, 0xD4, 0x47)),
     };
 
     static readonly string[] Paw = [".kkkk.", "kffffk", "kfefek", "kffffk"];
@@ -145,10 +170,29 @@ public static class CatSprites
         for (int r = 0; r < PeekHeight; r++)
             for (int c = 0; c < Width; c++)
                 if (full[r][c] != '.') grid[r][c + 3] = full[r][c];
+        if (pose == PeekPose.Sleep)
+        {
+            // Asleep: slumped a pixel lower, paws folded flat on the edge instead of gripping it.
+            for (int r = PeekHeight - 1; r > 0; r--) grid[r] = grid[r - 1];
+            grid[0] = new string('.', PeekWidth).ToCharArray();
+            Blit(grid, ["kkkkkk", "kffffk"], 0, 5);
+            Blit(grid, ["kkkkkk", "kffffk"], 20, 5);
+            return Render(grid, skin);
+        }
         Blit(grid, Paw, 0, 3 - (pose == PeekPose.LeftPaw ? 1 : 0));
         Blit(grid, Paw, 20, 3 - (pose == PeekPose.RightPaw ? 1 : 0));
         return Render(grid, skin);
     });
+
+    /// <summary>A floating sprite; its outline uses the cat's own outline colour.</summary>
+    public static BitmapSource Float(CatSkin skin, Floater kind) => Cached($"{skin.Id}/float/{kind}", () =>
+    {
+        var (art, fill) = Floaters[kind];
+        var palette = new Dictionary<char, Color>(skin.Palette) { ['W'] = fill };
+        return Render(art.Select(r => r.ToCharArray()).ToArray(), new CatSkin { Id = skin.Id, Name = skin.Name, Description = "", Palette = palette });
+    });
+
+    public static (int Width, int Height) FloatSize(Floater kind) => (Floaters[kind].Art[0].Length, Floaters[kind].Art.Length);
 
     /// <summary>The head on a square canvas, for icons and the cat picker.</summary>
     public static BitmapSource Head(CatSkin skin) => Cached($"{skin.Id}/head", () =>
@@ -175,6 +219,7 @@ public static class CatSprites
         {
             foreach (var pose in Enum.GetValues<CatPose>()) Save(Frame(skin, pose), $"{skin.Id}-{pose}");
             foreach (var pose in Enum.GetValues<PeekPose>()) Save(Peek(skin, pose), $"{skin.Id}-peek-{pose}");
+            foreach (var kind in Enum.GetValues<Floater>()) Save(Float(skin, kind), $"{skin.Id}-float-{kind}");
             Save(Head(skin), $"{skin.Id}-head");
         }
     }
@@ -189,7 +234,8 @@ public static class CatSprites
     {
         foreach (var (row, col, pixels) in patches)
             for (int i = 0; i < pixels.Length; i++)
-                if (pixels[i] != '.') grid[row][col + i] = pixels[i];
+                if (pixels[i] == 'x') grid[row][col + i] = '.';
+                else if (pixels[i] != '.') grid[row][col + i] = pixels[i];
     }
 
     static void Blit(char[][] grid, string[] art, int col, int topRow)

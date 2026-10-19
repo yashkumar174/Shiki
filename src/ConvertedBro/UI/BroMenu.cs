@@ -43,8 +43,15 @@ public sealed class BroMenu : Window
     readonly DispatcherTimer _outsideClick = new() { Interval = TimeSpan.FromMilliseconds(40) };
     bool _closing, _opensUp;
 
-    public BroMenu(Point anchorPx, string subtitle, IReadOnlyList<object?> entries, ImageSource? avatar)
+    readonly string _title;
+    readonly string? _stats;
+
+    /// <param name="title">The cat's name at the top.</param>
+    /// <param name="stats">A tally line under it ("142 files converted…"), or null for none yet.</param>
+    public BroMenu(Point anchorPx, string subtitle, IReadOnlyList<object?> entries, ImageSource? avatar, string title = "Converted Bro", string? stats = null)
     {
+        _title = title;
+        _stats = stats;
         _anchorPx = anchorPx;
         _radius = _pixel ? 0 : 18;
         WindowStyle = WindowStyle.None;
@@ -197,14 +204,25 @@ public sealed class BroMenu : Window
 
         var name = new TextBlock
         {
-            Text = "Converted Bro",
+            Text = _title,
             FontFamily = Theme.TitleFont,
             FontSize = _pixel ? 16 : 14,
             FontWeight = _pixel ? FontWeights.Normal : FontWeights.SemiBold,
             Foreground = Theme.Brush(_p.Text),
         };
         var sub = new TextBlock { Text = subtitle, FontFamily = Theme.TextFont, FontSize = 11.5, Foreground = Theme.Brush(_p.SubtleText), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) };
-        var text = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Children = { name, sub } };
+        var text = new StackPanel { Margin = new Thickness(12, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center, Children = { name } };
+        if (_stats != null)
+            text.Children.Add(new TextBlock
+            {
+                Text = _stats,
+                FontFamily = Theme.LabelFont,
+                FontSize = 12,
+                Foreground = Theme.Brush(Theme.Lighten(Theme.Brand, _p.Dark ? 0.3 : 0)),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 2, 0, 0),
+            });
+        text.Children.Add(sub);
         if (!_pixel) { name.Foreground = Brushes.White; sub.Foreground = Theme.Brush(Color.FromArgb(0xCC, 255, 255, 255)); }
 
         var row = new DockPanel { Margin = new Thickness(10, 10, 10, 8) };
