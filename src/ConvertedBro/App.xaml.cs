@@ -60,13 +60,28 @@ public partial class App : Application
             Shutdown();
             return;
         }
-        if (args.Length == 3 && args[0] == "--form-test")
+        if (args.Length == 2 && args[0] == "--cutout-test")
+        {
+            // Dev aid: remove the background of every photo in a folder; timings go to the log.
+            Directory.CreateDirectory(Path.Combine(args[1], "out"));
+            foreach (var path in Directory.GetFiles(args[1], "*.jpg"))
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                using var photo = ImageTools.Load(path);
+                using var cut = Cutout.Remove(photo);
+                Cutout.WritePng(cut, Path.Combine(args[1], "out", Path.GetFileNameWithoutExtension(path) + ".png"));
+                Log.Info($"cutout-test {Path.GetFileName(path)} {photo.Width}x{photo.Height}: {sw.ElapsedMilliseconds} ms on {Cutout.Device}");
+            }
+            Shutdown();
+            return;
+        }
+        if (args.Length is 3 or 4 && args[0] == "--form-test")
         {
             // Dev aid: auto-crop and produce a form photo; crop and result go to the log.
             var preset = FormPhotos.Presets.First(p => p.Id == args[1]);
             using var photo = ImageTools.Load(args[2]);
             var crop = System.Threading.Tasks.Task.Run(() => FormPhotos.SuggestCrop(photo, preset)).GetAwaiter().GetResult();
-            var made = FormPhotos.Produce(args[2], crop, preset);
+            var made = FormPhotos.Produce(args[2], crop, preset, whiteBackground: args.Length == 4 && args[3] == "white");
             using var check = new ImageMagick.MagickImage(made);
             Log.Info($"form-test {preset.Id}: crop {crop}, out {check.Width}x{check.Height} {check.Density} {new FileInfo(made).Length / 1024} KB -> {made}");
             Shutdown();
@@ -233,9 +248,12 @@ public partial class App : Application
             var accepted = files.Where(action.Accepts).ToList();
             if (accepted.Count < action.MinFiles) return;
             var editor = action.Editor(accepted);
-            editor.Show();
-            editor.Activate();
-            return;
+            if (editor != null)
+            {
+                editor.Show();
+                editor.Activate();
+                return;
+            }
         }
         if (JobRunner.Start(action, files) == null)
             ToastHost.Show(ToastWindow.Message("Nothing to do", $"None of those files can be used for \"{action.Label}\"."));

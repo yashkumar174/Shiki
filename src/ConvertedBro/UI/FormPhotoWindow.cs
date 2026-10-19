@@ -42,6 +42,10 @@ public sealed class FormPhotoWindow : Window
     readonly Rectangle _handle = new() { Width = 14, Height = 14, Fill = Brushes.White, IsHitTestVisible = false };
     readonly TextBlock _title = UiKit.Title(""), _detail = UiKit.Body(""), _status = UiKit.Body("");
     readonly List<(FormPreset Preset, Border Chip)> _chips = [];
+    readonly Border _white;
+    readonly StackPanel _backgroundSection = new();
+    BitmapSource? _plain, _whitened;
+    bool _whiteBackground;
     Point _dragStart;
     Rect _cropStart;
     bool _dragging, _resizing;
@@ -87,13 +91,11 @@ public sealed class FormPhotoWindow : Window
         _status.Text = "Drag the box to move it, drag its corner or scroll to resize.";
         top.Children.Add(_status);
 
-        var white = UiKit.Button("White background", () => { });
-        white.Opacity = 0.45;
-        white.Cursor = Cursors.Arrow;
-        white.ToolTip = "Arrives with background removal";
-        top.Children.Add(UiKit.Heading("Background"));
-        top.Children.Add(white);
-        top.Children.Add(UiKit.Body("Coming with background removal.", 11.5));
+        _white = UiKit.Button("White background", () => _ = ToggleWhite());
+        _backgroundSection.Children.Add(UiKit.Heading("Background"));
+        _backgroundSection.Children.Add(_white);
+        _backgroundSection.Children.Add(UiKit.Body("Swaps whatever is behind you for plain white, as most forms ask.", 11.5));
+        top.Children.Add(_backgroundSection);
         DockPanel.SetDock(top, Dock.Top);
         side.Children.Add(top);
 
@@ -131,7 +133,7 @@ public sealed class FormPhotoWindow : Window
             _preview = preview;
             _full = full;
             _scale = full.Width / preview.Width;
-            _photo.Source = bitmap;
+            _photo.Source = _plain = bitmap;
             await AutoCrop();
         }
         catch (Exception ex)
@@ -162,6 +164,43 @@ public sealed class FormPhotoWindow : Window
         Layout();
     }
 
+    async Task ToggleWhite()
+    {
+        if (_preview == null) return;
+        _whiteBackground = !_whiteBackground;
+        UiKit.Select(_white, _whiteBackground);
+        if (!_whiteBackground)
+        {
+            _photo.Source = _plain;
+            return;
+        }
+        if (_whitened == null)
+        {
+            _status.Text = Cutout.IsDownloaded ? "Removing the background…" : $"Getting the background model ({Cutout.DownloadSize}, one time)…";
+            var preview = _preview;
+            try
+            {
+                _whitened = await Task.Run(async () =>
+                {
+                    await Cutout.EnsureModel(new Progress<double>(), default);
+                    using var cut = Cutout.Remove(preview);
+                    ImageTools.FlattenOnWhite(cut);
+                    return ToBitmap(cut);
+                });
+            }
+            catch (Exception ex)
+            {
+                Log.Error("White background preview failed", ex);
+                _status.Text = "Couldn't remove the background. Check the internet connection for the first use.";
+                _whiteBackground = false;
+                UiKit.Select(_white, false);
+                return;
+            }
+            _status.Text = "Drag the box to move it, drag its corner or scroll to resize.";
+        }
+        if (_whiteBackground) _photo.Source = _whitened;
+    }
+
     void SetPreset(FormPreset preset)
     {
         _preset = preset;
@@ -172,6 +211,7 @@ public sealed class FormPhotoWindow : Window
     void UpdateText()
     {
         _title.Text = _preset.Name;
+        _backgroundSection.Visibility = _preset.Signature ? Visibility.Collapsed : Visibility.Visible;
         _detail.Text = $"{_preset.Detail}, {_preset.WidthPx} × {_preset.HeightPx} px at {_preset.Dpi} DPI, {_preset.SizeText}, JPG.";
         foreach (var (preset, chip) in _chips) UiKit.Select(chip, preset == _preset);
     }
@@ -268,6 +308,7 @@ public sealed class FormPhotoWindow : Window
         var crop = _crop;
         var preset = _preset;
         var file = _file;
+        bool white = _whiteBackground;
         var action = new BroAction
         {
             Id = $"form-{preset.Id}-run",
@@ -276,7 +317,7 @@ public sealed class FormPhotoWindow : Window
             Hint = "",
             Kind = FileKind.Image,
             AcceptsExtension = _ => true,
-            Run = (_, _, ct) => Task.Run<IReadOnlyList<string>>(() => [FormPhotos.Produce(file, crop, preset)], ct),
+            Run = (_, _, ct) => Task.Run<IReadOnlyList<string>>(() => [FormPhotos.Produce(file, crop, preset, white)], ct),
         };
         JobRunner.Start(action, [file]);
         Close();

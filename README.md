@@ -12,7 +12,7 @@ The wheel has up to four pages: **formats** (what to convert to), **tools** (wha
 
 | Files | Formats | Tools | Size limit |
 |---|---|---|---|
-| Images (png, jpg, webp, heic, avif, gif, bmp, tiff, ico, svg) | PNG, JPG, WEBP, ICO, PDF (all images into one A4 PDF) | Scan, Copy text, Copy image, Compress, Half size, Rotate, Remove metadata (camera, date, GPS) | 100 KB, 200 KB, 1 MB, 2 MB; form photos: Exam photo, Passport, Visa, Signature |
+| Images (png, jpg, webp, heic, avif, gif, bmp, tiff, ico, svg) | PNG, JPG, WEBP, ICO, PDF (all images into one A4 PDF) | Remove background, Scan, Copy text, Copy image, Compress, Half size, Rotate, Remove metadata (camera, date, GPS) | 100 KB, 200 KB, 1 MB, 2 MB; form photos: Exam photo, Passport, Visa, Signature |
 | Video (mp4, mov, mkv, avi, webm, …) | MP4, WEBM, GIF, MP3 | Compress (up to 1080p), Half size, Rotate, Mute | |
 | Audio (mp3, wav, m4a, flac, ogg, …) | MP3, M4A, WAV, FLAC, OGG | Even out volume | |
 | PDF | Pages to PNG, Pages to JPG | Copy text, Edit pages, Sign, Unlock, Lock, Page numbers, Split into pages, Merge (PDFs and images, in name order) | 100 KB, 200 KB, 1 MB, 2 MB |
@@ -24,7 +24,8 @@ The wheel has up to four pages: **formats** (what to convert to), **tools** (wha
 - **Sign**: draw your signature once (or use a photo of it on paper; the paper is removed), then click to place it on any page, drag to move, drag the corner to resize. It's a visual signature, not a certificate.
 - **Unlock / Lock**: remove a known password (the dialog checks it straight away), or add one (AES-256). Unusual encryption that PDFsharp can't rewrite is unlocked by re-rendering the pages.
 - **Page numbers**: "3 / 10" centred at the bottom of each page.
-- **Form photos**: Exam photo (3.5 × 4.5 cm, 20–50 KB), Passport (2 × 2 in), Visa (35 × 45 mm), Signature (3.5 × 1.5 cm, 10–20 KB). The crop starts centred on the face (Windows' built-in face detector, offline) or on the signature's ink; drag or scroll to adjust. The JPG gets the right pixel size and DPI, and the highest quality inside the size range (a tiny file is padded with an empty comment to reach a minimum).
+- **Remove background**: runs offline on your own PC with BiRefNet (MIT). The model (115 MB) downloads the first time you use it, to `%LOCALAPPDATA%\ConvertedBro\models`. One photo opens an editor: the cut-out on a checkerboard, a background swatch row (transparent, white, black, grey, blue, red, or any colour), and a touch-up brush (Erase / Restore, S–XL, `[` `]` to resize, Ctrl+Z to undo, scroll to zoom, right-drag to pan, "Hold to compare" for the original). Save gives `name (no background).png`, or a JPG on a colour; Copy puts it on the clipboard. Several photos at once are cut out straight to transparent PNGs. The mask is refined at full resolution (guided filter) and the old background's colour is cleaned out of soft edges, so hair and fur don't get a halo. It uses the graphics card through DirectML when it can (about 4 s a photo on a GTX 1650; the first one after a while takes longer while the card warms up) and the processor otherwise.
+- **Form photos**: Exam photo (3.5 × 4.5 cm, 20–50 KB), Passport (2 × 2 in), Visa (35 × 45 mm), Signature (3.5 × 1.5 cm, 10–20 KB). The crop starts centred on the face (Windows' built-in face detector, offline) or on the signature's ink; drag or scroll to adjust. The JPG gets the right pixel size and DPI, and the highest quality inside the size range (a tiny file is padded with an empty comment to reach a minimum). **White background** swaps whatever is behind you for plain white.
 - **Scan** opens an editor: auto-detect places four corners on the page (paper is bright and colourless: Otsu threshold, biggest blob, extreme corners), you drag them where needed (a loupe magnifies the corner), pick *Clean colour*, *Black and white* or *Original*, rotate, preview the result, and save one PDF or one image per photo. Cleanup straightens the page with a perspective warp and divides by a blurred copy of itself, which evens out shadows and turns the paper white.
 
 Outputs go next to the original and never overwrite anything (`photo (1).jpg`, `clip (small).mp4`, `report (pages)\page-01.png`).
@@ -91,7 +92,7 @@ ConvertedBro.exe --register               add the Explorer right-click menu (cur
 ConvertedBro.exe --unregister             remove it
 ```
 
-Dev aids (run and exit, results in the log): `--export-sprites <folder>`, `--scan-test <photo>`, `--pdf-test <pdf>`, `--sign-test <pdf> <signature photo>`, `--form-test <exam|passport|visa|signature> <photo>`.
+Dev aids (run and exit, results in the log): `--export-sprites <folder>`, `--scan-test <photo>`, `--pdf-test <pdf>`, `--sign-test <pdf> <signature photo>`, `--form-test <exam|passport|visa|signature> <photo> [white]`, `--cutout-test <folder of jpgs>`.
 
 Only one ConvertedBro runs per user. Extra launches (Explorer starts one per selected file) pass their files to it over a named pipe, and they're batched for 0.7 s. When started from Explorer without the bro running, it works quietly and exits when done.
 
@@ -103,9 +104,9 @@ Logs and settings: `%LOCALAPPDATA%\ConvertedBro\`.
 src/ConvertedBro/
   Core/   FileKind, ActionCatalog (every action lives here), ImageTools (Magick.NET),
           MediaTools (FFmpeg), PdfTools (PDFium + PDFsharp), SizeTools, TextTools (Windows OCR),
-          ScanTools, JobRunner, OutputPaths
+          ScanTools, Cutout (background removal, ONNX Runtime), FormPhotos, JobRunner, OutputPaths
   Shell/  SingleInstance (mutex + pipe), ContextMenuRegistrar, GlobalMouseHook, StartupRegistration
-  UI/     CatWindow, CatSprites, ConvertWheel, ScanWindow, BroMenu, ToastWindow, TrayIcon, Theme, Glass, LiquidGlass, PixelShape, WedgeGeometry, BroArt
+  UI/     CatWindow, CatSprites, ConvertWheel, ScanWindow, CutoutWindow, FormPhotoWindow, BroMenu, ToastWindow, TrayIcon, Theme, Glass, LiquidGlass, PixelShape, WedgeGeometry, BroArt
   Assets/ Fonts/PixelifySans.ttf (SIL Open Font License, see OFL.txt)
 ```
 
@@ -114,6 +115,7 @@ To add an action, add a `BroAction` in `ActionCatalog.Build()`, with `Group = Ac
 ## Licensing notes
 
 - Magick.NET: Apache-2.0. Docnet.Core / PDFium: MIT / BSD. Pixelify Sans: SIL Open Font License 1.1.
+- ONNX Runtime (DirectML): MIT. BiRefNet model weights: MIT (downloaded at first use from the onnx-community conversion on Hugging Face, not bundled).
 - The cats are original pixel art made for this project.
 - **PDFsharp is pinned to 6.2.4 on purpose.** 6.5.0 switched to AGPL/commercial and refuses to run without a license.
 - The bundled FFmpeg build is **GPL** (needed for libx264). That's fine for personal use; to distribute the app under a non-GPL license, switch to an LGPL build and use a different H.264 encoder.

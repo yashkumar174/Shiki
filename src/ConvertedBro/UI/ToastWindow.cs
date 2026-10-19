@@ -62,7 +62,7 @@ public sealed class ToastWindow : Window
     /// <summary>A plain message with no job behind it.</summary>
     public static ToastWindow Message(string title, string message)
     {
-        var toast = new ToastWindow(title, message, FileKind.Unknown, "î¥†", showProgress: false);
+        var toast = new ToastWindow(title, message, FileKind.Unknown, "\uE946", showProgress: false);
         toast.StartAutoClose(TimeSpan.FromSeconds(5));
         return toast;
     }
@@ -182,7 +182,7 @@ public sealed class ToastWindow : Window
         _close.Background = Brushes.Transparent;
         _close.Cursor = Cursors.Hand;
         _close.Opacity = 0;
-        _close.Child = new TextBlock { Text = "îœ‘", FontFamily = Theme.IconFont, FontSize = 10, Foreground = Theme.Brush(_p.SubtleText), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        _close.Child = new TextBlock { Text = "\uE711", FontFamily = Theme.IconFont, FontSize = 10, Foreground = Theme.Brush(_p.SubtleText), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         _close.MouseEnter += (_, _) => _close.Background = Theme.Brush(_p.RowHover);
         _close.MouseLeave += (_, _) => _close.Background = Brushes.Transparent;
         _close.MouseLeftButtonUp += (_, _) => CloseAnimated();
@@ -223,7 +223,7 @@ public sealed class ToastWindow : Window
             case JobState.Done:
                 SetShimmer(false);
                 AnimateBar(1);
-                _tileGlyph.Text = "îœ¾";
+                _tileGlyph.Text = "\uE73E";
                 _status.Text = _job.Note ?? DoneText(_job.Outputs);
                 _buttons.Children.Clear();
                 if (_job.Outputs.Count > 0)
@@ -237,7 +237,7 @@ public sealed class ToastWindow : Window
                 SetShimmer(false);
                 var coral = Theme.Accent(FileKind.Pdf);
                 _tile.Background = new LinearGradientBrush(Theme.Lighten(coral, 0.18), coral, 60);
-                _tileGlyph.Text = "îžº";
+                _tileGlyph.Text = "\uE7BA";
                 _status.Text = _job.Error ?? "The conversion stopped unexpectedly.";
                 _track.Visibility = Visibility.Collapsed;
                 _buttons.Children.Clear();

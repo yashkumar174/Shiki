@@ -68,12 +68,10 @@ public static class FormPhotos
     }
 
     /// <summary>Makes the final JPG: crop, resize, set DPI, and land inside the preset's size range.</summary>
-    public static string Produce(string input, Rect crop, FormPreset preset)
+    /// <param name="whiteBackground">Replace whatever is behind the person with plain white.</param>
+    public static string Produce(string input, Rect crop, FormPreset preset, bool whiteBackground = false)
     {
-        using var image = ImageTools.Load(input);
-        image.Crop(new MagickGeometry((int)crop.X, (int)crop.Y, (uint)Math.Max(1, crop.Width), (uint)Math.Max(1, crop.Height)));
-        image.Page = new MagickGeometry(0, 0, image.Width, image.Height);
-        ImageTools.FlattenOnWhite(image);
+        using var image = Cropped(input, crop, preset.Signature ? false : whiteBackground);
         if (preset.Signature) CleanSignature(image);
         image.FilterType = FilterType.Lanczos;
         image.Resize(new MagickGeometry((uint)preset.WidthPx, (uint)preset.HeightPx) { IgnoreAspectRatio = true });
@@ -108,6 +106,23 @@ public static class FormPhotos
         var output = OutputPaths.Next(input, ".jpg", preset.Name.ToLowerInvariant());
         File.WriteAllBytes(output, best);
         return output;
+    }
+
+    static MagickImage Cropped(string input, Rect crop, bool whiteBackground)
+    {
+        var image = ImageTools.Load(input);
+        image.Crop(new MagickGeometry((int)crop.X, (int)crop.Y, (uint)Math.Max(1, crop.Width), (uint)Math.Max(1, crop.Height)));
+        image.Page = new MagickGeometry(0, 0, image.Width, image.Height);
+        if (whiteBackground)
+        {
+            Cutout.EnsureModel(new Progress<double>(), System.Threading.CancellationToken.None).GetAwaiter().GetResult();
+            var cut = Cutout.Remove(image);
+            image.Dispose();
+            image = cut;
+            JobNotes.Say("Background made white");
+        }
+        ImageTools.FlattenOnWhite(image);
+        return image;
     }
 
     static byte[] Encode(MagickImage image, int quality)

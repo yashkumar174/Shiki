@@ -35,9 +35,10 @@ public sealed class BroAction
     public required ActionRunner Run { get; init; }
     /// <summary>
     /// Opens a window first (the scanner, a password prompt, the page editor…) instead of starting
-    /// a job straight away; the window starts the job itself when the user confirms.
+    /// a job straight away; the window starts the job itself when the user confirms. Returning
+    /// null runs <see cref="Run"/> instead (say, for a batch of files).
     /// </summary>
-    public Func<IReadOnlyList<string>, System.Windows.Window>? Editor { get; init; }
+    public Func<IReadOnlyList<string>, System.Windows.Window?>? Editor { get; init; }
 
     public bool Accepts(string path) => AcceptsExtension(Path.GetExtension(path));
 }
@@ -122,7 +123,7 @@ public static class ActionCatalog
             Label = "Compress",
             Short = "Compress",
             Hint = "Same look, smaller file",
-            Glyph = "îœ¿",
+            Glyph = "\uE73F",
             Group = ActionGroup.Tool,
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico"),
@@ -134,7 +135,7 @@ public static class ActionCatalog
             Label = "Resize to 50%",
             Short = "Half size",
             Hint = "Half the width and height",
-            Glyph = "îœŸ",
+            Glyph = "\uE71F",
             Group = ActionGroup.Tool,
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico"),
@@ -146,7 +147,7 @@ public static class ActionCatalog
             Label = "Rotate right",
             Short = "Rotate",
             Hint = "Turn 90° clockwise",
-            Glyph = "îž­",
+            Glyph = "\uE7AD",
             Group = ActionGroup.Tool,
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico"),
@@ -158,7 +159,7 @@ public static class ActionCatalog
             Label = "Remove metadata",
             Short = "Metadata",
             Hint = "Strip camera, date and location info",
-            Glyph = "î£¬",
+            Glyph = "\uE8EC",
             Group = ActionGroup.Tool,
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico", ".gif"),
@@ -178,6 +179,30 @@ public static class ActionCatalog
             Combine = true,
             Editor = files => new UI.ScanWindow(files),
             Run = EditorOnly,
+        });
+        list.Add(new BroAction
+        {
+            Id = "image-cutout",
+            Label = "Remove background…",
+            Short = "Cut out",
+            Hint = "Keep the subject, make the rest transparent or a colour",
+            Glyph = "\uE7E6",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Image,
+            AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico", ".gif"),
+            // One photo opens the editor; several are cut out straight to transparent PNGs.
+            Editor = files => files.Count == 1 ? new UI.CutoutWindow(files[0]) : null,
+            Run = async (inputs, progress, ct) =>
+            {
+                var outputs = new List<string>();
+                for (int i = 0; i < inputs.Count; i++)
+                {
+                    int index = i;
+                    outputs.Add(await Cutout.RemoveToFile(inputs[i], new SyncProgress(p => progress.Report((index + p) / inputs.Count)), ct));
+                    progress.Report((i + 1) / (double)inputs.Count);
+                }
+                return outputs;
+            },
         });
         list.Add(CopyText(FileKind.Image, Kind(FileKind.Image, ".svg", ".ico")));
         list.Add(new BroAction
@@ -248,18 +273,18 @@ public static class ActionCatalog
         Video("video-gif", "to GIF", "GIF", "Looping GIF, 480 px wide", ".gif", MediaTools.ToGif);
         Video("video-mp3", "Extract audio (MP3)", "MP3", "Just the sound", ".mp3", MediaTools.ToMp3);
         Video("video-compress", "Compress", "Compress", "Smaller MP4, up to 1080p", ".mp4", MediaTools.CompressVideo, "small",
-            group: ActionGroup.Tool, glyph: "îœ¿");
+            group: ActionGroup.Tool, glyph: "\uE73F");
         Video("video-half", "Resize to 50%", "Half size", "Half the width and height", ".mp4", MediaTools.HalfSize, "50%",
-            group: ActionGroup.Tool, glyph: "îœŸ");
+            group: ActionGroup.Tool, glyph: "\uE71F");
         Video("video-rotate", "Rotate right", "Rotate", "Turn 90° clockwise", ".mp4", MediaTools.RotateRight, "rotated",
-            group: ActionGroup.Tool, glyph: "îž­");
+            group: ActionGroup.Tool, glyph: "\uE7AD");
         list.Add(new BroAction
         {
             Id = "video-mute",
             Label = "Remove audio",
             Short = "Mute",
             Hint = "Same video, no sound",
-            Glyph = "î",
+            Glyph = "\uE74F",
             Group = ActionGroup.Tool,
             Kind = FileKind.Video,
             AcceptsExtension = Kind(FileKind.Video),
@@ -297,7 +322,7 @@ public static class ActionCatalog
             Label = "Even out volume",
             Short = "Loudness",
             Hint = "Quiet and loud parts end up evenly loud",
-            Glyph = "î§",
+            Glyph = "\uE767",
             Group = ActionGroup.Tool,
             Kind = FileKind.Audio,
             AcceptsExtension = Kind(FileKind.Audio),
@@ -335,7 +360,7 @@ public static class ActionCatalog
             Label = "Split into pages",
             Short = "Split",
             Hint = "One PDF per page",
-            Glyph = "î£†",
+            Glyph = "\uE8C6",
             Group = ActionGroup.Tool,
             Kind = FileKind.Pdf,
             AcceptsExtension = Kind(FileKind.Pdf),
@@ -347,7 +372,7 @@ public static class ActionCatalog
             Label = "Merge",
             Short = "Merge",
             Hint = "Join PDFs and images in name order",
-            Glyph = "îœ›",
+            Glyph = "\uE71B",
             Group = ActionGroup.Tool,
             Kind = FileKind.Pdf,
             AcceptsExtension = ext => FileKinds.OfExtension(ext) is FileKind.Pdf or FileKind.Image,
