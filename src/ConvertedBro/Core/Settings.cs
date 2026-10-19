@@ -15,6 +15,8 @@ public sealed class Settings
     public bool ShiftDragSummon { get; set; } = true;
     /// <summary>Glass look: keep the glass in step with what's behind it (hides popups from screen recordings).</summary>
     public bool LiveGlass { get; set; } = true;
+    /// <summary>Global shortcut for snip and convert, e.g. "Ctrl+Shift+Q".</summary>
+    public string SnipHotkey { get; set; } = "Ctrl+Shift+Q";
 
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");
 

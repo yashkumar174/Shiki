@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -32,6 +32,9 @@ public partial class App : Application
     GlobalMouseHook? _hook;
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
+    Hotkeys? _hotkeys;
+    int _snipHotkeyId = -1;
+    SnipWindow? _snip;
     Point _menuAnchor;
     bool _headless;
     readonly Dictionary<string, List<string>> _pending = new(StringComparer.OrdinalIgnoreCase);
@@ -54,6 +57,47 @@ public partial class App : Application
         if (args.Length == 2 && args[0] == "--export-sprites")
         {
             CatSprites.Export(args[1]);
+            Shutdown();
+            return;
+        }
+        if (args.Length == 3 && args[0] == "--form-test")
+        {
+            // Dev aid: auto-crop and produce a form photo; crop and result go to the log.
+            var preset = FormPhotos.Presets.First(p => p.Id == args[1]);
+            using var photo = ImageTools.Load(args[2]);
+            var crop = System.Threading.Tasks.Task.Run(() => FormPhotos.SuggestCrop(photo, preset)).GetAwaiter().GetResult();
+            var made = FormPhotos.Produce(args[2], crop, preset);
+            using var check = new ImageMagick.MagickImage(made);
+            Log.Info($"form-test {preset.Id}: crop {crop}, out {check.Width}x{check.Height} {check.Density} {new FileInfo(made).Length / 1024} KB -> {made}");
+            Shutdown();
+            return;
+        }
+        if (args.Length == 3 && args[0] == "--sign-test")
+        {
+            // Dev aid: import a signature photo and stamp it bottom-right on page 1.
+            SignatureStore.ImportPhoto(args[2]);
+            using (var doc = PdfSharp.Pdf.IO.PdfReader.Open(args[1], PdfSharp.Pdf.IO.PdfDocumentOpenMode.Modify))
+            using (var image = PdfSharp.Drawing.XImage.FromFile(SignatureStore.Path))
+            using (var gfx = PdfSharp.Drawing.XGraphics.FromPdfPage(doc.Pages[0], PdfSharp.Drawing.XGraphicsPdfPageOptions.Append))
+            {
+                var size = gfx.PageSize;
+                double w = size.Width * 0.3, h = w * image.PixelHeight / image.PixelWidth;
+                gfx.DrawImage(image, size.Width * 0.62, size.Height * 0.78, w, h);
+                gfx.Dispose();
+                doc.Save(OutputPaths.Next(args[1], ".pdf", "signed"));
+            }
+            Shutdown();
+            return;
+        }
+        if (args.Length == 2 && args[0] == "--pdf-test")
+        {
+            // Dev aid: lock, check passwords, unlock and number a PDF; results go to the log.
+            PdfFonts.Install();
+            var none = new Progress<double>();
+            var locked = PdfSecurity.Lock(args[1], "test123");
+            Log.Info($"pdf-test: locked {locked}; plain={PdfSecurity.TryPassword(args[1], "x")} wrong={PdfSecurity.TryPassword(locked, "nope")} right={PdfSecurity.TryPassword(locked, "test123")}");
+            Log.Info($"pdf-test: unlocked {PdfSecurity.Unlock(locked, "test123", none)}");
+            Log.Info($"pdf-test: numbered {PdfSecurity.AddPageNumbers(args[1], none)}");
             Shutdown();
             return;
         }
@@ -93,6 +137,8 @@ public partial class App : Application
         _instance.StartServer();
         _settings = Settings.Load();
         Theme.Style = _settings.Style;
+        // Page numbers and other PDF text use the fonts installed in Windows.
+        PdfFonts.Install();
         LiveGlass.Enabled = _settings.LiveGlass;
         _batchTimer.Tick += (_, _) => FlushBatches();
 
@@ -182,11 +228,11 @@ public partial class App : Application
     {
         // Merges follow Explorer's name order, since launch order is random.
         if (action.Combine) files.Sort(NaturalComparer.Instance);
-        if (action.OpensEditor)
+        if (action.Editor != null)
         {
-            var photos = files.Where(action.Accepts).ToList();
-            if (photos.Count == 0) return;
-            var editor = new ScanWindow(photos);
+            var accepted = files.Where(action.Accepts).ToList();
+            if (accepted.Count < action.MinFiles) return;
+            var editor = action.Editor(accepted);
             editor.Show();
             editor.Activate();
             return;
@@ -225,6 +271,7 @@ public partial class App : Application
         _menu = new BroMenu(anchorPx, "Drop files on me, or Shift + drag one anywhere.",
         [
             new MenuEntry("\uE8E5", "Convert files…", PickFiles),
+            new MenuEntry("\uE924", $"Snip and convert ({_settings.SnipHotkey})", StartSnip),
             new MenuEntry(visible ? "\uE7B3" : "\uE890", visible ? "Hide the cat" : "Show the cat", () => SetBuddyVisible(!visible)),
             null,
             new MenuChoice("Cat", CatSprites.Skins.Select(k => new ChoiceOption(k.Id, $"{k.Name}: {k.Description}", CatSprites.Head(k))).ToList(),
@@ -237,6 +284,7 @@ public partial class App : Application
             .. (Theme.Arcade ? Array.Empty<object?>() : [new MenuEntry("\uE895", "Glass follows what's behind", ToggleLiveGlass, () => _settings.LiveGlass)]),
             new MenuEntry("\uE7E8", "Start with Windows", () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath), StartupRegistration.IsEnabled),
             null,
+            new MenuEntry("\uE713", "Settings…", ShowSettings),
             new MenuEntry("\uE81C", "Open log folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Log.DataDir}\"") { UseShellExecute = true })),
             new MenuEntry("\uE711", "Quit", () => Shutdown()),
         ], CatSprites.Head(Skin));
@@ -276,6 +324,47 @@ public partial class App : Application
         else ContextMenuRegistrar.Unregister();
         ToastHost.Show(ToastWindow.Message(on ? "Added to Explorer" : "Removed from Explorer",
             on ? "Right-click a file, choose Show more options, then Convert with Bro." : "Convert with Bro is no longer in the right-click menu."));
+    }
+
+    SettingsWindow? _settingsWindow;
+
+    void ShowSettings()
+    {
+        if (_settingsWindow != null) { _settingsWindow.Activate(); return; }
+        _settingsWindow = new SettingsWindow(
+            () => _settings.SnipHotkey,
+            text =>
+            {
+                var previous = _settings.SnipHotkey;
+                _settings.SnipHotkey = text;
+                if (RegisterSnipHotkeyQuietly())
+                {
+                    _settings.Save();
+                    return true;
+                }
+                _settings.SnipHotkey = previous;
+                RegisterSnipHotkeyQuietly();
+                return false;
+            },
+            [
+                new SettingSwitch("Right-click menu in Explorer", "Convert with Bro, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu),
+                new SettingSwitch("Shift + drag opens the wheel", "Hold Shift while dragging any file.", () => _settings.ShiftDragSummon, ToggleShiftDrag),
+                new SettingSwitch("Glass follows what's behind", "Glass look only. Off shows popups in screen recordings.", () => _settings.LiveGlass, ToggleLiveGlass),
+                new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
+            ]);
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.Show();
+    }
+
+    /// <summary>Re-registers the snip shortcut without the "taken" toast (the settings window says it inline).</summary>
+    bool RegisterSnipHotkeyQuietly()
+    {
+        if (_hotkeys == null) return false;
+        if (_snipHotkeyId > 0) _hotkeys.Unregister(_snipHotkeyId);
+        _snipHotkeyId = -1;
+        if (Hotkey.Parse(_settings.SnipHotkey) is not { } hotkey || !_hotkeys.Register(hotkey, StartSnip, out int id)) return false;
+        _snipHotkeyId = id;
+        return true;
     }
 
     void ToggleLiveGlass()
@@ -319,6 +408,36 @@ public partial class App : Application
             _buddy?.Notice(false);
         });
         if (_settings.ShiftDragSummon) _hook.Start();
+
+        _hotkeys = new Hotkeys();
+        RegisterSnipHotkey();
+    }
+
+    /// <summary>(Re)binds the snip shortcut from settings; says so if another app already owns it.</summary>
+    public bool RegisterSnipHotkey()
+    {
+        if (_hotkeys == null) return false;
+        if (_snipHotkeyId > 0) _hotkeys.Unregister(_snipHotkeyId);
+        _snipHotkeyId = -1;
+        if (Hotkey.Parse(_settings.SnipHotkey) is not { } hotkey) return false;
+        if (_hotkeys.Register(hotkey, StartSnip, out int id))
+        {
+            _snipHotkeyId = id;
+            return true;
+        }
+        ToastHost.Show(ToastWindow.Message($"{hotkey} is taken",
+            "Another app already uses that shortcut. Pick a different one in Settings."));
+        return false;
+    }
+
+    public void StartSnip()
+    {
+        if (_snip != null) return;
+        _menu?.CloseAnimated();
+        _snip = new SnipWindow();
+        _snip.Closed += (_, _) => _snip = null;
+        _snip.Snipped += (file, centre) => ShowWheel([file], centre);
+        _snip.Show();
     }
 
     void SetBuddyVisible(bool visible)
@@ -353,6 +472,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _hook?.Dispose();
+        _hotkeys?.Dispose();
         _tray?.Dispose();
         _instance?.Dispose();
         base.OnExit(e);

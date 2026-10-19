@@ -13,7 +13,7 @@ namespace ConvertedBro.Core;
 public static class PdfTools
 {
     // PDFium (behind Docnet) is not thread safe.
-    static readonly object PdfiumGate = new();
+    internal static readonly object PdfiumGate = new();
 
     const double A4Width = 595.28, A4Height = 841.89, Margin = 18;
 

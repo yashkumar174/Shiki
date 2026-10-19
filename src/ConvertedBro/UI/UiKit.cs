@@ -1,0 +1,129 @@
+using System;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using ConvertedBro.Shell;
+
+namespace ConvertedBro.UI;
+
+/// <summary>Shared pieces for the app's own windows, in the current look (Arcade or Glass).</summary>
+public static class UiKit
+{
+    static Palette P => Theme.Current;
+
+    /// <summary>Solid background, dark title bar, right fonts; brings the window to the front when shown.</summary>
+    public static void Prepare(Window window)
+    {
+        window.Background = Theme.Brush(Color.FromRgb(P.Surface.R, P.Surface.G, P.Surface.B));
+        window.UseLayoutRounding = true;
+        window.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        if (P.Pixel) TextOptions.SetTextRenderingMode(window, TextRenderingMode.Aliased);
+        window.SourceInitialized += (_, _) => { if (P.Dark) NativeMethods.UseDarkTitleBar(new WindowInteropHelper(window).Handle); };
+        window.Loaded += (_, _) => { NativeMethods.ForceForeground(new WindowInteropHelper(window).Handle); window.Activate(); };
+    }
+
+    public static TextBlock Title(string text) => new()
+    {
+        Text = text,
+        FontFamily = Theme.TitleFont,
+        FontSize = 21,
+        FontWeight = P.Pixel ? FontWeights.Normal : FontWeights.SemiBold,
+        Foreground = Theme.Brush(P.Text),
+    };
+
+    public static TextBlock Body(string text, double size = 13) => new()
+    {
+        Text = text,
+        FontFamily = Theme.TextFont,
+        FontSize = size,
+        Foreground = Theme.Brush(P.SubtleText),
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 4, 0, 0),
+    };
+
+    public static TextBlock Heading(string text) => new()
+    {
+        Text = text,
+        FontFamily = Theme.LabelFont,
+        FontSize = 12.5,
+        Foreground = Theme.Brush(P.SubtleText),
+        Margin = new Thickness(0, 18, 0, 8),
+    };
+
+    public static TextBlock Error() => new()
+    {
+        FontFamily = Theme.TextFont,
+        FontSize = 12.5,
+        Foreground = Theme.Brush(Color.FromRgb(0xFF, 0x8A, 0x9A)),
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, 6, 0, 0),
+        Visibility = Visibility.Collapsed,
+    };
+
+    /// <summary>A text-input frame around a TextBox or PasswordBox.</summary>
+    public static Border Field(Control input)
+    {
+        input.Background = Brushes.Transparent;
+        input.BorderThickness = new Thickness(0);
+        input.Foreground = Theme.Brush(P.Text);
+        input.FontFamily = Theme.TextFont;
+        input.FontSize = 14;
+        input.VerticalContentAlignment = VerticalAlignment.Center;
+        if (input is TextBox box) box.CaretBrush = Theme.Brush(P.Text);
+        if (input is PasswordBox pass) pass.CaretBrush = Theme.Brush(P.Text);
+        var frame = new Border
+        {
+            Background = Theme.Brush(P.RowHover),
+            BorderBrush = Theme.Brush(P.SurfaceBorder),
+            BorderThickness = new Thickness(P.Pixel ? 2 : 1),
+            CornerRadius = new CornerRadius(P.Pixel ? 0 : 8),
+            Padding = new Thickness(10, 7, 10, 7),
+            Child = input,
+        };
+        input.GotKeyboardFocus += (_, _) => frame.BorderBrush = Theme.Brush(Theme.Brand);
+        input.LostKeyboardFocus += (_, _) => frame.BorderBrush = Theme.Brush(P.SurfaceBorder);
+        return frame;
+    }
+
+    public static Border Button(string label, Action onClick, bool primary = false, bool icon = false, bool stretch = false)
+    {
+        var rest = primary ? Theme.Brand : P.RowHover;
+        var hot = primary ? Theme.Lighten(Theme.Brand, 0.12) : Theme.Lighten(P.RowHover, 0.08);
+        var background = new SolidColorBrush(rest);
+        var button = new Border
+        {
+            Background = background,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(P.Pixel ? 2 : 1.5),
+            CornerRadius = new CornerRadius(P.Pixel ? 0 : 8),
+            Padding = new Thickness(icon ? 8 : 14, 7, icon ? 8 : 14, 8),
+            Margin = new Thickness(0, 0, stretch ? 0 : 8, stretch ? 8 : 0),
+            Cursor = Cursors.Hand,
+            HorizontalAlignment = stretch ? HorizontalAlignment.Stretch : HorizontalAlignment.Left,
+            Child = new TextBlock
+            {
+                Text = label,
+                FontFamily = icon ? Theme.IconFont : Theme.LabelFont,
+                FontSize = icon ? 13 : 13,
+                Foreground = primary ? Brushes.White : Theme.Brush(P.Text),
+                HorizontalAlignment = HorizontalAlignment.Center,
+            },
+        };
+        button.MouseEnter += (_, _) => background.Color = hot;
+        button.MouseLeave += (_, _) => background.Color = rest;
+        button.MouseLeftButtonUp += (_, e) => { e.Handled = true; onClick(); };
+        return button;
+    }
+
+    /// <summary>Outlines a chip when it's the selected one.</summary>
+    public static void Select(Border chip, bool on) => chip.BorderBrush = Theme.Brush(on ? Theme.Brand : Colors.Transparent);
+
+    public static StackPanel Row(params UIElement[] children)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var child in children) row.Children.Add(child);
+        return row;
+    }
+}

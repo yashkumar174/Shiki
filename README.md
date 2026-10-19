@@ -8,17 +8,23 @@ Inspired by [Tangerine](https://x.com/th2049) for macOS.
 
 ## What it does
 
-The wheel has up to three pages: **formats** (what to convert to), **tools** (what to do to the file) and **size limit** (make it fit an upload limit).
+The wheel has up to four pages: **formats** (what to convert to), **tools** (what to do to the file), **size limit** (make it fit an upload limit) and **form photos** (exact sizes for exam, passport and visa forms).
 
 | Files | Formats | Tools | Size limit |
 |---|---|---|---|
-| Images (png, jpg, webp, heic, avif, gif, bmp, tiff, ico, svg) | PNG, JPG, WEBP, ICO, PDF (all images into one A4 PDF) | Scan, Copy text, Compress, Half size, Rotate, Remove metadata (camera, date, GPS) | 100 KB, 200 KB, 1 MB, 2 MB |
+| Images (png, jpg, webp, heic, avif, gif, bmp, tiff, ico, svg) | PNG, JPG, WEBP, ICO, PDF (all images into one A4 PDF) | Scan, Copy text, Copy image, Compress, Half size, Rotate, Remove metadata (camera, date, GPS) | 100 KB, 200 KB, 1 MB, 2 MB; form photos: Exam photo, Passport, Visa, Signature |
 | Video (mp4, mov, mkv, avi, webm, …) | MP4, WEBM, GIF, MP3 | Compress (up to 1080p), Half size, Rotate, Mute | |
 | Audio (mp3, wav, m4a, flac, ogg, …) | MP3, M4A, WAV, FLAC, OGG | Even out volume | |
-| PDF | Pages to PNG, Pages to JPG | Copy text, Split into pages, Merge (PDFs and images, in name order) | 100 KB, 200 KB, 1 MB, 2 MB |
+| PDF | Pages to PNG, Pages to JPG | Copy text, Edit pages, Sign, Unlock, Lock, Page numbers, Split into pages, Merge (PDFs and images, in name order) | 100 KB, 200 KB, 1 MB, 2 MB |
 
 - **Size limit** finds the highest quality that fits (binary search on JPEG/WEBP quality, then a smaller picture if even the lowest quality is too big). PDFs are re-rendered page by page, so their pages become pictures.
 - **Copy text** uses the OCR engine built into Windows (offline) and puts the text on the clipboard. It reads the languages installed in Windows.
+- **Snip and convert** (Ctrl+Shift+Q, changeable in Settings): the screen freezes, drag a box, and the wheel opens on the snip. Snips are saved in `Pictures\Converted Bro`. Copy text on a snip reads text from anything on screen.
+- **Edit pages**: thumbnails of every page (of one or several PDFs); drag to reorder, turn or remove, then save one PDF.
+- **Sign**: draw your signature once (or use a photo of it on paper; the paper is removed), then click to place it on any page, drag to move, drag the corner to resize. It's a visual signature, not a certificate.
+- **Unlock / Lock**: remove a known password (the dialog checks it straight away), or add one (AES-256). Unusual encryption that PDFsharp can't rewrite is unlocked by re-rendering the pages.
+- **Page numbers**: "3 / 10" centred at the bottom of each page.
+- **Form photos**: Exam photo (3.5 × 4.5 cm, 20–50 KB), Passport (2 × 2 in), Visa (35 × 45 mm), Signature (3.5 × 1.5 cm, 10–20 KB). The crop starts centred on the face (Windows' built-in face detector, offline) or on the signature's ink; drag or scroll to adjust. The JPG gets the right pixel size and DPI, and the highest quality inside the size range (a tiny file is padded with an empty comment to reach a minimum).
 - **Scan** opens an editor: auto-detect places four corners on the page (paper is bright and colourless: Otsu threshold, biggest blob, extreme corners), you drag them where needed (a loupe magnifies the corner), pick *Clean colour*, *Black and white* or *Original*, rotate, preview the result, and save one PDF or one image per photo. Cleanup straightens the page with a perspective warp and divides by a blurred copy of itself, which evens out shadows and turns the paper white.
 
 Outputs go next to the original and never overwrite anything (`photo (1).jpg`, `clip (small).mp4`, `report (pages)\page-01.png`).
@@ -84,6 +90,8 @@ ConvertedBro.exe menu <files>             show the format ring at the cursor
 ConvertedBro.exe --register               add the Explorer right-click menu (current user, no admin)
 ConvertedBro.exe --unregister             remove it
 ```
+
+Dev aids (run and exit, results in the log): `--export-sprites <folder>`, `--scan-test <photo>`, `--pdf-test <pdf>`, `--sign-test <pdf> <signature photo>`, `--form-test <exam|passport|visa|signature> <photo>`.
 
 Only one ConvertedBro runs per user. Extra launches (Explorer starts one per selected file) pass their files to it over a named pipe, and they're batched for 0.7 s. When started from Explorer without the bro running, it works quietly and exits when done.
 

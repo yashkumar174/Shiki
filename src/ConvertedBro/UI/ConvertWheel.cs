@@ -244,6 +244,7 @@ public sealed class ConvertWheel : Window
     {
         ActionGroup.Format => "Formats",
         ActionGroup.Tool => "Tools",
+        ActionGroup.Form => "Form photos",
         _ => "Size limit",
     };
 

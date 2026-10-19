@@ -128,7 +128,7 @@ public sealed class ScanWindow : Window
         KeyDown += OnKeyDown;
         Closed += (_, _) => { foreach (var page in _pages) page.Preview.Dispose(); };
 
-        _status.Text = "Finding the pageÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦";
+        _status.Text = "Finding the page…";
         _ = LoadAsync(files);
     }
 
@@ -193,7 +193,7 @@ public sealed class ScanWindow : Window
         RefreshResult();
     }
 
-    // ---- Geometry: full-resolution pixels ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬Â canvas ----
+    // ---- Geometry: full-resolution pixels to canvas and back ----
 
     void Layout()
     {
@@ -329,9 +329,9 @@ public sealed class ScanWindow : Window
         _pager.VerticalAlignment = VerticalAlignment.Center;
         _pager.Margin = new Thickness(10, 0, 10, 0);
         _pagerRow.Margin = new Thickness(0, 16, 0, 0);
-        _pagerRow.Children.Add(Button("ÃƒÂ®Ã‚ÂÃ‚Â«", () => ShowPage(_index - 1), icon: true));
+        _pagerRow.Children.Add(Button("\uE76B", () => ShowPage(_index - 1), icon: true));
         _pagerRow.Children.Add(_pager);
-        _pagerRow.Children.Add(Button("ÃƒÂ®Ã‚ÂÃ‚Â¬", () => ShowPage(_index + 1), icon: true));
+        _pagerRow.Children.Add(Button("\uE76C", () => ShowPage(_index + 1), icon: true));
         top.Children.Add(_pagerRow);
 
         top.Children.Add(Heading("Crop"));

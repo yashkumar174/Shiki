@@ -10,7 +10,7 @@ namespace ConvertedBro.Core;
 public delegate Task<IReadOnlyList<string>> ActionRunner(IReadOnlyList<string> inputs, IProgress<double> progress, CancellationToken ct);
 
 /// <summary>Which page of the wheel an action sits on.</summary>
-public enum ActionGroup { Format, Tool, Size }
+public enum ActionGroup { Format, Tool, Size, Form }
 
 /// <summary>One thing the bro can do to files, e.g. "to MP4".</summary>
 public sealed class BroAction
@@ -33,8 +33,11 @@ public sealed class BroAction
     /// <summary>Extra check on the whole selection before offering this on the wheel.</summary>
     public Func<IReadOnlyList<string>, bool>? OfferFor { get; init; }
     public required ActionRunner Run { get; init; }
-    /// <summary>Opens an editor window first (the scanner) instead of starting a job straight away.</summary>
-    public bool OpensEditor { get; init; }
+    /// <summary>
+    /// Opens a window first (the scanner, a password prompt, the page editor…) instead of starting
+    /// a job straight away; the window starts the job itself when the user confirms.
+    /// </summary>
+    public Func<IReadOnlyList<string>, System.Windows.Window>? Editor { get; init; }
 
     public bool Accepts(string path) => AcceptsExtension(Path.GetExtension(path));
 }
@@ -42,6 +45,8 @@ public sealed class BroAction
 public static class ActionCatalog
 {
     // Declared before All: static fields initialise in order, and Build() reads this.
+    static readonly ActionRunner EditorOnly = (_, _, _) => throw new InvalidOperationException("This action opens its own window.");
+
     static readonly (long Bytes, string Id)[] SizeLimits =
         [(100 * 1024, "100kb"), (200 * 1024, "200kb"), (1024 * 1024, "1mb"), (2 * 1024 * 1024, "2mb")];
 
@@ -140,7 +145,7 @@ public static class ActionCatalog
             Id = "image-rotate",
             Label = "Rotate right",
             Short = "Rotate",
-            Hint = "Turn 90Â° clockwise",
+            Hint = "Turn 90° clockwise",
             Glyph = "îž­",
             Group = ActionGroup.Tool,
             Kind = FileKind.Image,
@@ -163,7 +168,7 @@ public static class ActionCatalog
         list.Add(new BroAction
         {
             Id = "image-scan",
-            Label = "Scan documentâ€¦",
+            Label = "Scan document…",
             Short = "Scan",
             Hint = "Crop, straighten and clean up a photo of paper",
             Glyph = "\uE7A8",
@@ -171,10 +176,37 @@ public static class ActionCatalog
             Kind = FileKind.Image,
             AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico", ".gif"),
             Combine = true,
-            OpensEditor = true,
-            Run = (_, _, _) => throw new InvalidOperationException("The scanner opens its own window."),
+            Editor = files => new UI.ScanWindow(files),
+            Run = EditorOnly,
         });
         list.Add(CopyText(FileKind.Image, Kind(FileKind.Image, ".svg", ".ico")));
+        list.Add(new BroAction
+        {
+            Id = "image-copy",
+            Label = "Copy image",
+            Short = "Copy image",
+            Hint = "Put the picture on the clipboard to paste anywhere",
+            Glyph = "\uEB9F",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Image,
+            AcceptsExtension = Kind(FileKind.Image, ".svg"),
+            Run = (inputs, _, ct) => Task.Run<IReadOnlyList<string>>(() => { ClipboardTools.CopyImage(inputs[0]); return []; }, ct),
+        });
+
+        // Exact sizes that exam, passport and visa forms ask for, on their own page.
+        foreach (var preset in FormPhotos.Presets)
+            list.Add(new BroAction
+            {
+                Id = $"form-{preset.Id}",
+                Label = $"{preset.Name} ({preset.Detail})…",
+                Short = preset.Name,
+                Hint = $"{preset.Detail}, {preset.SizeText}",
+                Group = ActionGroup.Form,
+                Kind = FileKind.Image,
+                AcceptsExtension = Kind(FileKind.Image, ".svg", ".ico", ".gif"),
+                Editor = files => new UI.FormPhotoWindow(files[0], preset),
+                Run = EditorOnly,
+            });
 
         // Size limits for forms and uploads, on their own page.
         foreach (var (bytes, id) in SizeLimits)
@@ -219,7 +251,7 @@ public static class ActionCatalog
             group: ActionGroup.Tool, glyph: "îœ¿");
         Video("video-half", "Resize to 50%", "Half size", "Half the width and height", ".mp4", MediaTools.HalfSize, "50%",
             group: ActionGroup.Tool, glyph: "îœŸ");
-        Video("video-rotate", "Rotate right", "Rotate", "Turn 90Â° clockwise", ".mp4", MediaTools.RotateRight, "rotated",
+        Video("video-rotate", "Rotate right", "Rotate", "Turn 90° clockwise", ".mp4", MediaTools.RotateRight, "rotated",
             group: ActionGroup.Tool, glyph: "îž­");
         list.Add(new BroAction
         {
@@ -326,6 +358,73 @@ public static class ActionCatalog
         });
 
         list.Add(CopyText(FileKind.Pdf, Kind(FileKind.Pdf)));
+        list.Add(new BroAction
+        {
+            Id = "pdf-pages",
+            Label = "Edit pages…",
+            Short = "Pages",
+            Hint = "Reorder, turn and remove pages",
+            Glyph = "\uE8A9",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Pdf,
+            AcceptsExtension = Kind(FileKind.Pdf),
+            Combine = true,
+            Editor = files => new UI.PdfPagesWindow(files),
+            Run = EditorOnly,
+        });
+        list.Add(new BroAction
+        {
+            Id = "pdf-sign",
+            Label = "Sign…",
+            Short = "Sign",
+            Hint = "Place your drawn signature on any page",
+            Glyph = "\uEE56",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Pdf,
+            AcceptsExtension = Kind(FileKind.Pdf),
+            Editor = files => new UI.SignWindow(files),
+            Run = EditorOnly,
+        });
+        list.Add(new BroAction
+        {
+            Id = "pdf-unlock",
+            Label = "Unlock (remove password)…",
+            Short = "Unlock",
+            Hint = "Copy that opens without the password",
+            Glyph = "\uE785",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Pdf,
+            AcceptsExtension = Kind(FileKind.Pdf),
+            Combine = true,
+            Editor = files => new UI.PasswordWindow(files, UI.PasswordWindow.Purpose.Unlock),
+            Run = EditorOnly,
+        });
+        list.Add(new BroAction
+        {
+            Id = "pdf-lock",
+            Label = "Lock with a password…",
+            Short = "Lock",
+            Hint = "Copy that asks for a password to open",
+            Glyph = "\uE72E",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Pdf,
+            AcceptsExtension = Kind(FileKind.Pdf),
+            Combine = true,
+            Editor = files => new UI.PasswordWindow(files, UI.PasswordWindow.Purpose.Lock),
+            Run = EditorOnly,
+        });
+        list.Add(new BroAction
+        {
+            Id = "pdf-numbers",
+            Label = "Add page numbers",
+            Short = "Numbers",
+            Hint = "\"3 / 10\" at the bottom of every page",
+            Glyph = "\uE9D5",
+            Group = ActionGroup.Tool,
+            Kind = FileKind.Pdf,
+            AcceptsExtension = Kind(FileKind.Pdf),
+            Run = PerFileMany((input, progress) => [PdfSecurity.AddPageNumbers(input, progress)]),
+        });
         foreach (var (bytes, id) in SizeLimits)
             list.Add(new BroAction
             {
