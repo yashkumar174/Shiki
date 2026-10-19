@@ -139,11 +139,11 @@ public static class Theme
 
     public static string KindGlyph(FileKind kind) => kind switch
     {
-        FileKind.Image => "",
-        FileKind.Video => "",
-        FileKind.Audio => "",
-        FileKind.Pdf => "",
-        _ => "",
+        FileKind.Image => "\uE91B",
+        FileKind.Video => "\uE714",
+        FileKind.Audio => "\uE8D6",
+        FileKind.Pdf => "\uEA90",
+        _ => "\uE8A5",
     };
 
     public static SolidColorBrush Brush(Color color)

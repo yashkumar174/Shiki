@@ -27,6 +27,13 @@ public sealed class Settings
     public bool SortOutputs { get; set; }
     /// <summary>The cat's tally: files it has handled, and bytes saved where results came out smaller.</summary>
     public int FilesDone { get; set; }
+    /// <summary>Dashboard look: true dark, false light, null follows Windows.</summary>
+    public bool? DashboardDark { get; set; }
+    /// <summary>Setup checklist: done once the convert shortcut has been used, or the results folder visited.</summary>
+    public bool UsedConvertHotkey { get; set; }
+    public bool ChoseOutputFolder { get; set; }
+    /// <summary>Home tips the person closed.</summary>
+    public System.Collections.Generic.List<string> DismissedTips { get; set; } = [];
     public long BytesSaved { get; set; }
 
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");

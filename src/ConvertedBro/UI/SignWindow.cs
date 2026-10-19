@@ -77,7 +77,7 @@ public sealed class SignWindow : Window
         top.Children.Add(signatureButtons);
 
         top.Children.Add(UiKit.Heading("Page"));
-        var pagerRow = UiKit.Row(UiKit.Button("", () => ShowPage(_index - 1), icon: true), _pager, UiKit.Button("", () => ShowPage(_index + 1), icon: true));
+        var pagerRow = UiKit.Row(UiKit.Button("\uE76B", () => ShowPage(_index - 1), icon: true), _pager, UiKit.Button("\uE76C", () => ShowPage(_index + 1), icon: true));
         _pager.VerticalAlignment = VerticalAlignment.Center;
         _pager.Margin = new Thickness(4, 0, 12, 0);
         top.Children.Add(pagerRow);

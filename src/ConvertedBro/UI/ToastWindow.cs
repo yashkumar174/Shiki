@@ -71,7 +71,7 @@ public sealed class ToastWindow : Window
     /// <summary>A message with its own buttons, and optionally a colour in place of the icon tile.</summary>
     public static ToastWindow Message(string title, string message, Color? swatch, params (string Label, Action Click)[] buttons)
     {
-        var toast = new ToastWindow(title, message, FileKind.Unknown, swatch == null ? "" : "", showProgress: false);
+        var toast = new ToastWindow(title, message, FileKind.Unknown, swatch == null ? "\uE946" : "", showProgress: false);
         if (swatch is { } colour)
         {
             toast._tile.Background = Theme.Brush(colour);

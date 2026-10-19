@@ -180,8 +180,8 @@ public sealed class PdfPagesWindow : Window
         page.Number = number;
 
         var tools = UiKit.Row(
-            UiKit.Button("", () => Rotate(page), icon: true),
-            UiKit.Button("", () => Remove(page), icon: true));
+            UiKit.Button("\uE7AD", () => Rotate(page), icon: true),
+            UiKit.Button("\uE74D", () => Remove(page), icon: true));
         tools.HorizontalAlignment = HorizontalAlignment.Right;
         tools.VerticalAlignment = VerticalAlignment.Top;
         tools.Margin = new Thickness(0, 6, -2, 0);

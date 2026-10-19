@@ -16,7 +16,8 @@ public static class StartupRegistration
     public static void Set(bool enabled, string exePath)
     {
         using var key = Registry.CurrentUser.CreateSubKey(RunKey);
-        if (enabled) key.SetValue(ValueName, $"\"{exePath}\"");
+        // --background: at sign-in only the cat appears, not the dashboard.
+        if (enabled) key.SetValue(ValueName, $"\"{exePath}\" --background");
         else key.DeleteValue(ValueName, throwOnMissingValue: false);
     }
 }

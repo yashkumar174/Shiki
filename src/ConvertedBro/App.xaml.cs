@@ -10,6 +10,7 @@ using System.Windows.Threading;
 using ConvertedBro.Core;
 using ConvertedBro.Shell;
 using ConvertedBro.UI;
+using ConvertedBro.UI.Dashboard;
 
 namespace ConvertedBro;
 
@@ -196,14 +197,20 @@ public partial class App : Application
         JobRunner.JobFinished += job => Dispatcher.BeginInvoke(() =>
         {
             _buddy?.SetBusy(JobRunner.ActiveCount);
+            if (job.State == JobState.Failed) History.Add(job);
             if (job.State != JobState.Done) return;
-            if (RecordStats(job)) _buddy?.Party();
+            bool milestone = RecordStats(job);
+            History.Add(job);
+            if (milestone) _buddy?.Party();
             else _buddy?.Celebrate();
         });
 
-        if (args.Length == 0)
+        if (args.Length == 0 || args[0] == "--background")
         {
             EnterBuddyMode();
+            Names.Load();
+            // Older "Start with Windows" entries had no flag, and would open the dashboard at sign-in.
+            if (StartupRegistration.IsEnabled()) StartupRegistration.Set(true, ExePath);
         }
         else
         {
@@ -217,10 +224,17 @@ public partial class App : Application
 
     void Handle(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--background")
+        {
+            // Signing in to Windows: just the cat, no window.
+            EnterBuddyMode();
+            return;
+        }
         if (args.Length == 0 || args[0] == "show")
         {
             EnterBuddyMode();
             SetBuddyVisible(true);
+            ShowDashboard();
             return;
         }
 
@@ -247,6 +261,11 @@ public partial class App : Application
             case "settings":
                 EnterBuddyMode();
                 ShowSettings();
+                break;
+            case "dashboard":
+                // "dashboard tools" or "dashboard history" opens that page.
+                EnterBuddyMode();
+                ShowDashboard(args.Length > 1 && Enum.TryParse<DashPage>(args[1], true, out var page) ? page : DashPage.Home);
                 break;
             case "catmenu":
                 // Dev aid: the cat's menu at the mouse, as a right-click would open it.
@@ -354,6 +373,7 @@ public partial class App : Application
         bool visible = _buddy?.IsVisible ?? false;
         _menu = new BroMenu(anchorPx, $"Drop files on me, Shift + drag one, or select files and press {_settings.ConvertHotkey}.",
         [
+            new MenuEntry("\uE80F", "Open Converted Bro", () => ShowDashboard()),
             new MenuEntry("\uE8E5", "Convert files…", PickFiles),
             .. (_settings.OutputFolder is { } results ? [new MenuEntry("\uE838", "Open results folder", () => OpenFolder(results))] : Array.Empty<object?>()),
             new MenuEntry("\uE77F", "Paste from clipboard", PasteToCat),
@@ -491,6 +511,7 @@ public partial class App : Application
                 folder =>
                 {
                     _settings.OutputFolder = folder;
+                    _settings.ChoseOutputFolder = true;
                     OutputPaths.Folder = folder;
                     _settings.Save();
                 },
@@ -558,7 +579,7 @@ public partial class App : Application
         _idleTimer.Stop();
 
         _tray = new TrayIcon(Skin);
-        _tray.Clicked += () => SetBuddyVisible(!(_buddy?.IsVisible ?? false));
+        _tray.Clicked += () => ShowDashboard();
         _tray.MenuRequested += ShowMenu;
 
         _buddy = new CatWindow(_settings);
@@ -613,6 +634,42 @@ public partial class App : Application
         Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
     }
 
+    // ---- The dashboard ----
+
+    DashboardWindow? _dashboard;
+
+    public void ShowDashboard(DashPage page = DashPage.Home)
+    {
+        _menu?.CloseAnimated();
+        if (_dashboard == null)
+        {
+            _dashboard = new DashboardWindow(new DashboardHost
+            {
+                Settings = _settings,
+                SaveSettings = _settings.Save,
+                PickFiles = PickFiles,
+                Convert = files =>
+                {
+                    NativeMethods.GetCursorPos(out var cursor);
+                    ShowWheel(files, new Point(cursor.X, cursor.Y));
+                },
+                Run = (action, files) => StartJob(action, files),
+                Snip = StartSnip,
+                PickColour = StartColourPicker,
+                MakeQr = () => ShowQr(""),
+                Paste = PasteToCat,
+                OpenSettings = ShowSettings,
+                ExplorerMenuOn = ContextMenuRegistrar.IsRegistered,
+                AddExplorerMenu = () => { if (!ContextMenuRegistrar.IsRegistered()) ToggleExplorerMenu(); },
+                StartsWithWindows = StartupRegistration.IsEnabled,
+                StartWithWindows = () => StartupRegistration.Set(true, ExePath),
+                SetCat = SetCat,
+            });
+            _dashboard.Closed += (_, _) => _dashboard = null;
+        }
+        _dashboard.Show(page);
+    }
+
     // ---- Convert what's selected ----
 
     /// <summary>The shortcut's job: the wheel, at the mouse, for whatever is selected in Explorer or on the desktop.</summary>
@@ -623,6 +680,7 @@ public partial class App : Application
         {
             NativeMethods.GetCursorPos(out var cursor);
             ShowWheel(FileList.Expand(selected), new Point(cursor.X, cursor.Y));
+            if (!_settings.UsedConvertHotkey) { _settings.UsedConvertHotkey = true; _settings.Save(); }
             return;
         }
         ToastHost.Show(ToastWindow.Message(selected == null ? "Select files in File Explorer" : "Nothing selected",

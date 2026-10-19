@@ -29,6 +29,8 @@
 
   <ItemGroup>
     <Resource Include="Assets\Fonts\PixelifySans.ttf" />
+    <Resource Include="Assets\Fonts\InstrumentSerif-Regular.ttf" />
+    <Resource Include="Assets\Fonts\InstrumentSerif-Italic.ttf" />
   </ItemGroup>
 
   <!-- FFmpeg lives in /tools/ffmpeg (not committed) and ships next to the exe. -->

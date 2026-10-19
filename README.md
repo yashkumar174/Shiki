@@ -39,7 +39,19 @@ Results never overwrite anything (`photo (1).jpg`, `clip (small).mp4`, `report (
 - **One folder** (the default): everything lands in `C:\Users\<you>\Converted Bro` (outside OneDrive, so big videos don't get synced), or any folder you pick with *Change…*. Turn on **Sort by type** to get `Images`, `Videos`, `Audio`, `PDFs`, `Archives` and `Extracted` subfolders. Snips, pasted pictures and QR codes go there too. *Open results folder* is in the cat's menu.
 - **Next to the original**: each result sits beside the file it came from (snips then go to `Pictures\Converted Bro`).
 
-## The cat
+## The dashboard
+
+Open it from the Start of the app (launching ConvertedBro.exe), the tray icon, or *Open Converted Bro* in the cat's menu. It's styled after Wispr Flow: a warm paper canvas or deep charcoal (the moon in the title bar switches; it starts out following Windows), white cards, Instrument Serif for the big moments, and one warm orange accent.
+
+- **Home**: a greeting, the black card (drop files on it, choose some, or snip the screen), the cat's numbers (files converted, space saved, day streak), one tip for whatever isn't set up yet, and today's results with Open, Copy, Folder and "Do it again" on hover.
+- **Tools**: every tool by kind of file. "Convert to" and "Shrink under" chips, then tiles; pick one and choose the files. Capture tools (snip, colour picker, QR, paste) are at the top.
+- **History**: every job ever, grouped by day, with search (Ctrl+F) and filters. Removing a line only forgets it; the files stay. Kept in `%LOCALAPPDATA%\ConvertedBro\history.json` (the newest 2,000).
+- **Set up Converted Bro**: a checklist in the sidebar (Explorer menu, the Ctrl+Alt+X shortcut, results folder, start with Windows) that checks the real state and does each step when clicked. It goes away when everything's done.
+- **Settings** still opens the settings window for now. Click the cat at the bottom of the sidebar to switch cats.
+
+*Start with Windows* starts quietly (`--background`): just the cat, no window. `ConvertedBro.exe dashboard [home|tools|history]` opens a page.
+
+## The cat's moods
 
 The cat hides below the taskbar edge with its ears and paws showing, and comes up when there's something to do. It also has moods:
 
@@ -141,7 +153,7 @@ To add an action, add a `BroAction` in `ActionCatalog.Build()`, with `Group = Ac
 
 ## Licensing notes
 
-- Magick.NET: Apache-2.0. Docnet.Core / PDFium: MIT / BSD. Pixelify Sans: SIL Open Font License 1.1.
+- Magick.NET: Apache-2.0. Docnet.Core / PDFium: MIT / BSD. Pixelify Sans and Instrument Serif: SIL Open Font License 1.1 (see the OFL files in Assets/Fonts).
 - SharpCompress: MIT. QRCoder: MIT. ZXing.Net: Apache-2.0.
 - ONNX Runtime (DirectML): MIT. BiRefNet model weights: MIT (downloaded at first use from the onnx-community conversion on Hugging Face, not bundled).
 - The cats are original pixel art made for this project.
