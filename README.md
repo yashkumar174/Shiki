@@ -34,7 +34,10 @@ The wheel has up to five pages: **formats** (what to convert to), **tools** (wha
 - **Zip / Extract**: Zip packs files and whole folders into one `.zip` named after the first item (photos and videos are stored without recompressing, which is faster and no bigger). Extract unpacks zip, 7z, rar, tar and compressed tarballs next to the archive: a single folder inside comes out as itself, anything else goes into a folder named after the archive. Entries that try to escape the folder (`..\..\`) are skipped. Password-protected archives aren't supported.
 - **Scan** opens an editor: auto-detect places four corners on the page (paper is bright and colourless: Otsu threshold, biggest blob, extreme corners), you drag them where needed (a loupe magnifies the corner), pick *Clean colour*, *Black and white* or *Original*, rotate, preview the result, and save one PDF or one image per photo. Cleanup straightens the page with a perspective warp and divides by a blurred copy of itself, which evens out shadows and turns the paper white.
 
-Outputs go next to the original and never overwrite anything (`photo (1).jpg`, `clip (small).mp4`, `report (pages)\page-01.png`).
+Results never overwrite anything (`photo (1).jpg`, `clip (small).mp4`, `report (pages)\page-01.png`). Where they go is up to you, in Settings → **Where results go**:
+
+- **One folder** (the default): everything lands in `C:\Users\<you>\Converted Bro` (outside OneDrive, so big videos don't get synced), or any folder you pick with *Change…*. Turn on **Sort by type** to get `Images`, `Videos`, `Audio`, `PDFs`, `Archives` and `Extracted` subfolders. Snips, pasted pictures and QR codes go there too. *Open results folder* is in the cat's menu.
+- **Next to the original**: each result sits beside the file it came from (snips then go to `Pictures\Converted Bro`).
 
 ## Ways to use it
 

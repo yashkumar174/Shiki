@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -14,6 +15,9 @@ public sealed record SettingSwitch(string Label, string Hint, Func<bool> IsOn, A
 /// <summary>A global shortcut in the settings window. Set returns false when another app owns it.</summary>
 public sealed record ShortcutSetting(string Label, Func<string> Get, Func<string, bool> Set);
 
+/// <summary>Where results are saved: a folder (null keeps them next to the original), and whether to sort them.</summary>
+public sealed record OutputSetting(Func<string?> GetFolder, Action<string?> SetFolder, Func<bool> GetSort, Action<bool> SetSort, Action<string> Open);
+
 /// <summary>Shortcuts and the main switches, in one place.</summary>
 public sealed class SettingsWindow : Window
 {
@@ -21,8 +25,16 @@ public sealed class SettingsWindow : Window
     readonly TextBlock _error = UiKit.Error();
     (ShortcutSetting Setting, Border Chip)? _recording;
 
-    public SettingsWindow(IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches)
+    readonly OutputSetting _output;
+    readonly Border _nextTo, _oneFolder;
+    readonly StackPanel _folderPart = new();
+    readonly TextBlock _folderPath = new() { TextTrimming = TextTrimming.CharacterEllipsis };
+    string _lastFolder;
+
+    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches)
     {
+        _output = output;
+        _lastFolder = output.GetFolder() ?? Core.OutputPaths.DefaultFolder;
         Title = "Converted Bro settings";
         Width = 520;
         SizeToContent = SizeToContent.Height;
@@ -31,6 +43,32 @@ public sealed class SettingsWindow : Window
 
         var stack = new StackPanel { Margin = new Thickness(26, 22, 26, 24) };
         stack.Children.Add(UiKit.Title("Settings"));
+
+        stack.Children.Add(UiKit.Heading("Where results go"));
+        _nextTo = UiKit.Button("Next to the original", () => SetMode(false));
+        _oneFolder = UiKit.Button("One folder", () => SetMode(true));
+        var modes = UiKit.Row(_nextTo, _oneFolder);
+        modes.Margin = new Thickness(0, 2, 0, 6);
+        stack.Children.Add(modes);
+
+        _folderPath.FontFamily = Theme.TextFont;
+        _folderPath.FontSize = 13;
+        _folderPath.Foreground = Theme.Brush(_p.Text);
+        var pathBox = new Border
+        {
+            Background = Theme.Brush(_p.RowHover),
+            CornerRadius = new CornerRadius(_p.Pixel ? 0 : 8),
+            Padding = new Thickness(10, 7, 10, 8),
+            Margin = new Thickness(0, 4, 0, 8),
+            Child = _folderPath,
+        };
+        _folderPart.Children.Add(pathBox);
+        _folderPart.Children.Add(UiKit.Row(UiKit.Button("Change…", PickFolder), UiKit.Button("Open", () => _output.Open(_lastFolder))));
+        var sort = new SettingSwitch("Sort by type", "Images, Videos, Audio, PDFs and Archives each get their own folder.",
+            _output.GetSort, () => _output.SetSort(!_output.GetSort()));
+        _folderPart.Children.Add(Line(sort.Label, sort.Hint, Toggle(sort)));
+        stack.Children.Add(_folderPart);
+        ShowMode();
 
         stack.Children.Add(UiKit.Heading("Shortcuts"));
         foreach (var shortcut in shortcuts)
@@ -50,6 +88,31 @@ public sealed class SettingsWindow : Window
         Content = stack;
 
         PreviewKeyDown += OnKey;
+    }
+
+    void SetMode(bool oneFolder)
+    {
+        _output.SetFolder(oneFolder ? _lastFolder : null);
+        ShowMode();
+    }
+
+    void ShowMode()
+    {
+        bool oneFolder = _output.GetFolder() != null;
+        UiKit.Select(_nextTo, !oneFolder);
+        UiKit.Select(_oneFolder, oneFolder);
+        _folderPart.Visibility = oneFolder ? Visibility.Visible : Visibility.Collapsed;
+        _folderPath.Text = _lastFolder;
+        _folderPath.ToolTip = _lastFolder;
+    }
+
+    void PickFolder()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog { Title = "Where should results go?", InitialDirectory = Directory.Exists(_lastFolder) ? _lastFolder : null };
+        if (dialog.ShowDialog(this) != true) return;
+        _lastFolder = dialog.FolderName;
+        _output.SetFolder(_lastFolder);
+        ShowMode();
     }
 
     Grid Line(string label, string hint, UIElement control)

@@ -96,12 +96,12 @@ public static class ArchiveTools
     static bool IsCompressed(string file) => Compressed.Contains(Path.GetExtension(file));
 
     /// <summary>
-    /// Extracts next to the archive. A single top-level folder inside comes out as itself; anything
+    /// Extracts next to the archive (or into the results folder). A single top-level folder inside comes out as itself; anything
     /// else goes into a folder named after the archive. Nothing is overwritten.
     /// </summary>
     public static string Extract(string archivePath, IProgress<double> progress, CancellationToken ct)
     {
-        var dir = Path.GetDirectoryName(Path.GetFullPath(archivePath))!;
+        var dir = OutputPaths.ExtractDirectory(archivePath);
         var stem = StemOf(archivePath);
         var staging = Path.Combine(dir, $".{stem}.extracting");
         if (Directory.Exists(staging)) Directory.Delete(staging, true);

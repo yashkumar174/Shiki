@@ -156,11 +156,10 @@ public sealed class SnipWindow : Window
         Snipped?.Invoke(file, centre);
     }
 
-    /// <summary>Snips live in Pictures\Converted Bro, so they (and anything made from them) are easy to find.</summary>
+    /// <summary>Snips live in the results folder (or Pictures\Converted Bro), so they're easy to find.</summary>
     static string Save(BitmapSource snip)
     {
-        var folder = Directory.CreateDirectory(System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Converted Bro")).FullName;
+        var folder = OutputPaths.CreatedFolder;
         var file = System.IO.Path.Combine(folder, $"Snip {DateTime.Now:yyyy-MM-dd HH.mm.ss}.png");
         var encoder = new PngBitmapEncoder();
         encoder.Frames.Add(BitmapFrame.Create(snip));

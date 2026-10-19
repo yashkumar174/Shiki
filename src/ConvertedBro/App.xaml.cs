@@ -179,6 +179,8 @@ public partial class App : Application
         _instance.MessageReceived += a => Dispatcher.BeginInvoke(() => Handle(a));
         _instance.StartServer();
         _settings = Settings.Load();
+        OutputPaths.Folder = _settings.OutputFolder;
+        OutputPaths.SortByType = _settings.SortOutputs;
         Theme.Style = _settings.Style;
         // Page numbers and other PDF text use the fonts installed in Windows.
         PdfFonts.Install();
@@ -338,6 +340,7 @@ public partial class App : Application
         _menu = new BroMenu(anchorPx, $"Drop files on me, Shift + drag one, or select files and press {_settings.ConvertHotkey}.",
         [
             new MenuEntry("\uE8E5", "Convert files…", PickFiles),
+            .. (_settings.OutputFolder is { } results ? [new MenuEntry("\uE838", "Open results folder", () => OpenFolder(results))] : Array.Empty<object?>()),
             new MenuEntry("\uE77F", "Paste from clipboard", PasteToCat),
             new MenuEntry("\uE924", $"Snip and convert ({_settings.SnipHotkey})", StartSnip),
             new MenuEntry("\uE790", $"Pick a colour ({_settings.ColourHotkey})", StartColourPicker),
@@ -402,6 +405,22 @@ public partial class App : Application
     {
         if (_settingsWindow != null) { _settingsWindow.Activate(); return; }
         _settingsWindow = new SettingsWindow(
+            new OutputSetting(
+                () => _settings.OutputFolder,
+                folder =>
+                {
+                    _settings.OutputFolder = folder;
+                    OutputPaths.Folder = folder;
+                    _settings.Save();
+                },
+                () => _settings.SortOutputs,
+                sort =>
+                {
+                    _settings.SortOutputs = sort;
+                    OutputPaths.SortByType = sort;
+                    _settings.Save();
+                },
+                OpenFolder),
             [
                 new ShortcutSetting("Convert selected files", () => _settings.ConvertHotkey, text => ChangeHotkey(text, () => _settings.ConvertHotkey, v => _settings.ConvertHotkey = v)),
                 new ShortcutSetting("Snip and convert", () => _settings.SnipHotkey, text => ChangeHotkey(text, () => _settings.SnipHotkey, v => _settings.SnipHotkey = v)),
@@ -505,6 +524,12 @@ public partial class App : Application
             ToastHost.Show(ToastWindow.Message($"{hotkey} is taken",
                 "Another app already uses that shortcut. Pick a different one in Settings."));
         return false;
+    }
+
+    static void OpenFolder(string folder)
+    {
+        Directory.CreateDirectory(folder);
+        Process.Start(new ProcessStartInfo("explorer.exe", $"\"{folder}\"") { UseShellExecute = true });
     }
 
     // ---- Convert what's selected ----
@@ -625,10 +650,10 @@ public partial class App : Application
         ToastHost.Show(ToastWindow.Message("Nothing to paste", "Copy a file, a picture or some text first."));
     }
 
-    /// <summary>Saves the clipboard picture in Pictures\Converted Bro, like snips.</summary>
+    /// <summary>Saves the clipboard picture where snips go.</summary>
     static string SavePastedImage()
     {
-        var folder = Directory.CreateDirectory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Converted Bro")).FullName;
+        var folder = OutputPaths.CreatedFolder;
         var file = Path.Combine(folder, $"Pasted {DateTime.Now:yyyy-MM-dd HH.mm.ss}.png");
         // Browsers and design apps put a real PNG (with transparency) on the clipboard; prefer it.
         if (Clipboard.GetData("PNG") is MemoryStream png)

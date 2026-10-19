@@ -104,11 +104,11 @@ public sealed class QrWindow : Window
         }
     }
 
-    /// <summary>Saved in Pictures\Converted Bro, named after the text so it's easy to find again.</summary>
+    /// <summary>Saved with the other results, named after the text so it's easy to find again.</summary>
     void Save()
     {
         if (_png == null) return;
-        var folder = Directory.CreateDirectory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Converted Bro")).FullName;
+        var folder = OutputPaths.CreatedFolder;
         var name = Safe(_text.Text);
         var file = OutputPaths.Next(Path.Combine(folder, $"QR {name}.png"), ".png");
         File.WriteAllBytes(file, _png);
