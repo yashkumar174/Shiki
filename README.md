@@ -41,7 +41,7 @@ Results never overwrite anything (`photo (1).jpg`, `clip (small).mp4`, `report (
 
 ## The dashboard
 
-Open it from the Start of the app (launching ConvertedBro.exe), the tray icon, or *Open Converted Bro* in the cat's menu. It's styled after Wispr Flow: a warm paper canvas or deep charcoal (the moon in the title bar switches; it starts out following Windows), white cards, Instrument Serif for the big moments, and one warm orange accent.
+Open it by launching ConvertedBro.exe, clicking the tray icon, or with *Open Converted Bro* in the cat's menu. It's styled after Wispr Flow: a warm paper canvas or deep charcoal (the moon in the title bar switches; it starts out following Windows), white cards, Instrument Serif for the big moments, and one warm orange accent.
 
 - **Home**: a greeting, the black card (drop files on it, choose some, or snip the screen), the cat's numbers (files converted, space saved, day streak), one tip for whatever isn't set up yet, and today's results with Open, Copy, Folder and "Do it again" on hover.
 - **Tools**: every tool by kind of file. "Convert to" and "Shrink under" chips, then tiles; pick one and choose the files. Capture tools (snip, colour picker, QR, paste) are at the top.
