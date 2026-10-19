@@ -78,7 +78,73 @@ public static class TextTools
         var decoder = await BitmapDecoder.CreateAsync(random);
         using var bitmap = await decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
         var result = await engine.RecognizeAsync(bitmap);
-        return string.Join(Environment.NewLine, result.Lines.Select(line => line.Text));
+        return Layout(result.Lines
+            .Where(line => line.Words.Count > 0)
+            .Select(line =>
+            {
+                var boxes = line.Words.Select(w => w.BoundingRect).ToList();
+                double left = boxes.Min(b => b.X), top = boxes.Min(b => b.Y);
+                return new TextLine(line.Text, left, top, boxes.Max(b => b.X + b.Width) - left, boxes.Max(b => b.Y + b.Height) - top);
+            })
+            .ToList());
+    }
+
+    record TextLine(string Text, double X, double Y, double Width, double Height)
+    {
+        public double Bottom => Y + Height;
+        public double Right => X + Width;
+    }
+
+    /// <summary>
+    /// Puts recognised lines back in reading order. Windows OCR returns blocks separately, so a
+    /// list's numbers ("1.", "2.") come out as their own column before the text. Lines that sit on
+    /// the same row are joined left to right; a clearly bigger gap between rows becomes a blank line.
+    /// </summary>
+    static string Layout(List<TextLine> lines)
+    {
+        if (lines.Count == 0) return "";
+        var rows = new List<List<TextLine>>();
+        foreach (var line in lines.OrderBy(l => l.Y + l.Height / 2))
+        {
+            // Same row when most of the shorter line overlaps the row vertically.
+            var row = rows.FirstOrDefault(r =>
+            {
+                double top = r.Min(l => l.Y), bottom = r.Max(l => l.Bottom);
+                double overlap = Math.Min(bottom, line.Bottom) - Math.Max(top, line.Y);
+                return overlap > 0.5 * Math.Min(bottom - top, line.Height);
+            });
+            if (row == null) rows.Add([line]);
+            else row.Add(line);
+        }
+        rows.Sort((a, b) => a.Min(l => l.Y).CompareTo(b.Min(l => l.Y)));
+
+        double typical = Median(rows.Select(r => r.Max(l => l.Height)));
+        var text = new StringBuilder();
+        double? previousBottom = null;
+        foreach (var row in rows)
+        {
+            var ordered = row.OrderBy(l => l.X).ToList();
+            double top = ordered.Min(l => l.Y);
+            // Lists and chat messages space their lines a little apart; only a real gap is a new paragraph.
+            if (previousBottom is { } prev && top - prev > typical * 1.6) text.AppendLine();
+
+            var rowText = new StringBuilder(ordered[0].Text);
+            for (int i = 1; i < ordered.Count; i++)
+            {
+                // A wide gap means a separate column (a table, say): keep it apart with a tab.
+                double gap = ordered[i].X - ordered[i - 1].Right;
+                rowText.Append(gap > typical * 2.5 ? "\t" : " ").Append(ordered[i].Text);
+            }
+            text.AppendLine(rowText.ToString());
+            previousBottom = row.Max(l => l.Bottom);
+        }
+        return text.ToString().TrimEnd();
+    }
+
+    static double Median(IEnumerable<double> values)
+    {
+        var sorted = values.OrderBy(v => v).ToList();
+        return sorted.Count == 0 ? 0 : sorted[sorted.Count / 2];
     }
 
     static void SetClipboard(string text) =>
