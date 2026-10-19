@@ -440,6 +440,7 @@ public partial class App : Application
     void EnterBuddyMode()
     {
         if (_tray != null) return;
+        Log.Info($"Cat started (process {Environment.ProcessId})");
         _headless = false;
         _idleTimer.Stop();
 

@@ -103,8 +103,18 @@ public sealed class CatWindow : Window
             hello.Tick += (_, _) => { hello.Stop(); _greeting = false; Evaluate(); };
             hello.Start();
         };
-        Closed += (_, _) => _ticker.Stop();
         SystemParameters.StaticPropertyChanged += OnSystemChanged;
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerChanged;
+        Microsoft.Win32.SystemEvents.SessionSwitch += OnSessionSwitch;
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
+        Closed += (_, _) =>
+        {
+            _ticker.Stop();
+            SystemParameters.StaticPropertyChanged -= OnSystemChanged;
+            Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerChanged;
+            Microsoft.Win32.SystemEvents.SessionSwitch -= OnSessionSwitch;
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
+        };
 
         _ticker.Tick += (_, _) => Animate();
         _hideDelay.Tick += (_, _) => { _hideDelay.Stop(); Duck(); };
@@ -395,5 +405,46 @@ public sealed class CatWindow : Window
     void OnSystemChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(SystemParameters.WorkArea)) Dispatcher.BeginInvoke(Place);
+    }
+
+    // ---- Staying drawn ----
+
+    // A see-through window can lose its drawing surface when the PC sleeps, the screen is locked
+    // or the display changes, and then stays blank. Rebuild it once things have settled.
+    void OnPowerChanged(object? sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == Microsoft.Win32.PowerModes.Resume) Dispatcher.BeginInvoke(() => RedrawSoon("resume"));
+    }
+
+    void OnSessionSwitch(object? sender, Microsoft.Win32.SessionSwitchEventArgs e)
+    {
+        if (e.Reason is Microsoft.Win32.SessionSwitchReason.SessionUnlock or Microsoft.Win32.SessionSwitchReason.ConsoleConnect or Microsoft.Win32.SessionSwitchReason.RemoteConnect)
+            Dispatcher.BeginInvoke(() => RedrawSoon("unlock"));
+    }
+
+    void OnDisplayChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(() => RedrawSoon("display change"));
+
+    /// <summary>Redraws twice: the graphics driver can take a few seconds to come back.</summary>
+    void RedrawSoon(string why)
+    {
+        Log.Info($"Cat redraw after {why}");
+        foreach (var delay in new[] { 1.5, 6 })
+        {
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(delay) };
+            timer.Tick += (_, _) => { timer.Stop(); Redraw(); };
+            timer.Start();
+        }
+    }
+
+    void Redraw()
+    {
+        if (!IsVisible) return;
+        // Hiding and showing again gives the window a fresh surface.
+        Hide();
+        Show();
+        Place();
+        _shownPose = (CatPose)(-1);
+        _shownPeek = (PeekPose)(-1);
+        Animate();
     }
 }
