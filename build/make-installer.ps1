@@ -14,6 +14,12 @@ Write-Host "Converted Bro $Version"
 if (-not (Test-Path (Join-Path $root "tools\ffmpeg\ffmpeg.exe"))) { throw "tools\ffmpeg is missing: put the FFmpeg build there first (see README)." }
 
 $publish = Join-Path $root "publish\installer"
+
+# vpk unpacks the whole app into TEMP while packing (over 1 GB); keep that on this drive, not C:.
+$temp = Join-Path $root "publish\tmp"
+New-Item -ItemType Directory -Force $temp | Out-Null
+$env:TEMP = $temp
+$env:TMP = $temp
 if (Test-Path $publish) { Remove-Item $publish -Recurse -Force }
 & $dotnet publish $project -c Release -o $publish -p:Version=$Version -v q -nologo
 if ($LASTEXITCODE -ne 0) { throw "publish failed" }
