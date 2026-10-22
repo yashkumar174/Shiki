@@ -383,6 +383,12 @@ public partial class App : Application
                 EnterBuddyMode();
                 _ = WakeFile(args[1]);
                 break;
+            case "voice-phrases":
+                // Dev aid: how a few phrases are taken (goodbye, yes, no, or a request); answers go to the log.
+                foreach (var phrase in new[] { "Thanks.", "Thank you, Sky.", "That's all.", "No, that's it.", "Stop listening.", "Thanks, now compress it.",
+                    "Yes, do it.", "No thanks.", "Never mind.", "Now make it smaller.", "Okay, great.", "Done.", "I'm done with the PDF, now zip the photos." })
+                    Log.Info($"voice-phrases: \"{phrase}\" -> {(VoiceInput.IsGoodbye(phrase) ? "goodbye" : VoiceInput.Answer(phrase) switch { true => "yes", false => "no", _ => "request" })}");
+                break;
             case "stream-file" when args.Length == 2:
                 // Dev aid: stream a WAV to Deepgram in real time, as the microphone would; partials and the end go to the log.
                 EnterBuddyMode();
@@ -682,6 +688,8 @@ public partial class App : Application
                 () => _settings.DeepgramSeconds < 1 ? "" : $"Deepgram so far: {_settings.DeepgramSeconds / 60:0.0} minutes of speech (about ${_settings.DeepgramSeconds / 60 * 0.0077:0.00} at Nova-3's streaming price).",
                 () => _settings.VoiceAnswers,
                 () => { _settings.VoiceAnswers = !_settings.VoiceAnswers; _settings.Save(); },
+                () => _settings.FollowUpSeconds,
+                seconds => { _settings.FollowUpSeconds = seconds; _settings.Save(); },
                 () => _settings.WakeWord && _settings.WakeVariants.Count > 0,
                 ToggleWake,
                 TeachName,
@@ -850,7 +858,18 @@ public partial class App : Application
     VoiceInput? _voice;
     AskBubble? _bubble;
 
-    VoiceInput Voice => _voice ??= new VoiceInput(Chat, _settings, () => CatName);
+    VoiceInput Voice
+    {
+        get
+        {
+            if (_voice != null) return _voice;
+            _voice = new VoiceInput(Chat, _settings, () => CatName);
+            // The conversation is over: put the bubble away if you're not using it.
+            _voice.ConversationEnded += () => Dispatcher.BeginInvoke(() => { if (_bubble is { IsActive: false } bubble) bubble.Close(); },
+                DispatcherPriority.ApplicationIdle);
+            return _voice;
+        }
+    }
 
     // ---- "Hey <cat name>" ----
 
@@ -1059,7 +1078,7 @@ public partial class App : Application
             var watch = Stopwatch.StartNew();
             var text = await Speech.Whisper.Transcribe(samples, $"{CatName}. Convert, merge, compress, PDF, JPG, Downloads.", default);
             Log.Info($"say-file: heard \"{text}\" in {watch.ElapsedMilliseconds} ms ({samples.Length / 16000.0:0.0} s of audio)");
-            await Voice.Use(text, listenForAnswer: false);
+            await Voice.Use(text, listenAfter: false);
         }
         catch (Exception ex)
         {

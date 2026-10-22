@@ -22,7 +22,7 @@ public sealed record OutputSetting(Func<string?> GetFolder, Action<string?> SetF
 /// <summary>Ask the cat: the name it goes by, the on/off switch, what it has cost, and its log. The key itself is handled here.</summary>
 public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
     Func<string> GetVoiceEngine, Action<string> SetVoiceEngine, Func<string> GetWakeEngine, Action<string> SetWakeEngine, Func<string> DeepgramUsage,
-    Func<bool> VoiceAnswers, Action ToggleVoiceAnswers,
+    Func<bool> VoiceAnswers, Action ToggleVoiceAnswers, Func<int> GetFollowUp, Action<int> SetFollowUp,
     Func<bool> WakeOn, Action ToggleWake, Action TeachName,
     Func<string> Spent, Action OpenLog);
 
@@ -234,6 +234,24 @@ public sealed class SettingsWindow : Window
 
         stack.Children.Add(Line("Answer plans by voice", "After a spoken request, listen for \"yes\" or \"no\" when a plan card shows.",
             Toggle(new SettingSwitch("", "", ai.VoiceAnswers, ai.ToggleVoiceAnswers))));
+
+        // A conversation: after a spoken request and the reply, keep listening for the next one.
+        stack.Children.Add(Line("Keep listening after a reply", $"Say the next thing without \"Hey {ai.CatName}\". Nothing is sent anywhere while it waits; \"thanks\" or \"that's all\" ends it.", new Border()));
+        var waits = new System.Collections.Generic.List<(int Seconds, Border Chip)>();
+        void ShowWait()
+        {
+            foreach (var (seconds, chip) in waits) UiKit.Select(chip, ai.GetFollowUp() == seconds);
+        }
+        var waitRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        foreach (var (seconds, label) in new[] { (0, "Off"), (5, "5 seconds"), (8, "8 seconds"), (15, "15 seconds") })
+        {
+            var chip = UiKit.Button(label, () => { ai.SetFollowUp(seconds); ShowWait(); });
+            waits.Add((seconds, chip));
+            waitRow.Children.Add(chip);
+        }
+        stack.Children.Add(waitRow);
+        ShowWait();
+
         stack.Children.Add(Line($"Listen for \"Hey {ai.CatName}\"", "The mic stays on while this is on (Windows shows its mic icon). Pauses while you record the screen.",
             Toggle(new SettingSwitch("", "", ai.WakeOn, ai.ToggleWake))));
         var teach = UiKit.Button("Name your cat and teach it…", ai.TeachName);

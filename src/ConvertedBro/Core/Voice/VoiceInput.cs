@@ -10,9 +10,11 @@ namespace ConvertedBro.Core.Voice;
 public enum VoiceState { Off, GettingReady, Waiting, Hearing, Understanding }
 
 /// <summary>
-/// Talking to the cat: listen once, turn it into text, and hand it to the chat. A plain "yes" or
-/// "no" while a plan card waits answers the card instead. After a spoken request that ends in a
-/// plan, it listens once more for that yes or no, so the whole thing works hands-free.
+/// Talking to the cat: listen, turn it into text, and hand it to the chat. A plain "yes" or "no"
+/// while a plan card waits answers the card instead. After every spoken request the cat keeps
+/// listening for a few seconds (a conversation), so the next thing needs no "Hey Sky" and no
+/// button; "thanks" or "that's all", or a few quiet seconds, ends it. While it waits for you to
+/// speak again nothing goes to Deepgram: it connects once you start talking.
 /// Raises Changed on the thread it was made on (the UI thread).
 /// </summary>
 public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> catName)
@@ -20,7 +22,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     readonly SynchronizationContext _ui = SynchronizationContext.Current ?? new SynchronizationContext();
     Microphone? _mic;
     CancellationTokenSource? _cancel;
-    int _lastLevelTick;
+    int _lastLevelTick, _turns;
+    const int MaxTurns = 12, MaxFollowUpWords = 35;
 
     public VoiceState State { get; private set; }
     /// <summary>Loudness right now, 0 to 1 (while Waiting or Hearing).</summary>
@@ -29,12 +32,17 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     public double ReadyProgress { get; private set; }
     /// <summary>True while listening for the answer to a plan card.</summary>
     public bool Answering { get; private set; }
+    /// <summary>True while waiting for a follow-up in a conversation (no "Hey Sky" needed).</summary>
+    public bool FollowingUp { get; private set; }
     /// <summary>The words so far, while Deepgram writes them down live.</summary>
     public string Partial { get; private set; } = "";
 
     public bool Active => State != VoiceState.Off;
 
     public event Action? Changed;
+
+    /// <summary>The conversation ended (quiet, or "thanks"): the bubble can step back.</summary>
+    public event Action? ConversationEnded;
 
     void Set(VoiceState state)
     {
@@ -43,8 +51,12 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         Changed?.Invoke();
     }
 
-    /// <summary>Listen for a request (or, with a plan waiting, its answer). Pressing again while listening sends what was heard.</summary>
-    public async Task Listen(bool answering = false)
+    /// <summary>
+    /// Listen for a request (or, with a plan waiting, its answer). Pressing again while listening
+    /// sends what was heard.
+    /// </summary>
+    /// <param name="followUp">A conversation's next turn: waits a few seconds for you to speak, and says nothing if you don't.</param>
+    public async Task Listen(bool answering = false, bool followUp = false)
     {
         if (Active)
         {
@@ -58,13 +70,16 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             return;
         }
         Answering = answering;
+        FollowingUp = followUp;
         _cancel = new CancellationTokenSource();
         var ct = _cancel.Token;
         var engine = Speech.ForCommands(settings, catName);
         Partial = "";
         DeepgramLive? live = null;
+        Task<DeepgramLive?>? connecting = null;
         Microphone? mic = null;
         string? said = null;
+        bool quiet = false;
         try
         {
             if (engine is WhisperLocal && !WhisperLocal.Downloaded)
@@ -75,10 +90,33 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             }
 
             Heard heard;
+            // Waiting for a follow-up: only as long as the setting says. Otherwise the usual few seconds.
+            double wait = followUp || answering ? Math.Max(settings.FollowUpSeconds, answering ? 7 : 3) : 7;
             // With Deepgram, Deepgram decides when you've finished; the local pause is only a backstop.
             // This listen's own microphone: _mic is only there so Stop and Finish can reach it.
-            using (mic = _mic = new Microphone(pauseEnds: engine is Deepgram ? 6 : 1.9))
+            using (mic = _mic = new Microphone(pauseEnds: engine is Deepgram ? 6 : 1.9, waitForSpeech: wait))
             {
+                var key = engine is Deepgram ? Deepgram.Key.Read() : null;
+                var thisMic = mic;
+                // Connects and starts streaming what's been heard so far (the microphone keeps it meanwhile).
+                async Task<DeepgramLive?> Connect()
+                {
+                    try
+                    {
+                        var stream = await DeepgramLive.Open(key!, thisMic.SampleRate, Speech.KeyTerms(catName()), ct);
+                        stream.Partial += text => Post(() => { Partial = text; Changed?.Invoke(); });
+                        stream.Ended += thisMic.Stop;
+                        thisMic.StreamTo(stream.Send);
+                        return stream;
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+                    {
+                        // Offline or refused: keep listening as usual and let Whisper write it down.
+                        Log.Error("Deepgram stream couldn't open; using Whisper", ex);
+                        return null;
+                    }
+                }
+
                 mic.Level += level => Post(() =>
                 {
                     Level = level;
@@ -87,34 +125,26 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
                     _lastLevelTick = Environment.TickCount;
                     Changed?.Invoke();
                 });
-                mic.SpeechStarted += () => Post(() => Set(VoiceState.Hearing));
+                mic.SpeechStarted += () => Post(() =>
+                {
+                    Set(VoiceState.Hearing);
+                    // A follow-up connects only now that you're talking: waiting in silence sends nothing.
+                    if (key != null && connecting == null) connecting = Connect();
+                });
                 Set(VoiceState.Waiting);
                 var listening = mic.Listen(ct);
-                // The microphone is already on; Deepgram connects meanwhile and gets what was said so far.
-                if (engine is Deepgram && Deepgram.Key.Read() is { } key)
-                {
-                    try
-                    {
-                        live = await DeepgramLive.Open(key, mic.SampleRate, Speech.KeyTerms(catName()), ct);
-                        live.Partial += text => Post(() => { Partial = text; Changed?.Invoke(); });
-                        live.Ended += mic.Stop;
-                        mic.StreamTo(live.Send);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-                    {
-                        // Offline or refused: keep listening as usual and let Whisper write it down.
-                        Log.Error("Deepgram stream couldn't open; using Whisper", ex);
-                        live = null;
-                        engine = Speech.Whisper;
-                    }
-                }
+                // Asked on purpose (the mic, the shortcut, "Hey Sky"): connect straight away.
+                if (key != null && !followUp) connecting = Connect();
                 heard = await listening;
+                if (connecting != null) live = await connecting;
             }
             if (ct.IsCancellationRequested) return;
+            if (engine is Deepgram && live == null) engine = Speech.Whisper;
             string? streamed = live != null ? await live.Finish() : null;
             if (heard.Kind != HeardKind.Speech && string.IsNullOrWhiteSpace(streamed))
             {
-                if (!answering) chat.Say(new CatDid("\uE720", "I didn't hear anything."));
+                quiet = true;
+                if (!answering && !followUp) chat.Say(new CatDid("\uE720", "I didn't hear anything."));
                 return;
             }
 
@@ -123,6 +153,7 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             AiLog.Write("heard", text);
             if (text.Length == 0)
             {
+                if (followUp) { quiet = true; return; }
                 chat.Say(new CatDid("\uE720", "I couldn't make that out. Try again a little closer to the mic?"));
                 return;
             }
@@ -144,11 +175,13 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             if (_mic == mic) _mic = null;
             _cancel = null;
             Answering = false;
+            FollowingUp = false;
             Partial = "";
             if (State != VoiceState.Off) Set(VoiceState.Off);
         }
-        // Only once this listen is fully over: using it may start the next one (listening for a yes or no).
-        if (said != null) await Use(said);
+        // Only once this listen is fully over: using it may start the next one.
+        if (said != null) await Use(said, fromFollowUp: followUp);
+        else if (quiet && (followUp || answering)) EndConversation(quietly: true);
     }
 
     async Task<string> Transcribe(ISpeechToText engine, float[] samples, CancellationToken ct)
@@ -165,7 +198,7 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         }
     }
 
-    /// <summary>Stops listening and throws away what was heard.</summary>
+    /// <summary>Stops listening and throws away what was heard (and ends the conversation).</summary>
     public void Cancel()
     {
         _cancel?.Cancel();
@@ -175,27 +208,78 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     /// <summary>Stops listening and uses what was heard so far.</summary>
     public void Finish() => _mic?.Stop();
 
-    /// <summary>What was said, written down: a yes or no for a waiting plan, or a request.</summary>
-    public async Task Use(string text, bool listenForAnswer = true)
+    /// <summary>
+    /// What was said, written down: a yes or no for a waiting plan, the end of the conversation,
+    /// or a request. Then, unless it ended, the cat keeps listening for the next thing.
+    /// </summary>
+    public async Task Use(string text, bool listenAfter = true, bool fromFollowUp = false)
     {
-        if (chat.WaitingPlan is { } plan)
+        // A conversation is turns of you talking to the cat. A long stretch of words while it waited,
+        // or turn after turn, is more likely a video or other people: stop rather than keep going.
+        _turns = fromFollowUp ? _turns + 1 : 0;
+        if (fromFollowUp && (text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length > MaxFollowUpWords || _turns > MaxTurns))
         {
-            switch (Answer(text))
-            {
-                case true:
-                    chat.Say(new YouSaid(text, spoken: true));
-                    await chat.Confirm(plan);
-                    return;
-                case false:
-                    chat.Say(new YouSaid(text, spoken: true));
-                    chat.Decline(plan);
-                    return;
-            }
+            AiLog.Write("ignored", $"{text.Split(' ').Length} words while waiting for a follow-up");
+            chat.Say(new CatDid("\uE720", $"That sounded like something else talking, so I stopped listening. Say \"Hey {catName()}\" when you need me."));
+            ConversationEnded?.Invoke();
+            return;
         }
-        await chat.Send(text, spoken: true);
-        // A plan from a spoken request: listen for its answer straight away.
-        if (listenForAnswer && settings.VoiceAnswers && chat.WaitingPlan != null && !Active)
-            _ = Listen(answering: true);
+
+        // "Hey Sky, compress it" in the middle of a conversation: the name isn't part of the request.
+        var (named, after) = WakeMatcher.Match(text, catName(), settings.WakeVariants);
+        if (named)
+        {
+            if (after.Length == 0) { if (listenAfter) Continue(); return; }
+            text = after;
+        }
+
+        if (chat.WaitingPlan is { } plan && Answer(text) is { } yes)
+        {
+            chat.Say(new YouSaid(text, spoken: true));
+            if (yes) await chat.Confirm(plan);
+            else chat.Decline(plan);
+            if (IsGoodbye(text)) { EndConversation(); return; }
+        }
+        else if (IsGoodbye(text))
+        {
+            chat.Say(new YouSaid(text, spoken: true));
+            EndConversation();
+            return;
+        }
+        else await chat.Send(text, spoken: true);
+
+        if (listenAfter) Continue();
+    }
+
+    /// <summary>The next turn: a yes or no for a plan card, or whatever comes next.</summary>
+    void Continue()
+    {
+        if (Active || chat.Busy) return;
+        if (settings.VoiceAnswers && chat.WaitingPlan != null) _ = Listen(answering: true);
+        else if (settings.FollowUpSeconds > 0) _ = Listen(followUp: true);
+        else ConversationEnded?.Invoke();
+    }
+
+    void EndConversation(bool quietly = false)
+    {
+        if (!quietly) chat.Say(new CatDid("\uE720", $"Okay. Say \"Hey {catName()}\" when you need me."));
+        AiLog.Write("ended", quietly ? "conversation (quiet)" : "conversation (said so)");
+        ConversationEnded?.Invoke();
+    }
+
+    static readonly string[] Goodbyes = ["thanks", "thank you", "thanks a lot", "thank you so much", "that's all", "thats all", "that's it", "thats it", "that is all",
+        "stop listening", "bye", "goodbye", "good bye", "see you", "never mind", "nevermind", "nothing", "nothing else", "i'm done", "im done", "done", "all done"];
+
+    /// <summary>"Thanks", "that's all", "stop listening"… on its own (with "Sky" or "no" around it), not "thanks, now compress it".</summary>
+    public static bool IsGoodbye(string text)
+    {
+        var words = Regex.Replace(text.ToLowerInvariant(), @"[^a-z' ]", " ");
+        var list = words.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
+        if (list.Count == 0 || list.Count > 6) return false;
+        // Leading "no", "okay", and the cat's name at the end, don't change the meaning.
+        while (list.Count > 1 && list[0] is "no" or "ok" or "okay" or "alright" or "great" or "cool") list.RemoveAt(0);
+        var phrase = string.Join(" ", list);
+        return Goodbyes.Any(g => phrase == g || phrase.StartsWith(g + " ") && phrase.Split(' ').Length - g.Split(' ').Length <= 1);
     }
 
     static readonly string[] Yes = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "do it", "go ahead", "go for it", "please do", "confirm", "sounds good", "alright", "all right", "correct", "perfect", "great", "do that"];

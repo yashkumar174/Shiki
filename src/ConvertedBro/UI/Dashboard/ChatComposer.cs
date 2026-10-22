@@ -131,7 +131,10 @@ public sealed class ChatComposer
         _status.Text = voice.State switch
         {
             VoiceState.GettingReady => $"Getting my ears ready (one time, {WhisperLocal.DownloadSize})… {voice.ReadyProgress:0%}",
-            VoiceState.Waiting => voice.Partial.Length > 0 ? voice.Partial : voice.Answering ? "Say yes or no…" : "Listening…",
+            VoiceState.Waiting => voice.Partial.Length > 0 ? voice.Partial
+                : voice.Answering ? "Say yes or no…"
+                : voice.FollowingUp ? "Still listening… say what's next, or \"thanks\" to stop"
+                : "Listening…",
             VoiceState.Hearing => voice.Partial.Length > 0 ? voice.Partial : voice.Answering ? "Listening for yes or no…" : "Listening… pause when you're done",
             VoiceState.Understanding => "Writing down what you said…",
             _ => "",

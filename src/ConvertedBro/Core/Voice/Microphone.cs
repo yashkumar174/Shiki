@@ -21,7 +21,9 @@ public sealed record Heard(HeardKind Kind, float[] Samples);
 public sealed class Microphone : IDisposable
 {
     const double FrameSeconds = 0.03;
-    const double WaitForSpeech = 7, MaxLength = 30;
+    const double MaxLength = 30;
+    // How long to wait for anyone to start talking before giving up.
+    readonly double _waitForSpeech;
     // How long a pause ends the listen: long enough to think between words, short enough not to wait around.
     readonly double _pauseEnds;
 
@@ -47,9 +49,11 @@ public sealed class Microphone : IDisposable
     public int SampleRate => _rate;
 
     /// <param name="pauseEnds">Seconds of quiet after speech that end the listen.</param>
-    public Microphone(double pauseEnds = 1.9)
+    /// <param name="waitForSpeech">Seconds to wait for speech to start before giving up.</param>
+    public Microphone(double pauseEnds = 1.9, double waitForSpeech = 7)
     {
         _pauseEnds = pauseEnds;
+        _waitForSpeech = waitForSpeech;
         var device = new MMDeviceEnumerator().GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
         _capture = new WasapiCapture(device) { ShareMode = AudioClientShareMode.Shared };
         _rate = _capture.WaveFormat.SampleRate;
@@ -166,7 +170,7 @@ public sealed class Microphone : IDisposable
         }
         if (_speaking) _heardSeconds += FrameSeconds;
 
-        if (!_speaking && _elapsed > WaitForSpeech) StopSoon();
+        if (!_speaking && _elapsed > _waitForSpeech) StopSoon();
         else if (_speaking && _quietSeconds > _pauseEnds) StopSoon();
         else if (_elapsed > MaxLength) StopSoon();
     }
