@@ -54,6 +54,9 @@ static class CatPrompt
             - "What's this error?", "what's on my screen?", "help me with this window", or a question about something on screen with no picture: call look_at_screen first, then answer from what you see.
             - Explaining an error: say what it means in plain words, the likely cause, and the fix as a few short numbered lines. Only safe steps the person does themselves; never suggest deleting files, turning off security, or running commands you can't explain.
             - To let the person point at something themselves: use_app_tool with paw_to_ask.
+            - "Copy the text on my screen" or "from this window": look_at_screen, then copy_to_clipboard with the text exactly as written (or offer_table for a table).
+            - "What colour is this?" (the pointer is on it): colour_under_pointer. To pick a colour by clicking, use_app_tool pick_colour.
+            - "Record my screen": use_app_tool record_screen (they choose the area); "stop recording": use_app_tool stop_recording.
 
             Meetings and tasks
             - "Take notes" (a call is starting) and "stop notes": use_app_tool with take_notes or stop_notes. The app records the call, writes it down and, at the end, writes a summary, decisions and tasks.
@@ -348,7 +351,7 @@ static class CatPrompt
             {
                 Properties = new Dictionary<string, JsonElement>
                 {
-                    ["tool"] = J(new { type = "string", @enum = new[] { "snip", "record_screen", "pick_colour", "make_qr", "paste_clipboard", "open_history", "open_settings", "paw_to_ask", "take_notes", "stop_notes", "open_tasks", "open_meetings" } }),
+                    ["tool"] = J(new { type = "string", @enum = new[] { "snip", "record_screen", "pick_colour", "make_qr", "paste_clipboard", "open_history", "open_settings", "paw_to_ask", "take_notes", "stop_notes", "open_tasks", "open_meetings", "stop_recording" } }),
                     ["text"] = J(new { type = "string", description = "For make_qr: the link or text to put in the code." }),
                 },
                 Required = ["tool"],
@@ -364,6 +367,12 @@ static class CatPrompt
         {
             Name = "look_at_screen",
             Description = "Take a picture of the window in front (not Shiki's own) and see it. Use for \"what's this error?\", \"what's on my screen?\" and questions about something showing on screen.",
+            InputSchema = new() { Properties = new Dictionary<string, JsonElement>() },
+        },
+        new Tool
+        {
+            Name = "colour_under_pointer",
+            Description = "The colour of the pixel under the mouse pointer right now: hex, RGB and a plain name.",
             InputSchema = new() { Properties = new Dictionary<string, JsonElement>() },
         },
         new Tool

@@ -839,6 +839,13 @@ public sealed class CatChat(CatHands hands)
                 if (done.StartsWith("Asked") || done.StartsWith("Closed")) _items.Add(new CatDid("\uE711", done));
                 return done;
             }
+            case "colour_under_pointer":
+            {
+                var (hex, r, g, b) = Shell.ScreenColour.UnderPointer();
+                _items.Add(new CatDid("\uE790", $"Under the pointer: {hex}"));
+                AiLog.Write("colour", hex);
+                return $"{hex}, rgb({r}, {g}, {b}), close to {Shell.ScreenColour.Name(r, g, b)}.";
+            }
             case "disk_space":
             {
                 using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(25));

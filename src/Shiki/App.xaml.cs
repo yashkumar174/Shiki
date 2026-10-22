@@ -1509,6 +1509,21 @@ public partial class App : Application
                 Chat.Say(new CatDid("\uE734", "Marked."));
             };
         }
+        if (words is "stop recording" or "stop the recording" or "stop screen recording" or "end recording" or "finish recording" or "stop recording the screen"
+            && _recording is { State: RecordingSession.Stage.Recording } recording)
+        {
+            return () =>
+            {
+                recording.Toggle();
+                Chat.Say(new CatDid("\uE71A", "Stopped recording. Saving it now."));
+            };
+        }
+        if (words is "what colour is this" or "what color is this" or "what colour is that" or "what color is that" or "whats this colour" or "whats this color" or "colour under the pointer" or "color under the pointer")
+        {
+            var (hex, r, g, b) = ScreenColour.UnderPointer();
+            TrySetClipboard(hex);
+            return () => Chat.Say(new CatDid("\uE790", $"That's {hex}, {ScreenColour.Name(r, g, b)} (rgb {r}, {g}, {b}). Copied."));
+        }
         // A routine's phrase ("start work mode").
         if (Routines.Match(said) is { } routine)
             return () => RunRoutine(routine, spoken: true);
@@ -1853,6 +1868,10 @@ public partial class App : Application
         {
             case "snip": StartSnip(); return true;
             case "record_screen": StartRecording(); return true;
+            case "stop_recording":
+                if (_recording is not { State: RecordingSession.Stage.Recording } running) return false;
+                running.Toggle();
+                return true;
             case "pick_colour": StartColourPicker(); return true;
             case "paw_to_ask": Dispatcher.BeginInvoke(() => StartPaw(listen: _voice?.FollowingUp == true || _voice?.Active == true)); return true;
             case "make_qr": ShowQr(text ?? ""); return true;
