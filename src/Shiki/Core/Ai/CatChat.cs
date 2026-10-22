@@ -89,6 +89,8 @@ public sealed class CatHands
     public required Func<string, bool> Copy { get; init; }
     /// <summary>A picture (PNG) of the window in front (not the app's own) and its title, or null.</summary>
     public required Func<(byte[] Png, string Title)?> LookAtScreen { get; init; }
+    /// <summary>Runs a routine by name; says what it did (or that there's no such routine).</summary>
+    public required Func<string, string> RunRoutine { get; init; }
     /// <summary>The cat answered (text, and whether the person had spoken): it may read it aloud.</summary>
     public Action<string, bool>? Replied { get; init; }
 }
@@ -730,6 +732,53 @@ public sealed class CatChat(CatHands hands)
                 var done = await Task.Run(() => Shell.Apps.Close(app));
                 if (done.StartsWith("Asked") || done.StartsWith("Closed")) _items.Add(new CatDid("\uE711", done));
                 return done;
+            }
+            case "run_routine":
+                return hands.RunRoutine(Str(input, "name") ?? "");
+            case "list_routines":
+                return Routines.All.Count == 0
+                    ? "No routines yet."
+                    : string.Join("\n", Routines.All.Select(r => $"- {r.Name} (say: {string.Join(" / ", r.Phrases)}): {string.Join(", ", r.Steps.Select(Routines.Describe))}"));
+            case "save_routine":
+            {
+                var routineName = (Str(input, "name") ?? "").Trim();
+                if (routineName.Length == 0) return "The routine needs a name.";
+                var phrases = Strings(input, "phrases").Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                if (phrases.Count == 0) phrases.Add(routineName);
+                var steps = new List<RoutineStep>();
+                if (input.TryGetProperty("steps", out var stepsJson) && stepsJson.ValueKind == JsonValueKind.Array)
+                    foreach (var s in stepsJson.EnumerateArray())
+                    {
+                        var step = new RoutineStep { Do = Str(s, "do") ?? "", Value = Str(s, "value") ?? (s.TryGetProperty("value", out var n) && n.ValueKind == JsonValueKind.Number ? n.ToString() : null) };
+                        if (Routines.Problem(step) is { } problem) return $"Step {steps.Count + 1}: {problem} Nothing was saved.";
+                        if (step.Do == "open_app")
+                        {
+                            if (await Task.Run(() => Shell.Apps.Find(step.Value!)) is not { } app)
+                                return $"Step {steps.Count + 1}: there's no app called \"{step.Value}\" in the Start menu. If it's a website, use open_website with its address. Nothing was saved.";
+                            step.Value = app.Name;
+                        }
+                        steps.Add(step);
+                    }
+                if (steps.Count == 0) return "A routine needs at least one step. Nothing was saved.";
+                if (steps.Count > 12) return "At most 12 steps. Nothing was saved.";
+                // A phrase can't belong to two routines.
+                var taken = Routines.All.Where(r => !r.Name.Equals(routineName, StringComparison.OrdinalIgnoreCase))
+                    .SelectMany(r => r.Phrases.Select(p => (r.Name, Phrase: p))).Where(x => phrases.Contains(x.Phrase, StringComparer.OrdinalIgnoreCase)).ToList();
+                if (taken.Count > 0) return $"\"{taken[0].Phrase}\" already starts the routine \"{taken[0].Name}\". Pick another phrase. Nothing was saved.";
+                bool replaced = Routines.Find(routineName) is { } old && old.Name.Equals(routineName, StringComparison.OrdinalIgnoreCase);
+                Routines.Save(new Routine { Name = routineName, Phrases = phrases, Steps = steps });
+                _items.Add(new CatDid("\uE8F1", $"{(replaced ? "Changed" : "Saved")} the routine \"{routineName}\": say \"{phrases[0]}\" to {string.Join(", ", steps.Select(Routines.Describe)).ToLowerInvariant()}"));
+                AiLog.Write("routine saved", $"{routineName}: {string.Join(" / ", phrases)}: {string.Join(", ", steps.Select(Routines.Describe))}");
+                return $"Saved. Saying \"{phrases[0]}\" (after the cat's name) runs it.";
+            }
+            case "remove_routine":
+            {
+                var routineName = Str(input, "name") ?? "";
+                var found = Routines.Find(routineName);
+                if (found == null || !Routines.Remove(found.Name)) return $"There's no routine called \"{routineName}\".";
+                _items.Add(new CatDid("\uE74D", $"Removed the routine \"{found.Name}\""));
+                AiLog.Write("routine removed", found.Name);
+                return "Removed.";
             }
             case "use_app_tool":
             {

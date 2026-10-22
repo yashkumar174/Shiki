@@ -35,6 +35,11 @@ static class CatPrompt
             - Lock, sleep, restart and shut down: pc_power. The app shows a card and nothing happens until the person presses Do it (or says yes).
             - Say what you did in a few words ("Volume's at 40."). Don't ask before volume, brightness, dark mode or opening an app; just do it.
 
+            Routines
+            - A routine is a few steps run together when the person says its phrase ("start work mode", "done for the day"). run_routine runs one; list_routines shows them.
+            - "When I say meeting, turn on do not disturb and open Zoom": save_routine with a short name, the phrases (what they'll say, without the cat's name), and the steps. Use only the step kinds listed in the tool. For a website, use its real https address (Gmail is https://mail.google.com).
+            - To change a routine, save it again with the same name. remove_routine only when they ask to remove or delete it.
+
             Seeing the screen
             - A message can come with a picture: the person swiped the cat's paw around part of their screen. Answer about that picture. Read text in it exactly as written.
             - "Copy the text": copy_to_clipboard with the text, keeping its lines. A table (or anything in rows and columns): offer_table, first row the headings; the app shows Copy and Save buttons.
@@ -70,7 +75,68 @@ static class CatPrompt
         return prompt.ToString();
     }
 
-    public static List<ToolUnion> Tools() => [.. FileTools(), .. ScreenTools(), .. PcTools()];
+    public static List<ToolUnion> Tools() => [.. FileTools(), .. ScreenTools(), .. PcTools(), .. RoutineTools()];
+
+    static IEnumerable<ToolUnion> RoutineTools() =>
+    [
+        new Tool
+        {
+            Name = "run_routine",
+            Description = "Run a saved routine by its name or phrase. Returns what it did.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement> { ["name"] = J(new { type = "string" }) },
+                Required = ["name"],
+            },
+        },
+        new Tool
+        {
+            Name = "list_routines",
+            Description = "The saved routines: names, phrases and steps.",
+            InputSchema = new() { Properties = new Dictionary<string, JsonElement>() },
+        },
+        new Tool
+        {
+            Name = "save_routine",
+            Description = "Save a routine (or replace the one with the same name). Steps: "
+                + string.Join("; ", Routines.Kinds.Select(k => $"{k.Key} ({k.Value})")) + ".",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["name"] = J(new { type = "string", description = "Short, e.g. \"Meeting\"." }),
+                    ["phrases"] = J(new { type = "array", items = new { type = "string" }, description = "What the person will say to start it, e.g. [\"meeting\", \"meeting mode\"]." }),
+                    ["steps"] = J(new
+                    {
+                        type = "array",
+                        minItems = 1,
+                        maxItems = 12,
+                        items = new
+                        {
+                            type = "object",
+                            properties = new Dictionary<string, object>
+                            {
+                                ["do"] = new { type = "string", @enum = Routines.Kinds.Keys.ToArray() },
+                                ["value"] = new { type = "string" },
+                            },
+                            required = new[] { "do" },
+                        },
+                    }),
+                },
+                Required = ["name", "phrases", "steps"],
+            },
+        },
+        new Tool
+        {
+            Name = "remove_routine",
+            Description = "Remove a saved routine, only when the person asks to.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement> { ["name"] = J(new { type = "string" }) },
+                Required = ["name"],
+            },
+        },
+    ];
 
     static IEnumerable<ToolUnion> PcTools() =>
     [

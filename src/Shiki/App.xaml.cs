@@ -342,6 +342,12 @@ public partial class App : Application
                 // Dev aid: the cat's voice into a WAV file instead of the speakers ("speak-file out.wav voice-id text…").
                 _ = SpeakFile(args[1], args[2], string.Join(" ", args[3..]));
                 break;
+            case "routine-test":
+                // Dev aid: which routine each phrase starts (nothing is run).
+                foreach (var said in new[] { "start work mode", "please start work mode", "done for the day", "I'm done for today", "work", "merge my pdfs", "meeting" })
+                    Log.Info($"routine-test \"{said}\": {Routines.Match(said)?.Name ?? "-"}");
+                foreach (var r in Routines.All) Log.Info($"routine-test saved: {r.Name} [{string.Join(" / ", r.Phrases)}] {string.Join(", ", r.Steps.Select(Routines.Describe))}");
+                break;
             case "pc-test":
                 // Dev aid: reads the PC's controls, sets each to what it already is, and checks what
                 // phrases and app names would match (nothing is left changed).
@@ -846,7 +852,8 @@ public partial class App : Application
                 },
                 () => _settings.DeepgramSpokenChars < 1 ? "" : $"Read aloud so far: {_settings.DeepgramSpokenChars:N0} characters (about ${_settings.DeepgramSpokenChars / 1000.0 * 0.03:0.00}).",
                 () => _settings.AiRequests == 0 ? "Nothing spent yet." : $"Spent so far: {AskView.Money(_settings.AiSpentUsd)} over {_settings.AiRequests:N0} requests.",
-                () => Process.Start(new ProcessStartInfo(AiLog.FilePath) { UseShellExecute = true })));
+                () => Process.Start(new ProcessStartInfo(AiLog.FilePath) { UseShellExecute = true })),
+            new RoutineSetting(CatName, () => Routines.All, routine => RunRoutine(routine, spoken: false), name => Routines.Remove(name)));
 
     /// <summary>Tries a new shortcut from the settings window; puts the old one back if it's taken.</summary>
     bool ChangeHotkey(string text, Func<string> get, Action<string> set)
@@ -1139,11 +1146,67 @@ public partial class App : Application
         },
         Copy = TrySetClipboard,
         LookAtScreen = () => WindowShots.Capture(WindowShots.TopOtherWindow()),
+        RunRoutine = name => Routines.Find(name) is { } routine ? RunRoutine(routine, spoken: false) : $"There's no routine called \"{name}\".",
         Replied = (text, spoken) =>
         {
             if (_settings.TalkBack == "always" || (_settings.TalkBack == "spoken" && spoken)) _ = Mouth.Say(text, _settings.TalkVoice);
         },
     });
+
+    // ---- Routines ----
+
+    /// <summary>Runs each step of a routine, showing what happened in the chat; returns a summary for Claude.</summary>
+    string RunRoutine(Routine routine, bool spoken)
+    {
+        AiLog.Write("routine", routine.Name);
+        var done = new List<string>();
+        string? say = null;
+        foreach (var step in routine.Steps)
+        {
+            string result;
+            try
+            {
+                result = step.Do switch
+                {
+                    "do_not_disturb_on" => PcControl.SetDoNotDisturb(true),
+                    "do_not_disturb_off" => PcControl.SetDoNotDisturb(false),
+                    "set_volume" => PcControl.SetVolume(int.TryParse(step.Value, out var v) ? v : 50),
+                    "mute" => PcControl.Mute(true),
+                    "unmute" => PcControl.Mute(false),
+                    "set_brightness" => PcControl.SetBrightness(int.TryParse(step.Value, out var b) ? b : 70),
+                    "dark_mode_on" => PcControl.SetDarkMode(true),
+                    "dark_mode_off" => PcControl.SetDarkMode(false),
+                    "switch_sound_output" => PcControl.SetOutput(step.Value ?? ""),
+                    "open_app" => Apps.Open(step.Value ?? ""),
+                    "close_app" => Apps.Close(step.Value ?? ""),
+                    "open_website" when Uri.TryCreate(step.Value, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" => OpenWebsite(uri),
+                    "app_tool" => UseToolForCat(step.Value ?? "", null) ? Routines.Describe(step) : $"No tool called {step.Value}",
+                    "say" => "",
+                    _ => $"Skipped {step.Do}",
+                };
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Routine step {step.Do} failed", ex);
+                result = $"{Routines.Describe(step)} didn't work";
+            }
+            if (step.Do == "say") say = step.Value;
+            else done.Add(result.TrimEnd('.'));
+        }
+        Chat.Say(new CatDid("\uE8F1", $"{routine.Name}: {string.Join("; ", done)}"));
+        if (say != null)
+        {
+            Chat.Say(new CatSaid(say));
+            if (_settings.TalkBack == "always" || (_settings.TalkBack == "spoken" && spoken)) _ = Mouth.Say(say, _settings.TalkVoice);
+        }
+        return $"Ran \"{routine.Name}\": {string.Join("; ", done)}.{(say != null ? $" It also said: {say}" : "")}";
+    }
+
+    static string OpenWebsite(Uri uri)
+    {
+        Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true })?.Dispose();
+        return $"Opened {uri.Host.Replace("www.", "")}";
+    }
 
     // ---- The cat's voice ----
 
@@ -1446,6 +1509,9 @@ public partial class App : Application
                 Chat.Say(new CatDid("\uE734", "Marked."));
             };
         }
+        // A routine's phrase ("start work mode").
+        if (Routines.Match(said) is { } routine)
+            return () => RunRoutine(routine, spoken: true);
         // The PC's own controls, said plainly.
         if (PcCommands.Try(words) is { } done)
         {

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.IO;
 using System.Windows;
@@ -28,6 +29,9 @@ public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
     Func<string> GetTalkBack, Action<string> SetTalkBack, Func<string> GetTalkVoice, Action<string> SetTalkVoice, Func<string> SpokenUsage,
     Func<string> Spent, Action OpenLog);
 
+/// <summary>The routines: run one now, or remove it. New ones are made by telling the cat.</summary>
+public sealed record RoutineSetting(string CatName, Func<IReadOnlyList<Core.Routine>> All, Action<Core.Routine> Run, Action<string> Remove);
+
 /// <summary>Shortcuts and the main switches, in one place.</summary>
 public sealed class SettingsWindow : Window
 {
@@ -41,7 +45,7 @@ public sealed class SettingsWindow : Window
     readonly TextBlock _folderPath = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     string _lastFolder;
 
-    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null)
+    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null, RoutineSetting? routines = null)
     {
         _output = output;
         _lastFolder = output.GetFolder() ?? Core.OutputPaths.DefaultFolder;
@@ -93,6 +97,7 @@ public sealed class SettingsWindow : Window
         foreach (var setting in switches) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
 
         if (ai != null) AddAi(stack, ai);
+        if (routines != null) AddRoutines(stack, routines);
 
         var done = UiKit.Button("Done", Close, primary: true);
         done.Margin = new Thickness(0, 22, 0, 0);
@@ -391,6 +396,27 @@ public sealed class SettingsWindow : Window
         _lastFolder = dialog.FolderName;
         _output.SetFolder(_lastFolder);
         ShowMode();
+    }
+
+    void AddRoutines(StackPanel stack, RoutineSetting routines)
+    {
+        stack.Children.Add(UiKit.Heading("Routines"));
+        stack.Children.Add(UiKit.Body($"Say a routine's phrase after \"Hey {routines.CatName}\" and it all happens at once. To make your own, tell {routines.CatName} something like \"when I say meeting, turn on do not disturb and open Zoom\".", 11.5));
+        var list = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+        void Fill()
+        {
+            list.Children.Clear();
+            foreach (var routine in routines.All())
+            {
+                var phrase = routine.Phrases.FirstOrDefault() ?? routine.Name;
+                var steps = string.Join(", ", routine.Steps.Select(Core.Routines.Describe));
+                var buttons = UiKit.Row(UiKit.Button("Run", () => routines.Run(routine)), UiKit.Button("Remove", () => { routines.Remove(routine.Name); Fill(); }));
+                list.Children.Add(Line(routine.Name, $"Say \"{phrase}\": {steps}", buttons));
+            }
+            if (list.Children.Count == 0) list.Children.Add(UiKit.Body("No routines yet.", 12));
+        }
+        Fill();
+        stack.Children.Add(list);
     }
 
     Grid Line(string label, string hint, UIElement control)
