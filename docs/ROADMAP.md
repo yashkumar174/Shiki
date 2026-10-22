@@ -80,7 +80,7 @@ In no fixed order yet; we pick as we go.
   the newest photo.
 - **Screen by voice**: start and stop recording, copy the text on screen, the colour under the
   pointer.
-- **The cat talks back**: spoken replies (Windows voices or Deepgram), and it never hears itself.
+- **The cat talks back** (built, v2.8): spoken replies (Windows voices or Deepgram), and it never hears itself.
 - **Documents**: ask a PDF a question, summarise a Word file, read aloud.
 - **What is this?** for files, **Smart rename** (batch, with undo), **Translate** (documents,
   pictures, screen text).

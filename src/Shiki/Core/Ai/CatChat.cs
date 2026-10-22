@@ -89,6 +89,8 @@ public sealed class CatHands
     public required Func<string, bool> Copy { get; init; }
     /// <summary>A picture (PNG) of the window in front (not the app's own) and its title, or null.</summary>
     public required Func<(byte[] Png, string Title)?> LookAtScreen { get; init; }
+    /// <summary>The cat answered (text, and whether the person had spoken): it may read it aloud.</summary>
+    public Action<string, bool>? Replied { get; init; }
 }
 
 /// <summary>
@@ -221,6 +223,8 @@ public sealed class CatChat(CatHands hands)
 
     // Reset bumps this, so a reply still on its way to an old conversation is dropped.
     int _generation;
+    // The person spoke this turn (so the reply may be read aloud).
+    bool _spokenTurn;
     bool _stopped;
 
     public async Task Send(string text, bool spoken = false)
@@ -231,6 +235,7 @@ public sealed class CatChat(CatHands hands)
         var picture = _picture;
         var pictureWhere = _pictureWhere;
         _items.Add(new YouSaid(text, spoken, picture));
+        _spokenTurn = spoken;
         if (key == null)
         {
             _items.Add(new ChatProblem("I need a Claude API key before I can understand requests. Add one in Settings, under Ask the cat.", needsKey: true));
@@ -354,6 +359,7 @@ public sealed class CatChat(CatHands hands)
                     {
                         _items.Add(new CatSaid(said.Text.Trim()));
                         AiLog.Write("cat", said.Text.Trim());
+                        hands.Replied?.Invoke(said.Text.Trim(), _spokenTurn);
                     }
                 }
                 else if (block.TryPickThinking(out var thinking))

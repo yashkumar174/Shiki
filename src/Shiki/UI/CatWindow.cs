@@ -63,7 +63,7 @@ public sealed class CatWindow : Window
     // ---- Alive, without the distraction ----
     // Listening to you, pointing at something it found, small walks and stretches now and then;
     // and out of the way while you type, and gone while something runs full screen.
-    bool _listening, _pointLeft, _fullScreen;
+    bool _listening, _talking, _pointLeft, _fullScreen;
     int _pointing;
     DateTime _nextAct = DateTime.Now.AddMinutes(2), _typingUntil;
     uint _lastInput;
@@ -277,6 +277,15 @@ public sealed class CatWindow : Window
     {
         if (on == _listening) return;
         _listening = on;
+        if (on) { _asleep = false; Touch(); }
+        Evaluate();
+    }
+
+    /// <summary>Reading a reply aloud: the mouth moves.</summary>
+    public void Talking(bool on)
+    {
+        if (on == _talking) return;
+        _talking = on;
         if (on) { _asleep = false; Touch(); }
         Evaluate();
     }
@@ -513,7 +522,7 @@ public sealed class CatWindow : Window
 
     // ---- Out and in ----
 
-    bool WantsOut => _hover || _dragOver || _noticing || _busy > 0 || _celebrating || _greeting || _dragging || _startled > 0 || _yawn > 0 || _grumpy > 0 || Petting || _listening || _pointing > 0;
+    bool WantsOut => _hover || _dragOver || _noticing || _busy > 0 || _celebrating || _greeting || _dragging || _startled > 0 || _yawn > 0 || _grumpy > 0 || Petting || _listening || _talking || _pointing > 0;
 
     void Evaluate()
     {
@@ -660,6 +669,7 @@ public sealed class CatWindow : Window
         else if (_yawn > 0) { pose = CatPose.Yawn; if (--_yawn == 0) Evaluate(); }
         else if (_grumpy > 0) { pose = (_tick / 3) % 2 == 0 ? CatPose.Grumpy : CatPose.GrumpyFlick; if (--_grumpy == 0) Evaluate(); }
         else if (_pointing > 0) { pose = _pointLeft ? CatPose.PointLeft : CatPose.PointRight; if (--_pointing == 0) Evaluate(); }
+        else if (_talking) pose = _tick % 3 == 2 ? CatPose.Idle : CatPose.Talk;
         else if (_listening) pose = _tick % 30 < 2 ? CatPose.Blink : CatPose.Listen;
         else if (_celebrating) pose = CatPose.Happy;
         else if (_dragOver) pose = (_tick / 2) % 2 == 0 ? CatPose.Pop : CatPose.Idle; // pop, pop

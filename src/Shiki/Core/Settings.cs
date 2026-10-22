@@ -87,6 +87,12 @@ public sealed class Settings
     public bool VoiceLock { get; set; } = true;
     /// <summary>How alike the voice must be: "relaxed", "normal" or "strict".</summary>
     public string VoiceLockLevel { get; set; } = "normal";
+    /// <summary>Read the cat's replies aloud: "spoken" (when you spoke to it), "always", or "off".</summary>
+    public string TalkBack { get; set; } = "spoken";
+    /// <summary>The cat's voice: "dg:aura-2-…" (Deepgram) or "win:&lt;id&gt;" (Windows); empty picks one.</summary>
+    public string TalkVoice { get; set; } = "";
+    /// <summary>Characters read aloud by Deepgram so far.</summary>
+    public long DeepgramSpokenChars { get; set; }
 
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");
 

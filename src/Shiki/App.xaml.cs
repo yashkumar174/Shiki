@@ -338,6 +338,10 @@ public partial class App : Application
                 // Dev aid: learn a voice from the first WAV(s) after "learn", then say how alike each other WAV is.
                 _ = VoiceTest(args[1..]);
                 break;
+            case "speak-file" when args.Length >= 3:
+                // Dev aid: the cat's voice into a WAV file instead of the speakers ("speak-file out.wav voice-id text…").
+                _ = SpeakFile(args[1], args[2], string.Join(" ", args[3..]));
+                break;
             case "pc-test":
                 // Dev aid: reads the PC's controls, sets each to what it already is, and checks what
                 // phrases and app names would match (nothing is left changed).
@@ -374,6 +378,13 @@ public partial class App : Application
                 EnterBuddyMode();
                 if (_dashboard == null) ShowDashboard(shot, show: false);
                 _dashboard!.Snapshot(args[2], shot);
+                break;
+            case "snapshot-settings" when args.Length == 2:
+                // Dev aid: the settings drawn off screen, whole.
+                EnterBuddyMode();
+                var settingsShot = NewSettings();
+                DashboardWindow.SaveElement((FrameworkElement)settingsShot.Content, 640, args[1]);
+                settingsShot.Close();
                 break;
             case "snapshot-teach" when args.Length == 2:
                 // Dev aid: the teach-your-cat page drawn off screen.
@@ -761,7 +772,12 @@ public partial class App : Application
     void ShowSettings()
     {
         if (_settingsWindow != null) { InDashboard(_settingsWindow, isSettings: true); return; }
-        _settingsWindow = new SettingsWindow(
+        _settingsWindow = NewSettings();
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        InDashboard(_settingsWindow, isSettings: true);
+    }
+
+    SettingsWindow NewSettings() => new SettingsWindow(
             new OutputSetting(
                 () => _settings.OutputFolder,
                 folder =>
@@ -819,11 +835,18 @@ public partial class App : Application
                 () => { _settings.VoiceLock = !_settings.VoiceLock; _settings.Save(); },
                 () => _settings.VoiceLockLevel,
                 level => { _settings.VoiceLockLevel = level; _settings.Save(); },
+                () => _settings.TalkBack,
+                mode => { _settings.TalkBack = mode; _settings.Save(); },
+                () => _settings.TalkVoice,
+                voice =>
+                {
+                    _settings.TalkVoice = voice;
+                    _settings.Save();
+                    _ = Mouth.Say($"Hi, I'm {CatName}. This is how I'll sound.", voice);
+                },
+                () => _settings.DeepgramSpokenChars < 1 ? "" : $"Read aloud so far: {_settings.DeepgramSpokenChars:N0} characters (about ${_settings.DeepgramSpokenChars / 1000.0 * 0.03:0.00}).",
                 () => _settings.AiRequests == 0 ? "Nothing spent yet." : $"Spent so far: {AskView.Money(_settings.AiSpentUsd)} over {_settings.AiRequests:N0} requests.",
                 () => Process.Start(new ProcessStartInfo(AiLog.FilePath) { UseShellExecute = true })));
-        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
-        InDashboard(_settingsWindow, isSettings: true);
-    }
 
     /// <summary>Tries a new shortcut from the settings window; puts the old one back if it's taken.</summary>
     bool ChangeHotkey(string text, Func<string> get, Action<string> set)
@@ -894,6 +917,7 @@ public partial class App : Application
         _calls.Started += OfferNotes;
         // Deepgram's running total, for Settings.
         Deepgram.Sent += seconds => Dispatcher.BeginInvoke(() => { _settings.DeepgramSeconds += seconds; _settings.Save(); });
+        Speaker.Sent += characters => Dispatcher.BeginInvoke(() => { _settings.DeepgramSpokenChars += characters; _settings.Save(); });
     }
 
     /// <summary>(Re)binds every shortcut from settings. Unless quiet, says which one another app owns.</summary>
@@ -1006,7 +1030,7 @@ public partial class App : Application
         get
         {
             if (_voice != null) return _voice;
-            _voice = new VoiceInput(Chat, _settings, () => CatName) { Commands = VoiceCommand };
+            _voice = new VoiceInput(Chat, _settings, () => CatName) { Commands = VoiceCommand, Quiet = () => Mouth.Quiet(), Interrupt = () => _mouth?.Stop() };
             // The conversation is over: put the bubble away if you're not using it.
             // Attentive eyes while you're talking to it.
             _voice.Changed += () => _buddy?.Listening(_voice.State is VoiceState.Waiting or VoiceState.Hearing);
@@ -1030,7 +1054,7 @@ public partial class App : Application
         {
             _wake = new WakeListener(() => CatName, () => _settings.WakeVariants,
                 // Hear nothing while the cat is already listening or thinking, while recording, or while being taught.
-                () => _recording != null || (_voice?.Active ?? false) || (_chat?.Busy ?? false) || (_teach?.Listening ?? false) || _dictation != null,
+                () => _recording != null || (_voice?.Active ?? false) || (_chat?.Busy ?? false) || (_teach?.Listening ?? false) || _dictation != null || (_mouth?.Speaking ?? false),
                 () => _settings.VoiceLock && VoicePrint.HasPrint ? VoicePrint.Enough(_settings.VoiceLockLevel) : null);
             _wake.Woke += OnWoke;
             // "Hey Sky, …": show the bubble straight away, before the rest is written down.
@@ -1115,7 +1139,27 @@ public partial class App : Application
         },
         Copy = TrySetClipboard,
         LookAtScreen = () => WindowShots.Capture(WindowShots.TopOtherWindow()),
+        Replied = (text, spoken) =>
+        {
+            if (_settings.TalkBack == "always" || (_settings.TalkBack == "spoken" && spoken)) _ = Mouth.Say(text, _settings.TalkVoice);
+        },
     });
+
+    // ---- The cat's voice ----
+
+    Speaker? _mouth;
+
+    /// <summary>Reads replies aloud; the cat's mouth moves while it does, and the wake word waits.</summary>
+    Speaker Mouth
+    {
+        get
+        {
+            if (_mouth != null) return _mouth;
+            _mouth = new Speaker();
+            _mouth.Changed += () => _buddy?.Talking(_mouth.Speaking);
+            return _mouth;
+        }
+    }
 
     // ---- Dictation ----
 
@@ -1186,6 +1230,21 @@ public partial class App : Application
             // An app running as administrator won't take typing from a normal app: the clipboard will do.
             TrySetClipboard(text);
             pill.Done("Copied: paste it with Ctrl+V");
+        }
+    }
+
+    static async System.Threading.Tasks.Task SpeakFile(string path, string voice, string text)
+    {
+        try
+        {
+            var wav = await Speaker.Render(text, voice == "-" ? "" : voice);
+            File.WriteAllBytes(path, wav);
+            Log.Info($"speak-file: {Speaker.Pick(voice == "-" ? "" : voice)}, {wav.Length / 1024} KB, read as \"{Speaker.Readable(text)}\"");
+            foreach (var v in Speaker.Voices()) Log.Info($"speak-file voice: {v.Id} = {v.Label}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("speak-file failed", ex);
         }
     }
 

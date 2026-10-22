@@ -25,6 +25,7 @@ public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
     Func<bool> VoiceAnswers, Action ToggleVoiceAnswers, Func<int> GetFollowUp, Action<int> SetFollowUp,
     Func<bool> WakeOn, Action ToggleWake, Action TeachName,
     Func<bool> VoiceLock, Action ToggleVoiceLock, Func<string> GetVoiceLockLevel, Action<string> SetVoiceLockLevel,
+    Func<string> GetTalkBack, Action<string> SetTalkBack, Func<string> GetTalkVoice, Action<string> SetTalkVoice, Func<string> SpokenUsage,
     Func<string> Spent, Action OpenLog);
 
 /// <summary>Shortcuts and the main switches, in one place.</summary>
@@ -274,6 +275,37 @@ public sealed class SettingsWindow : Window
         var teach = UiKit.Button("Name your cat and teach it…", ai.TeachName);
         teach.Margin = new Thickness(0, 4, 0, 0);
         stack.Children.Add(teach);
+
+        // The cat's own voice.
+        stack.Children.Add(Line($"{ai.CatName} talks back", "Replies are read aloud. The mic waits until it's done, so it never hears itself; press the mic or the shortcut to cut it short.", new Border()));
+        var talks = new List<(string Id, Border Chip)>();
+        void ShowTalk() { foreach (var (id, chip) in talks) UiKit.Select(chip, ai.GetTalkBack() == id); }
+        var talkRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        foreach (var (id, label) in new[] { ("spoken", "When I speak"), ("always", "Always"), ("off", "Off") })
+        {
+            var chip = UiKit.Button(label, () => { ai.SetTalkBack(id); ShowTalk(); });
+            talks.Add((id, chip));
+            talkRow.Children.Add(chip);
+        }
+        stack.Children.Add(talkRow);
+        ShowTalk();
+        stack.Children.Add(UiKit.Body("Voice (pick one to hear it):", 11.5));
+        var voices = new List<(string Id, Border Chip)>();
+        var current = Core.Voice.Speaker.Pick(ai.GetTalkVoice());
+        void ShowVoice() { foreach (var (id, chip) in voices) UiKit.Select(chip, current == id); }
+        var voiceRow = new WrapPanel { Margin = new Thickness(0, 4, 0, 6) };
+        foreach (var voice in Core.Voice.Speaker.Voices())
+        {
+            var chip = UiKit.Button(voice.Label, () => { current = voice.Id; ai.SetTalkVoice(voice.Id); ShowVoice(); });
+            chip.Margin = new Thickness(0, 0, 6, 6);
+            voices.Add((voice.Id, chip));
+            voiceRow.Children.Add(chip);
+        }
+        stack.Children.Add(voiceRow);
+        ShowVoice();
+        stack.Children.Add(UiKit.Body(Core.Voice.Deepgram.HasKey
+            ? "Deepgram's voices sound natural and cost about $0.03 per 1,000 characters (a short reply is a fraction of a cent). Windows voices are free and stay on this PC." + (ai.SpokenUsage() is { Length: > 0 } spoken ? " " + spoken : "")
+            : "Windows voices are free and stay on this PC. With a Deepgram key (above), natural voices are offered too.", 11.5));
     }
 
     sealed class KeyBox

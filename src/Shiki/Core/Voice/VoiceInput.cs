@@ -47,6 +47,12 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     /// </summary>
     public Func<string, Action?>? Commands { get; set; }
 
+    /// <summary>Waits until the cat has finished reading its reply aloud, so it doesn't hear itself.</summary>
+    public Func<Task>? Quiet { get; set; }
+
+    /// <summary>Called as listening starts: cuts the cat off if it's still talking.</summary>
+    public Action? Interrupt { get; set; }
+
     /// <summary>The conversation ended (quiet, or "thanks"): the bubble can step back.</summary>
     public event Action? ConversationEnded;
 
@@ -75,6 +81,7 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             chat.Say(new ChatProblem("I can't find a microphone. Plug one in, or check Windows' sound settings."));
             return;
         }
+        Interrupt?.Invoke();
         Answering = answering;
         FollowingUp = followUp;
         _cancel = new CancellationTokenSource();
@@ -266,8 +273,10 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     }
 
     /// <summary>The next turn: a yes or no for a plan card, or whatever comes next.</summary>
-    void Continue()
+    async void Continue()
     {
+        // Listening while the reply is read aloud would hear the cat itself.
+        if (Quiet != null) await Quiet();
         if (Active || chat.Busy) return;
         if (settings.VoiceAnswers && chat.WaitingPlan != null) _ = Listen(answering: true);
         else if (settings.FollowUpSeconds > 0) _ = Listen(followUp: true);
