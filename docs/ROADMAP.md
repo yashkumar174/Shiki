@@ -42,7 +42,7 @@ gives you the summary.
   reminder to let others know you're taking notes; an option to keep only the notes and drop
   the recording.
 
-### 4. The cat reacts to your PC (and grows)
+### 4. The cat reacts to your PC (and grows) (built, v2.3)
 - Moods from the PC: sleepy and slow when the battery is low, fanning itself when the processor
   is hot, a little cheer when a download finishes, dozing when you're away.
 - Levels: it grows with use (files handled, requests, meetings), and new levels unlock skins and

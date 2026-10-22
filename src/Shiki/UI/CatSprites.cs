@@ -10,7 +10,10 @@ public enum CatPose { Idle, LookLeft, LookRight, Blink, Pop, Happy, TapLeft, Tap
 public enum PeekPose { Idle, LeftPaw, RightPaw, Sleep }
 
 /// <summary>Little sprites that float up from the cat: sleep, love, surprise, effort, joy.</summary>
-public enum Floater { Z, Heart, Alert, Sweat, Sparkle }
+public enum Floater { Z, Heart, Alert, Sweat, Sparkle, Battery, Bolt, Download }
+
+/// <summary>Something the cat can wear, unlocked as it levels up.</summary>
+public sealed record Accessory(string Id, string Name, (int Row, int Col, string Pixels)[] Patches);
 
 /// <summary>A cat's colours and markings. All cats share one body shape.</summary>
 public sealed class CatSkin
@@ -97,7 +100,47 @@ public static class CatSprites
         [Floater.Alert] = (["kkk", "kWk", "kWk", "kWk", "kkk", "kWk", "kkk"], Color.FromRgb(0xFF, 0xD4, 0x47)),
         [Floater.Sweat] = ([".k.", "kWk", "kWk", ".k."], Color.FromRgb(0x7E, 0xC8, 0xFF)),
         [Floater.Sparkle] = ([".W.", "WWW", ".W."], Color.FromRgb(0xFF, 0xD4, 0x47)),
+        // The PC's own news: battery low (a nearly empty red battery), plugged in, a download done.
+        [Floater.Battery] = (["kkkkkk.", "kWk..kk", "kWk..kk", "kkkkkk."], Color.FromRgb(0xE5, 0x48, 0x4D)),
+        [Floater.Bolt] = (["..WW", ".WW.", "WWWW", ".WW.", "WW.."], Color.FromRgb(0xFF, 0xD4, 0x47)),
+        [Floater.Download] = (["..W..", "..W..", "W.W.W", ".WWW.", "..W..", "WWWWW"], Color.FromRgb(0x3D, 0xBE, 0x7A)),
     };
+
+    // Accessory colours (the cat's own palette fills in the rest): R red, Y gold, D dark, L light.
+    static readonly Dictionary<char, Color> AccessoryColours = new()
+    {
+        ['R'] = Color.FromRgb(0xE5, 0x48, 0x4D),
+        ['Y'] = Color.FromRgb(0xFF, 0xC8, 0x3D),
+        ['D'] = Color.FromRgb(0x2B, 0x2F, 0x3A),
+        ['L'] = Color.FromRgb(0x8A, 0x93, 0xA6),
+        ['G'] = Color.FromRgb(0x3D, 0xBE, 0x7A),
+    };
+
+    /// <summary>What the cat can wear. Patches sit on the drawing like markings.</summary>
+    public static IReadOnlyList<Accessory> Accessories { get; } =
+    [
+        new("bow", "Bow tie", [(14, 7, "RRkkRR"), (15, 7, "R.kk.R")]),
+        // Over the head and a cup on each side: also worn by itself while taking meeting notes.
+        new("headphones", "Headphones", [(1, 6, "DDDDDDDD"), (2, 4, "DD........DD"), (6, 0, "DD"), (7, 0, "DL"), (8, 0, "DL"), (9, 0, "DD"), (6, 18, "DD"), (7, 18, "LD"), (8, 18, "LD"), (9, 18, "DD")]),
+        new("party", "Party hat", [(0, 9, "YY"), (1, 8, "kRRk"), (2, 7, "kRYYRk"), (3, 7, "RRRRRR")]),
+        new("crown", "Crown", [(0, 6, "Y..YY..Y"), (1, 6, "YY.YY.YY"), (2, 6, "YYYYYYYY"), (3, 6, "YRYYYYRY")]),
+    ];
+
+    /// <summary>The cat wearing an accessory: a skin of its own, so every pose and the peek show it.</summary>
+    public static CatSkin Dressed(CatSkin skin, string? accessory)
+    {
+        if (Accessories.FirstOrDefault(a => a.Id == accessory) is not { } wear) return skin;
+        var palette = new Dictionary<char, Color>(skin.Palette);
+        foreach (var (key, colour) in AccessoryColours) palette.TryAdd(key, colour);
+        return new CatSkin
+        {
+            Id = $"{skin.Id}+{wear.Id}",
+            Name = skin.Name,
+            Description = skin.Description,
+            Palette = palette,
+            Markings = [.. skin.Markings, .. wear.Patches],
+        };
+    }
 
     static readonly string[] Paw = [".kkkk.", "kffffk", "kfefek", "kffffk"];
 
@@ -185,6 +228,33 @@ public static class CatSprites
                 (12, 2, "ssssssssssssssss"), (17, 4, "ss"), (17, 14, "ss"),
             ],
         },
+        new CatSkin
+        {
+            Id = "kuro",
+            Name = "Kuro",
+            Description = "Black as ink, golden eyes",
+            Palette = Colors(k: 0x08070A, b: 0x2A2830, w: 0x3B3943, f: 0x2A2830, p: 0x2A2830, e: 0xF29BB5,
+                E: 0xF6C343, W: 0x141218, P: 0xF29BB5, s: 0x3B3943, B: 0x2A2830),
+            Markings = [(14, 7, "ssssss")],
+        },
+        new CatSkin
+        {
+            Id = "ginger",
+            Name = "Ginger",
+            Description = "Orange tabby, stripes and a cream chin",
+            Palette = Colors(k: 0x3A2210, b: 0xF5A04A, w: 0xFFF1DF, f: 0xFFF1DF, p: 0xD07418, e: 0xFFB3A0,
+                E: 0x3A2210, W: 0x3A2210, P: 0xE8786C, s: 0xE58A30, B: 0xD07418),
+            Markings = [(4, 7, "p.pp.p"), (5, 8, "p..p"), (9, 1, "pp"), (10, 1, "p"), (9, 17, "pp"), (10, 18, "p")],
+        },
+        new CatSkin
+        {
+            Id = "ash",
+            Name = "Ash",
+            Description = "Soft grey, green eyes",
+            Palette = Colors(k: 0x23262E, b: 0xB8BEC9, w: 0xE9ECF1, f: 0xE9ECF1, p: 0x8C93A1, e: 0xF2B8C6,
+                E: 0x2E7D5B, W: 0xBFF2D8, P: 0xE08AA0, s: 0xA3AAB7, B: 0x8C93A1),
+            Markings = [(4, 8, "pppp"), (5, 9, "pp")],
+        },
     ];
 
     public static CatSkin Skin(string? id) => Skins.FirstOrDefault(s => s.Id == id) ?? Skins[0];
@@ -264,6 +334,7 @@ public static class CatSprites
             Save(Head(skin), $"{skin.Id}-head");
             Save(PawPrint(skin), $"{skin.Id}-pawprint");
             Save(PawPointer(skin), $"{skin.Id}-pawpointer");
+            foreach (var wear in Accessories) Save(Frame(Dressed(skin, wear.Id), CatPose.Idle), $"{skin.Id}-{wear.Id}");
         }
     }
 

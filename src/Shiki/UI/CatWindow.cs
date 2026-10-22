@@ -56,7 +56,12 @@ public sealed class CatWindow : Window
     double _petLastX = double.NaN;
     readonly System.Collections.Generic.Queue<DateTime> _petTurns = new();
 
-    static TimeSpan SleepAfter => DateTime.Now.Hour is >= 22 or < 6 ? TimeSpan.FromMinutes(2) : TimeSpan.FromMinutes(5);
+    // Sleepier late at night, and when the battery's nearly empty.
+    TimeSpan SleepAfter => _lowBattery ? TimeSpan.FromMinutes(1) : DateTime.Now.Hour is >= 22 or < 6 ? TimeSpan.FromMinutes(2) : TimeSpan.FromMinutes(5);
+
+    // The PC's state: a nearly empty battery, or the processor working flat out.
+    bool _lowBattery, _pcBusy;
+    int _nextPcFloat;
     static readonly TimeSpan LongJob = TimeSpan.FromSeconds(8);
     bool Petting => _pettingSince != null && DateTime.Now - _lastTurn < TimeSpan.FromSeconds(1.2);
 
@@ -67,7 +72,7 @@ public sealed class CatWindow : Window
     public CatWindow(Settings settings)
     {
         _settings = settings;
-        _skin = CatSprites.Skin(settings.Cat);
+        _skin = CatSprites.Dressed(CatSprites.Skin(settings.Cat), settings.Accessory);
         _cell = PixelSize / NativeMethods.SystemScale;
 
         Title = "Shiki";
@@ -224,6 +229,36 @@ public sealed class CatWindow : Window
         });
     }
 
+    /// <summary>The PC's battery or processor changed: the cat shows it now and then, quietly, from where it is.</summary>
+    public void SetPcState(bool lowBattery, bool busy)
+    {
+        _lowBattery = lowBattery;
+        _pcBusy = busy;
+        _nextPcFloat = _tick + 5;
+    }
+
+    /// <summary>Good news from the PC (plugged in, a download done): a sprite floats up, a little hop if it's out.</summary>
+    public void Cheer(Floater kind)
+    {
+        int row = _out ? CatTop - 5 : StageHeight - CatSprites.PeekHeight - 5;
+        Float(kind, StageWidth / 2 - 2, row, rise: 6, ms: 1400);
+        if (kind == Floater.Bolt) Later(500, () => Float(Floater.Heart, StageWidth / 2 + 3, row, rise: 6, ms: 1300));
+        else Sparkles(2);
+        if (_out) Hop();
+    }
+
+    /// <summary>You came back after a while away: the cat pops up, hops and says hello.</summary>
+    public void WelcomeBack()
+    {
+        _asleep = false;
+        Touch();
+        _greeting = true;
+        Evaluate();
+        Later(380, Hop);
+        Later(520, () => Float(Floater.Heart, StageWidth / 2 - 3, CatTop - 4, rise: 6, ms: 1300));
+        Later(2600, () => { _greeting = false; Evaluate(); });
+    }
+
     /// <summary>Dev aid ("cat &lt;mood&gt;" on the command line): act out a mood without the mouse.</summary>
     public void Act(string mood)
     {
@@ -244,6 +279,11 @@ public sealed class CatWindow : Window
                 Evaluate();
                 break;
             case "grumpy": _grumpy = 26; Touch(); Evaluate(); break;
+            case "battery": SetPcState(!_lowBattery, _pcBusy); break;
+            case "busy": SetPcState(_lowBattery, !_pcBusy); break;
+            case "plugged": Cheer(Floater.Bolt); break;
+            case "download": Cheer(Floater.Download); break;
+            case "back": WelcomeBack(); break;
             case "strain":
                 SetBusy(1);
                 _busySince = now.AddSeconds(-10);
@@ -338,6 +378,19 @@ public sealed class CatWindow : Window
     {
         double scale = NativeMethods.SystemScale;
         return new Point((Left + Width / 2) * scale, (Top + (CatTop + CatSprites.Height / 2.0) * _cell) * scale);
+    }
+
+    /// <summary>
+    /// Every fifteen seconds or so while it lasts: a little red battery when it's running low, a
+    /// drop of sweat when the processor is working flat out. Small, slow and from the corner.
+    /// </summary>
+    void PcNews()
+    {
+        if ((!_lowBattery && !_pcBusy) || _tick < _nextPcFloat) return;
+        _nextPcFloat = _tick + 150;
+        int row = StageHeight - CatSprites.PeekHeight - 5;
+        if (_lowBattery) Float(Floater.Battery, 3, row, rise: 5, ms: 2200);
+        else Float(Floater.Sweat, StageWidth - 6, row + 2, rise: 4, ms: 1400);
     }
 
     // ---- Out and in ----
@@ -463,8 +516,10 @@ public sealed class CatWindow : Window
                     Float(Floater.Z, (_tick / 24) % 2 == 0 ? 17 : 20, StageHeight - CatSprites.PeekHeight - 4, rise: 9, ms: 2200);
                     _nextZ = _tick + 24;
                 }
+                PcNews();
                 return;
             }
+            PcNews();
             // Hiding: now and then a paw taps the edge.
             var peekPose = PeekPose.Idle;
             if (_tick >= _nextPeekTap)

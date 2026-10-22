@@ -79,6 +79,10 @@ Tell the cat what you want in plain English: *"merge the PDFs I downloaded today
 
 ## The cat's moods
 
+**It notices the PC too**: when the battery is low and unplugged, a little red battery floats up now and then and it gets sleepy sooner; plugging in gets a lightning bolt and a heart. When the processor has been flat out for about a minute, the odd drop of sweat. A finished download in Downloads (not partial files, not tiny ones) gets a green arrow and sparkles. Coming back after ten minutes away gets a hop and a heart. All of it is small and slow, from the corner.
+
+**It grows**: points for files handled, requests to the cat, meetings (15 each), finished tasks (3) and days in a row (5) make levels (20, 60, 120, 200, 320, 480, 700, 1000, 1400 points, then every 500). Levels unlock cats (**Kuro**, black with golden eyes, at 2; **Ginger** at 4; **Ash** at 6) and things to wear (**bow tie** at 3, **headphones** at 5, which it also wears by itself while taking meeting notes, **party hat** at 7, **crown** at 10). A new level throws a party and says what it unlocked; pick cats and accessories in the card on Home. Dev aid: `Shiki.exe cat <battery|busy|plugged|download|back>`.
+
 The cat hides below the taskbar edge with its ears and paws showing, and comes up when there's something to do. It also has moods:
 
 - **Sleep.** After 5 quiet minutes (2 at night, 10 pm to 6 am) it slumps, lets go of the edge and Z's drift up. Hover to wake it: it pops up with a yawn. Any drop, job or shortcut wakes it too.

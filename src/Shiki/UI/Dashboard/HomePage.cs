@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using Shiki.Core;
@@ -156,7 +157,88 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         }
         var card = k.Card(stack, new Thickness(0), 22, P.Dark ? P.Card : Color.FromRgb(0xF5, 0xF3, 0xEF));
         card.VerticalAlignment = VerticalAlignment.Top;
-        return card;
+        if (host.Level == null || host.Points == null) return card;
+        var column = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+        column.Children.Add(card);
+        var grows = Grows();
+        ((FrameworkElement)grows).Margin = new Thickness(0, 18, 0, 0);
+        column.Children.Add(grows);
+        return column;
+    }
+
+    /// <summary>
+    /// The cat's level: points so far and to the next level, what's next, and the cats and things
+    /// to wear it has unlocked (locked ones show the level that brings them).
+    /// </summary>
+    UIElement Grows()
+    {
+        int level = host.Level!(), points = host.Points!();
+        int from = CatLevel.At(level), to = CatLevel.At(level + 1);
+        var s = host.Settings;
+        var stack = new StackPanel();
+        var head = new DockPanel();
+        var face = new Image { Source = CatSprites.Head(CatSprites.Dressed(CatSprites.Skin(s.Cat), s.Accessory)), Width = 40, Height = 40, Margin = new Thickness(0, 0, 12, 0) };
+        RenderOptions.SetBitmapScalingMode(face, BitmapScalingMode.NearestNeighbor);
+        DockPanel.SetDock(face, Dock.Left);
+        head.Children.Add(face);
+        var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        titles.Children.Add(k.Text($"{host.CatName()}, level {level}", 17, weight: FontWeights.SemiBold));
+        titles.Children.Add(k.Text($"{points:N0} points, {Math.Max(0, to - points):N0} to level {level + 1}", 13, P.Muted));
+        head.Children.Add(titles);
+        stack.Children.Add(head);
+
+        var track = new Grid { Height = 6, Margin = new Thickness(0, 14, 0, 6) };
+        track.Children.Add(new Border { Background = DashKit.B(P.Hover), CornerRadius = new CornerRadius(3) });
+        var fill = new Border { Background = DashKit.B(P.Accent), CornerRadius = new CornerRadius(3), HorizontalAlignment = HorizontalAlignment.Left };
+        track.SizeChanged += (_, e) => fill.Width = e.NewSize.Width * Math.Clamp((points - from) / (double)Math.Max(1, to - from), 0, 1);
+        track.Children.Add(fill);
+        stack.Children.Add(track);
+        if (CatLevel.Next(level) is { } next)
+            stack.Children.Add(k.Text($"Next: {next.Name}{(next.IsCat ? " (a new cat)" : "")} at level {next.Level}", 13, P.Faint));
+
+        stack.Children.Add(Picker("Cats", CatSprites.Skins.Select(c => (c.Id, c.Name, (ImageSource?)CatSprites.Head(c),
+            CatLevel.CatUnlocked(c.Id, level), CatLevel.Unlocks.FirstOrDefault(u => u.Id == c.Id)?.Level ?? 1)).ToList(), s.Cat, id => host.SetCat(id)));
+        var wearables = new List<(string Id, string Name, ImageSource? Picture, bool Open, int Level)> { ("", "Nothing", null, true, 1) };
+        wearables.AddRange(CatSprites.Accessories.Select(a => (a.Id, a.Name, (ImageSource?)CatSprites.Head(CatSprites.Dressed(CatSprites.Skin(s.Cat), a.Id)),
+            CatLevel.AccessoryUnlocked(a.Id, level), CatLevel.Unlocks.First(u => u.Id == a.Id).Level)));
+        stack.Children.Add(Picker("Wears", wearables, s.Accessory ?? "", id => host.SetAccessory?.Invoke(id.Length == 0 ? null : id)));
+        return k.Card(stack, new Thickness(24, 20, 24, 20), 22, P.Dark ? P.Card : Color.FromRgb(0xF5, 0xF3, 0xEF));
+    }
+
+    UIElement Picker(string label, List<(string Id, string Name, ImageSource? Picture, bool Open, int Level)> options, string current, Action<string> pick)
+    {
+        var stack = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
+        stack.Children.Add(k.Label(label));
+        var row = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+        foreach (var (id, name, picture, open, needs) in options)
+        {
+            bool chosen = id == current;
+            var content = new Grid { Width = 36, Height = 36 };
+            if (picture != null)
+            {
+                var image = new Image { Source = picture, Width = 30, Height = 30, Opacity = open ? 1 : 0.28 };
+                RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
+                content.Children.Add(image);
+            }
+            else content.Children.Add(k.Icon("\uE711", 13, P.Faint));
+            if (!open) content.Children.Add(k.Icon("\uE72E", 12, P.Text));
+            var tile = new Border
+            {
+                Margin = new Thickness(0, 0, 6, 6),
+                Padding = new Thickness(3),
+                CornerRadius = new CornerRadius(10),
+                BorderThickness = new Thickness(1.5),
+                BorderBrush = DashKit.B(chosen ? P.AccentEdge : Colors.Transparent),
+                Background = DashKit.B(chosen ? P.Selected : P.Hover),
+                Cursor = open ? Cursors.Hand : Cursors.Arrow,
+                ToolTip = open ? name : $"{name}: unlocks at level {needs}",
+                Child = content,
+            };
+            if (open) tile.MouseLeftButtonUp += (_, e) => { e.Handled = true; pick(id); };
+            row.Children.Add(tile);
+        }
+        stack.Children.Add(row);
+        return stack;
     }
 
     UIElement Stat(string number, string label)

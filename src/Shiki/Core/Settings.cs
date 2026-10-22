@@ -61,6 +61,10 @@ public sealed class Settings
     public bool KeepMeetingAudio { get; set; }
     /// <summary>When a call starts (Zoom, Teams, Meet…), offer once to take notes.</summary>
     public bool OfferNotes { get; set; } = true;
+    /// <summary>What the cat wears (an unlocked accessory id), or null.</summary>
+    public string? Accessory { get; set; }
+    /// <summary>The level the cat had reached last time, to notice a new one.</summary>
+    public int CatLevel { get; set; }
     /// <summary>Speech to text for commands: "whisper" (on this PC), "deepgram", or "wispr" (Wispr Flow, once its API is open).</summary>
     public string VoiceEngine { get; set; } = "whisper";
     /// <summary>Who checks speech for the wake word: "whisper" (on this PC) or "deepgram" (speech bursts only).</summary>

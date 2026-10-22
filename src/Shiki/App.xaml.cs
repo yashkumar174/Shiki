@@ -256,6 +256,7 @@ public partial class App : Application
             History.Add(job);
             if (milestone) _buddy?.Party();
             else _buddy?.Celebrate();
+            CheckLevel();
         });
 
         if (args.Length == 0 || args[0] == "--background")
@@ -568,7 +569,7 @@ public partial class App : Application
             new MenuEntry("\uED14", "Make a QR code…", () => ShowQr("")),
             new MenuEntry(visible ? "\uE7B3" : "\uE890", visible ? "Hide the cat" : "Show the cat", () => SetBuddyVisible(!visible)),
             null,
-            new MenuChoice("Cat", CatSprites.Skins.Select(k => new ChoiceOption(k.Id, $"{k.Name}: {k.Description}", CatSprites.Head(k))).ToList(),
+            new MenuChoice("Cat", CatSprites.Skins.Where(c => CatLevel.CatUnlocked(c.Id, Level())).Select(k => new ChoiceOption(k.Id, $"{k.Name}: {k.Description}", CatSprites.Head(k))).ToList(),
                 () => _settings.Cat, SetCat),
             new MenuChoice("Look", [new ChoiceOption("arcade", "Arcade", Font: Theme.PixelFont), new ChoiceOption("glass", "Glass", Font: Theme.DisplayFont)],
                 () => _settings.Style, SetStyle),
@@ -649,12 +650,68 @@ public partial class App : Application
 
     void SetCat(string id)
     {
+        if (!CatLevel.CatUnlocked(id, Level())) return;
         _settings.Cat = id;
         _settings.Save();
-        _buddy?.SetSkin(Skin);
+        DressCat();
         _tray?.SetCat(Skin);
         // The Explorer menu shows the cat too.
         if (ContextMenuRegistrar.IsRegistered()) ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile(Skin));
+    }
+
+    // ---- The cat grows: levels, cats and things to wear ----
+
+    PcWatch? _pc;
+    readonly DispatcherTimer _levelCheck = new() { Interval = TimeSpan.FromMinutes(2) };
+
+    /// <summary>The cat on screen: its skin, wearing its accessory (headphones while taking notes).</summary>
+    void DressCat() => _buddy?.SetSkin(CatSprites.Dressed(Skin, _meeting != null ? "headphones" : _settings.Accessory));
+
+    void SetAccessory(string? id)
+    {
+        if (id != null && !CatLevel.AccessoryUnlocked(id, Level())) return;
+        _settings.Accessory = id;
+        _settings.Save();
+        DressCat();
+    }
+
+    int Points() => CatLevel.Points(_settings, MeetingStore.All().Count, Todos.All.Count(t => t.Done), History.Streak());
+
+    int Level() => CatLevel.LevelFor(Points());
+
+    /// <summary>A new level: a party, and a card saying what it unlocked. The first check only remembers where it is.</summary>
+    void CheckLevel()
+    {
+        int level = Level();
+        if (_settings.CatLevel == 0)
+        {
+            _settings.CatLevel = level;
+            _settings.Save();
+            return;
+        }
+        if (level <= _settings.CatLevel) return;
+        var unlocked = Enumerable.Range(_settings.CatLevel + 1, level - _settings.CatLevel).SelectMany(CatLevel.NewAt).ToList();
+        _settings.CatLevel = level;
+        _settings.Save();
+        _buddy?.Party();
+        var what = unlocked.Count == 0 ? "Keep going: there's more to unlock."
+            : "Unlocked: " + string.Join(", ", unlocked.Select(u => u.IsCat ? $"{u.Name} (a new cat)" : u.Name)) + ". Pick it on the Home page.";
+        ToastHost.Show(ToastWindow.Message($"{CatName} reached level {level}!", what));
+    }
+
+    /// <summary>The PC's news reaches the cat: battery, a busy processor, downloads, coming back.</summary>
+    void WatchPc()
+    {
+        _pc = new PcWatch();
+        _pc.StateChanged += () => _buddy?.SetPcState(_pc.BatteryLow, _pc.Busy);
+        _pc.PluggedIn += () => _buddy?.Cheer(Floater.Bolt);
+        _pc.Downloaded += _ => _buddy?.Cheer(Floater.Download);
+        _pc.CameBack += () => _buddy?.WelcomeBack();
+        _buddy?.SetPcState(_pc.BatteryLow, _pc.Busy);
+        _levelCheck.Tick += (_, _) => CheckLevel();
+        _levelCheck.Start();
+        CheckLevel();
+        Todos.Changed += () => Dispatcher.BeginInvoke(CheckLevel);
     }
 
     void SetStyle(string id)
@@ -809,6 +866,7 @@ public partial class App : Application
         BindHotkeys(quiet: false);
         ApplyWake();
         StartReminders();
+        WatchPc();
         _calls = new CallWatcher();
         _calls.Started += OfferNotes;
         // Deepgram's running total, for Settings.
@@ -890,6 +948,9 @@ public partial class App : Application
                 StartsWithWindows = StartupRegistration.IsEnabled,
                 StartWithWindows = () => StartupRegistration.Set(true, ExePath),
                 SetCat = SetCat,
+                Level = Level,
+                Points = Points,
+                SetAccessory = SetAccessory,
                 Chat = Chat,
                 Voice = Voice,
                 TeachName = TeachName,
@@ -1063,6 +1124,7 @@ public partial class App : Application
             return;
         }
         _pill = new NotesPill(_meeting);
+        DressCat();
         _pill.MarkRequested += () => _meeting?.Mark();
         _pill.StopRequested += StopNotes;
         _pill.Show();
@@ -1095,6 +1157,8 @@ public partial class App : Application
             _pill?.Close();
             _pill = null;
             _meeting = null;
+            DressCat();
+            CheckLevel();
         }
     }
 

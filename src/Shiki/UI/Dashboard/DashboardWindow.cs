@@ -46,6 +46,10 @@ public sealed class DashboardHost
     public required Func<bool> StartsWithWindows { get; init; }
     public required Action StartWithWindows { get; init; }
     public required Action<string> SetCat { get; init; }
+    /// <summary>The cat's level and points (it grows with use), and what it wears.</summary>
+    public Func<int>? Level { get; init; }
+    public Func<int>? Points { get; init; }
+    public Action<string?>? SetAccessory { get; init; }
     /// <summary>Talking to the cat (Claude); null hides the Ask page.</summary>
     public Core.Ai.CatChat? Chat { get; init; }
     /// <summary>Talking to the cat; null when there's no chat.</summary>
@@ -619,7 +623,7 @@ public sealed class DashboardWindow : Window
         bottom.Children.Add(NavItem(null, skin.Name, false, () =>
         {
             // Click the cat to meet the next one.
-            var skins = CatSprites.Skins;
+            var skins = CatSprites.Skins.Where(c => CatLevel.CatUnlocked(c.Id, _host.Level?.Invoke() ?? 1)).ToList();
             var next = skins[(skins.ToList().FindIndex(s => s.Id == skin.Id) + 1) % skins.Count];
             _host.SetCat(next.Id);
             Rebuild();
