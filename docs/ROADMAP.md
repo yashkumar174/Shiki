@@ -48,7 +48,7 @@ gives you the summary.
 - Levels: it grows with use (files handled, requests, meetings), and new levels unlock skins and
   accessories (hats, scarves, a laptop for the meeting buddy).
 
-### 5. Only your voice
+### 5. Only your voice (built, v2.4)
 The cat learns your voice when you teach it its name, so "Hey Sky" from a video, a call or a
 friend doesn't wake it. Checked on this PC.
 

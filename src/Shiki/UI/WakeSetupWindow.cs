@@ -28,6 +28,9 @@ public sealed class WakeSetupWindow : Window
     readonly TextBlock _sayHeading;
     readonly Border _start, _test, _save;
     readonly List<string> _learned = [];
+    // The sound of each take, for the voiceprint ("only my voice").
+    readonly List<float[]> _takes = [];
+    float[]? _lastSamples;
     readonly Action<string, List<string>, bool> _onSave;
     bool _listenOn = true, _busy;
     CancellationTokenSource? _cancel;
@@ -149,6 +152,7 @@ public sealed class WakeSetupWindow : Window
         _cancel = new CancellationTokenSource();
         var ct = _cancel.Token;
         _learned.Clear();
+        _takes.Clear();
         Refresh();
         try
         {
@@ -168,8 +172,10 @@ public sealed class WakeSetupWindow : Window
                     continue;
                 }
                 _learned.Add(said);
+                if (_lastSamples != null) _takes.Add(_lastSamples);
                 Refresh();
             }
+            await LearnVoice(ct);
             // Saved straight away: three good takes is the whole job.
             var unique = _learned.Distinct().ToList();
             _onSave(CatName, unique, _listenOn);
@@ -230,17 +236,47 @@ public sealed class WakeSetupWindow : Window
     }
 
     /// <summary>One listen and what Whisper wrote down; empty when nothing was said, null when stopped.</summary>
-    async Task<string?> HearOnce(CancellationToken ct)
+    async Task<string?> HearOnce(CancellationToken ct, double pauseEnds = 0.7)
     {
         Heard heard;
         // "Hey Sky" is short: a brief pause is enough to know it's been said.
-        using (_mic = new Microphone(pauseEnds: 0.7))
+        using (_mic = new Microphone(pauseEnds: pauseEnds))
             heard = await _mic.Listen(ct);
         _mic = null;
         if (ct.IsCancellationRequested) return null;
         if (heard.Kind != HeardKind.Speech) return "";
+        _lastSamples = heard.Samples;
         // Heard exactly the way the wake word hears, so the spellings learned are the ones it'll see.
         return await WakeListener.Recognize(heard.Samples, CatName, ct);
+    }
+
+    /// <summary>
+    /// One sentence more, so the cat knows the voice itself, not just the name: with the three
+    /// takes it becomes the voiceprint (the speaker model downloads once, 27 MB). Skipped quietly
+    /// if it can't be done; the name still works.
+    /// </summary>
+    async Task LearnVoice(CancellationToken ct)
+    {
+        try
+        {
+            Say($"One more, so I know your voice: say \"Hey {CatName}, this is my voice, only listen to me.\"");
+            var text = await HearOnce(ct, pauseEnds: 1.2);
+            if (text == null) return;
+            if (_lastSamples != null && text.Length > 0) _takes.Add(_lastSamples);
+            Say("Learning your voice…");
+            await VoicePrint.Prepare(new Progress<double>(p => Say($"Getting the voice model (one time, {VoicePrint.DownloadSize})… {p:0%}")), ct);
+            var takes = _takes.ToArray();
+            bool learned = await Task.Run(() => VoicePrint.Enroll(takes), ct);
+            if (!learned) Say("I couldn't learn your voice this time; the name still works.", true);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Learning the voice failed", ex);
+        }
     }
 
     void Stop()

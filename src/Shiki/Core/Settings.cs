@@ -79,6 +79,10 @@ public sealed class Settings
     public bool WakeWord { get; set; }
     /// <summary>How Whisper wrote "Hey &lt;cat name&gt;" when the person taught it, e.g. "hey lottie".</summary>
     public System.Collections.Generic.List<string> WakeVariants { get; set; } = [];
+    /// <summary>Only the owner's voice wakes the cat (needs the voiceprint from teaching it its name).</summary>
+    public bool VoiceLock { get; set; } = true;
+    /// <summary>How alike the voice must be: "relaxed", "normal" or "strict".</summary>
+    public string VoiceLockLevel { get; set; } = "normal";
 
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");
 

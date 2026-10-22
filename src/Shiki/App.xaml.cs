@@ -334,6 +334,10 @@ public partial class App : Application
                 EnterBuddyMode();
                 _ = MeetingTest(args[1]);
                 break;
+            case "voice-test" when args.Length >= 3:
+                // Dev aid: learn a voice from the first WAV(s) after "learn", then say how alike each other WAV is.
+                _ = VoiceTest(args[1..]);
+                break;
             case "paw":
                 // Paw to ask, as the shortcut opens it.
                 EnterBuddyMode();
@@ -423,6 +427,7 @@ public partial class App : Application
                 TeachName();
                 break;
             case "wake-file" when args.Length == 2:
+                // (With a voiceprint learned, the log also says how alike the voice is.)
                 // Dev aid: does this recording (WAV) wake the cat? The answer goes to the log.
                 EnterBuddyMode();
                 _ = WakeFile(args[1]);
@@ -796,6 +801,10 @@ public partial class App : Application
                 () => _settings.WakeWord && _settings.WakeVariants.Count > 0,
                 ToggleWake,
                 TeachName,
+                () => _settings.VoiceLock,
+                () => { _settings.VoiceLock = !_settings.VoiceLock; _settings.Save(); },
+                () => _settings.VoiceLockLevel,
+                level => { _settings.VoiceLockLevel = level; _settings.Save(); },
                 () => _settings.AiRequests == 0 ? "Nothing spent yet." : $"Spent so far: {AskView.Money(_settings.AiSpentUsd)} over {_settings.AiRequests:N0} requests.",
                 () => Process.Start(new ProcessStartInfo(AiLog.FilePath) { UseShellExecute = true })));
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
@@ -1004,7 +1013,8 @@ public partial class App : Application
         {
             _wake = new WakeListener(() => CatName, () => _settings.WakeVariants,
                 // Hear nothing while the cat is already listening or thinking, while recording, or while being taught.
-                () => _recording != null || (_voice?.Active ?? false) || (_chat?.Busy ?? false) || (_teach?.Listening ?? false));
+                () => _recording != null || (_voice?.Active ?? false) || (_chat?.Busy ?? false) || (_teach?.Listening ?? false),
+                () => _settings.VoiceLock && VoicePrint.HasPrint ? VoicePrint.Enough(_settings.VoiceLockLevel) : null);
             _wake.Woke += OnWoke;
             // "Hey Sky, …": show the bubble straight away, before the rest is written down.
             _wake.Waking += () => { if (_voice is not { Active: true } && !Chat.Busy) { ShowAskBubble(); _buddy?.Act("purr"); } };
@@ -1386,6 +1396,30 @@ public partial class App : Application
         }
     }
 
+    async System.Threading.Tasks.Task VoiceTest(string[] files)
+    {
+        try
+        {
+            await VoicePrint.Prepare(null, default);
+            int split = Array.IndexOf(files, "then");
+            var learn = files[..split].Select(ReadWav).ToArray();
+            var watch = Stopwatch.StartNew();
+            VoicePrint.Enroll(learn);
+            Log.Info($"voice-test: learned from {learn.Length} in {watch.ElapsedMilliseconds} ms");
+            foreach (var file in files[(split + 1)..])
+            {
+                watch.Restart();
+                var likeness = VoicePrint.Likeness(ReadWav(file));
+                Log.Info($"voice-test: {Path.GetFileName(file)} likeness {likeness:0.000} ({watch.ElapsedMilliseconds} ms)");
+            }
+            VoicePrint.Forget();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("voice-test failed", ex);
+        }
+    }
+
     static float[] ReadWav(string wav)
     {
         using var reader = new NAudio.Wave.WaveFileReader(wav);
@@ -1448,6 +1482,7 @@ public partial class App : Application
             return;
         }
         var (hit, after) = WakeMatcher.Match(text, CatName, _settings.WakeVariants);
+        if (VoicePrint.Likeness(ReadWav(wav)) is { } likeness) Log.Info($"wake-file: voice likeness {likeness:0.00} (needs {VoicePrint.Enough(_settings.VoiceLockLevel):0.00})");
         Log.Info($"wake-file: heard \"{text}\" -> {(hit ? $"wakes, then \"{after}\"" : "no wake")} in {watch.ElapsedMilliseconds} ms");
     }
 

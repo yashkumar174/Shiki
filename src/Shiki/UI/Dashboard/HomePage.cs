@@ -262,6 +262,8 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
             : !s.UsedConvertHotkey ? ("The fastest way in", $"Select a file in File Explorer and press {s.ConvertHotkey}.", "Got it", () => { s.UsedConvertHotkey = true; host.SaveSettings(); })
             : host.TeachName != null && Core.Ai.ClaudeKey.Exists && !(s.WakeWord && s.WakeVariants.Count > 0)
                 ? ($"Just say \"Hey {host.CatName()}\"", "Teach the cat its name once (about a minute) and it wakes up when you call it, no keys needed.", "Teach it", host.TeachName)
+            : host.TeachName != null && s.WakeVariants.Count > 0 && s.VoiceLock && !Core.Voice.VoicePrint.HasPrint
+                ? ($"Only your voice wakes {host.CatName()}", "Say its name again, plus one sentence, and \"Hey " + host.CatName() + "\" from a video or someone else won't wake it.", "Record my voice", host.TeachName)
             : null;
         if (tip is not { } t || s.DismissedTips.Contains(t.Title)) return null;
 

@@ -77,7 +77,7 @@ public static class WakeMatcher
 /// seconds) are written down by Whisper and checked. What it hears is never saved or sent; only
 /// a match wakes the cat. Long talk (a call, a video) is skipped without being written down.
 /// </summary>
-public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> learned, Func<bool> paused) : IDisposable
+public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> learned, Func<bool> paused, Func<double?>? ownerOnly = null) : IDisposable
 {
     // A short pause ends a burst: "Hey Sky" is checked about a third of a second after you say it.
     const double FrameSeconds = 0.03, PreRoll = 0.3, EndPause = 0.33, MinSpeech = 0.3, MaxSpeech = 6;
@@ -263,6 +263,12 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
             if (text.Length == 0) return;
             var (hit, rest) = WakeMatcher.Match(text, name(), learned());
             if (!hit) return;
+            // Only the owner: the name said in someone else's voice (a video, a friend) is ignored.
+            if (ownerOnly?.Invoke() is { } enough && VoicePrint.Likeness(samples) is { } likeness && likeness < enough)
+            {
+                Ai.AiLog.Write("ignored", $"heard the name, but not in your voice ({likeness:0.00} < {enough:0.00})");
+                return;
+            }
             long check = watch.ElapsedMilliseconds;
             if (rest.Length > 0)
             {

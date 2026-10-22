@@ -24,6 +24,7 @@ public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
     Func<string> GetVoiceEngine, Action<string> SetVoiceEngine, Func<string> GetWakeEngine, Action<string> SetWakeEngine, Func<string> DeepgramUsage,
     Func<bool> VoiceAnswers, Action ToggleVoiceAnswers, Func<int> GetFollowUp, Action<int> SetFollowUp,
     Func<bool> WakeOn, Action ToggleWake, Action TeachName,
+    Func<bool> VoiceLock, Action ToggleVoiceLock, Func<string> GetVoiceLockLevel, Action<string> SetVoiceLockLevel,
     Func<string> Spent, Action OpenLog);
 
 /// <summary>Shortcuts and the main switches, in one place.</summary>
@@ -254,6 +255,22 @@ public sealed class SettingsWindow : Window
 
         stack.Children.Add(Line($"Listen for \"Hey {ai.CatName}\"", "The mic stays on while this is on (Windows shows its mic icon). Pauses while you record the screen.",
             Toggle(new SettingSwitch("", "", ai.WakeOn, ai.ToggleWake))));
+        stack.Children.Add(Line($"Only my voice wakes {ai.CatName}", Core.Voice.VoicePrint.HasPrint
+                ? "\"Hey " + ai.CatName + "\" from a video, a call or someone else is ignored. Checked on this PC."
+                : "Teach your cat its name again to record your voice (one extra sentence).",
+            Toggle(new SettingSwitch("", "", ai.VoiceLock, ai.ToggleVoiceLock))));
+        var levels = new List<(string Id, Border Chip)>();
+        void ShowLevel() { foreach (var (id, chip) in levels) UiKit.Select(chip, ai.GetVoiceLockLevel() == id); }
+        var levelRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        foreach (var (id, label) in new[] { ("relaxed", "Relaxed"), ("normal", "Normal"), ("strict", "Strict") })
+        {
+            var chip = UiKit.Button(label, () => { ai.SetVoiceLockLevel(id); ShowLevel(); });
+            levels.Add((id, chip));
+            levelRow.Children.Add(chip);
+        }
+        stack.Children.Add(levelRow);
+        stack.Children.Add(UiKit.Body("Relaxed if it sometimes ignores you (a noisy room, a different mic); Strict if other voices still wake it.", 11.5));
+        ShowLevel();
         var teach = UiKit.Button("Name your cat and teach it…", ai.TeachName);
         teach.Margin = new Thickness(0, 4, 0, 0);
         stack.Children.Add(teach);
