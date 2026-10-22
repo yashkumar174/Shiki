@@ -271,6 +271,7 @@ public sealed class AskView
     readonly ScrollViewer _scroll;
     readonly ChatComposer _input;
     readonly TextBlock _cost;
+    readonly Border _wakeSetup;
     readonly ContentControl _bottom = new();
     readonly FrameworkElement _composer;
 
@@ -307,6 +308,11 @@ public sealed class AskView
         _cost.VerticalAlignment = VerticalAlignment.Center;
         _cost.Margin = new Thickness(0, 0, 10, 0);
         tools.Children.Add(_cost);
+        _wakeSetup = k.Button($"Set up \"Hey {CatName}\"", () => host.TeachName?.Invoke(), DashKit.Pill.Quiet, "\uE720", 13);
+        _wakeSetup.Padding = new Thickness(14, 7, 14, 8);
+        _wakeSetup.Margin = new Thickness(0, 0, 10, 0);
+        _wakeSetup.ToolTip = "Wake the cat by saying its name, no keys needed";
+        tools.Children.Add(_wakeSetup);
         tools.Children.Add(k.IconButton("\uE710", () => { _chat.Reset(); FocusBox(); }, "New chat", 14, P.Muted));
         DockPanel.SetDock(tools, Dock.Right);
         head.Children.Add(tools);
@@ -360,9 +366,11 @@ public sealed class AskView
         return stack;
     }
 
-    void Refresh()
+    public void Refresh()
     {
         _cost.Text = _chat.Cost > 0 ? $"This chat: {Money(_chat.Cost)}" : "";
+        bool wakeOn = _host.Settings.WakeWord && _host.Settings.WakeVariants.Count > 0;
+        _wakeSetup.Visibility = wakeOn || _host.TeachName == null || !ClaudeKey.Exists ? Visibility.Collapsed : Visibility.Visible;
         _transcript.Children.Clear();
         var cards = new ChatCards(_k, _chat, CatName, CatSprites.Head(CatSprites.Skin(_host.Settings.Cat)), _host.OpenFile, _host.OpenSettings);
 
@@ -391,7 +399,7 @@ public sealed class AskView
         head.Margin = new Thickness(0, 0, 12, 0);
         DockPanel.SetDock(head, Dock.Left);
         hello.Children.Add(head);
-        hello.Children.Add(_k.Text($"Hi! Tell me what you need and I'll find the files. Select files in File Explorer first and I can work on \"these\". You can also press {_host.Settings.AskHotkey} anywhere to ask me.", 15.5, wrap: true));
+        hello.Children.Add(_k.Text($"Hi! Tell me what you need and I'll find the files. Select files in File Explorer first and I can work on \"these\". You can also press {_host.Settings.AskHotkey} anywhere to ask me, {_host.Settings.TalkHotkey} to talk, or teach me my name and just say \"Hey {CatName}\".", 15.5, wrap: true));
         stack.Children.Add(hello);
         var ideas = new WrapPanel { Margin = new Thickness(36, 0, 0, 0) };
         foreach (var idea in Ideas)

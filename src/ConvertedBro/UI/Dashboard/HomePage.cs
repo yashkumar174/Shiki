@@ -178,6 +178,8 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         (string Title, string Body, string Button, Action Do)? tip =
             !host.ExplorerMenuOn() ? ("Right-click to convert", "Add Converted Bro to Explorer's right-click menu.", "Add it", host.AddExplorerMenu)
             : !s.UsedConvertHotkey ? ("The fastest way in", $"Select a file in File Explorer and press {s.ConvertHotkey}.", "Got it", () => { s.UsedConvertHotkey = true; host.SaveSettings(); })
+            : host.TeachName != null && Core.Ai.ClaudeKey.Exists && !(s.WakeWord && s.WakeVariants.Count > 0)
+                ? ($"Just say \"Hey {host.CatName()}\"", "Teach the cat its name once (about a minute) and it wakes up when you call it, no keys needed.", "Teach it", host.TeachName)
             : null;
         if (tip is not { } t || s.DismissedTips.Contains(t.Title)) return null;
 

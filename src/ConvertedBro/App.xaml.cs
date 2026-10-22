@@ -502,7 +502,9 @@ public partial class App : Application
             new MenuEntry("\uE8E5", "Convert files…", PickFiles),
             .. (_settings.OutputFolder is { } results ? [new MenuEntry("\uE838", "Open results folder", () => OpenFolder(results))] : Array.Empty<object?>()),
             new MenuEntry("\uE77F", "Paste from clipboard", PasteToCat),
-            .. (_settings.WakeVariants.Count > 0 ? [new MenuEntry("\uE720", $"Listen for \"Hey {CatName}\"", ToggleWake, () => _settings.WakeWord)] : Array.Empty<object?>()),
+            _settings.WakeVariants.Count > 0
+                ? new MenuEntry("\uE720", $"Listen for \"Hey {CatName}\"", ToggleWake, () => _settings.WakeWord)
+                : new MenuEntry("\uE720", $"Teach me to answer to \"Hey {CatName}\"…", TeachName),
             new MenuEntry("\uE924", $"Snip and convert ({_settings.SnipHotkey})", StartSnip),
             new MenuEntry("\uE714", $"Record the screen ({_settings.RecordHotkey})", StartRecording),
             new MenuEntry("\uE790", $"Pick a colour ({_settings.ColourHotkey})", StartColourPicker),

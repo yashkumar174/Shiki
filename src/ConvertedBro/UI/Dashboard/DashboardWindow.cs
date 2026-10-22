@@ -233,7 +233,10 @@ public sealed class DashboardWindow : Window
         }
         else if (_page == DashPage.Ask && _host.Chat != null)
         {
-            var ask = Ask().Root;
+            var view = Ask();
+            // Settings may have changed meanwhile (the name taught, the wake word switched on).
+            view.Refresh();
+            var ask = view.Root;
             if (ask.Parent is Decorator old) old.Child = null;
             panel.Child = ask;
         }
