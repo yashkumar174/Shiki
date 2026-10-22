@@ -96,6 +96,7 @@ public sealed class ToolsPage(DashKit k, DashboardHost host)
     UIElement Quick() => Tiles(
     [
         Tile("\uE924", "Snip and convert", $"Drag a box on screen ({host.Settings.SnipHotkey})", host.Snip),
+        Tile("\uE714", "Record the screen", $"Video of an area or the whole screen ({host.Settings.RecordHotkey})", host.Record),
         Tile("\uE790", "Pick a colour", $"Copy any colour on screen ({host.Settings.ColourHotkey})", host.PickColour),
         Tile("\uED14", "Make a QR code", "From a link or any text", host.MakeQr),
         Tile("\uE77F", "Paste from clipboard", "Files, a screenshot or text", host.Paste),

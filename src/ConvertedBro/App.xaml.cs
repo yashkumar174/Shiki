@@ -37,7 +37,8 @@ public partial class App : Application
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
     Hotkeys? _hotkeys;
-    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1;
+    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1;
+    RecordingSession? _recording;
     SnipWindow? _snip;
     ColourPickerWindow? _picker;
     Point _menuAnchor;
@@ -145,6 +146,22 @@ public partial class App : Application
         {
             // Dev aid: the app icon (Mochi) for the exe and the installer.
             BroArt.WriteIcon(CatSprites.Skin("mochi"), args[1]);
+            Shutdown();
+            return;
+        }
+        if (args.Length == 3 && args[0] == "--record-test")
+        {
+            // Dev aid: record a 640x360 corner of the main screen for N seconds, with system sound.
+            var seconds = int.Parse(args[1]);
+            var output = args[2];
+            System.Threading.Tasks.Task.Run(async () =>
+            {
+                using var recorder = new ScreenRecorder((0, 0, 640, 360), mic: false, sound: true);
+                await recorder.StartAsync();
+                await System.Threading.Tasks.Task.Delay(seconds * 1000);
+                await recorder.StopAsync(output);
+            }).GetAwaiter().GetResult();
+            Log.Info($"record-test saved {output}");
             Shutdown();
             return;
         }
@@ -310,6 +327,18 @@ public partial class App : Application
                 EnterBuddyMode();
                 _buddy?.Act(args[1]);
                 break;
+            case "record-demo" when args.Length == 2:
+                // Dev aid: record a fixed area for N seconds with the real bar and frame.
+                EnterBuddyMode();
+                _recording = new RecordingSession(_settings);
+                _recording.Saved += (file, centre) => ShowWheel([file], centre);
+                _recording.Ended += () => _recording = null;
+                _recording.Demo(new Int32Rect(320, 200, 960, 540), int.Parse(args[1]));
+                break;
+            case "record":
+                EnterBuddyMode();
+                StartRecording();
+                break;
             case "selected":
                 // Same as the convert shortcut: the files selected in the Explorer window in front.
                 EnterBuddyMode();
@@ -411,6 +440,7 @@ public partial class App : Application
             .. (_settings.OutputFolder is { } results ? [new MenuEntry("\uE838", "Open results folder", () => OpenFolder(results))] : Array.Empty<object?>()),
             new MenuEntry("\uE77F", "Paste from clipboard", PasteToCat),
             new MenuEntry("\uE924", $"Snip and convert ({_settings.SnipHotkey})", StartSnip),
+            new MenuEntry("\uE714", $"Record the screen ({_settings.RecordHotkey})", StartRecording),
             new MenuEntry("\uE790", $"Pick a colour ({_settings.ColourHotkey})", StartColourPicker),
             new MenuEntry("\uED14", "Make a QR code…", () => ShowQr("")),
             new MenuEntry(visible ? "\uE7B3" : "\uE890", visible ? "Hide the cat" : "Show the cat", () => SetBuddyVisible(!visible)),
@@ -559,6 +589,7 @@ public partial class App : Application
             [
                 new ShortcutSetting("Convert selected files", () => _settings.ConvertHotkey, text => ChangeHotkey(text, () => _settings.ConvertHotkey, v => _settings.ConvertHotkey = v)),
                 new ShortcutSetting("Snip and convert", () => _settings.SnipHotkey, text => ChangeHotkey(text, () => _settings.SnipHotkey, v => _settings.SnipHotkey = v)),
+                new ShortcutSetting("Record the screen", () => _settings.RecordHotkey, text => ChangeHotkey(text, () => _settings.RecordHotkey, v => _settings.RecordHotkey = v)),
                 new ShortcutSetting("Pick a colour", () => _settings.ColourHotkey, text => ChangeHotkey(text, () => _settings.ColourHotkey, v => _settings.ColourHotkey = v)),
             ],
             [
@@ -576,7 +607,7 @@ public partial class App : Application
     {
         var previous = get();
         // Shortcuts can't share keys.
-        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey)) return false;
+        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey)) return false;
         set(text);
         if (BindHotkeys(quiet: true))
         {
@@ -641,7 +672,8 @@ public partial class App : Application
         bool snip = Bind(ref _snipHotkeyId, _settings.SnipHotkey, StartSnip, quiet);
         bool colour = Bind(ref _colourHotkeyId, _settings.ColourHotkey, StartColourPicker, quiet);
         bool convert = Bind(ref _convertHotkeyId, _settings.ConvertHotkey, ConvertSelection, quiet);
-        return snip && colour && convert;
+        bool record = Bind(ref _recordHotkeyId, _settings.RecordHotkey, StartRecording, quiet);
+        return snip && colour && convert && record;
     }
 
     bool Bind(ref int id, string text, Action handler, bool quiet)
@@ -689,6 +721,7 @@ public partial class App : Application
                 Run = (action, files) => StartJob(action, files),
                 Snip = StartSnip,
                 PickColour = StartColourPicker,
+                Record = StartRecording,
                 MakeQr = () => ShowQr(""),
                 Paste = PasteToCat,
                 OpenSettings = ShowSettings,
@@ -726,6 +759,25 @@ public partial class App : Application
         }
         ToastHost.Show(ToastWindow.Message(selected == null ? "Select files in File Explorer" : "Nothing selected",
             $"Click a file in File Explorer or on the desktop, then press {_settings.ConvertHotkey}."));
+    }
+
+    // ---- Screen recording ----
+
+    /// <summary>The record shortcut: start a recording, or stop the one that's running.</summary>
+    public void StartRecording()
+    {
+        if (_recording != null)
+        {
+            _recording.Toggle();
+            return;
+        }
+        if (_snip != null || _picker != null) return;
+        _menu?.CloseAnimated();
+        var session = new RecordingSession(_settings);
+        session.Saved += (file, centre) => ShowWheel([file], centre);
+        session.Ended += () => { if (_recording == session) _recording = null; };
+        _recording = session;
+        session.Begin();
     }
 
     // ---- Colour picker ----

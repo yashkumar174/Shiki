@@ -52,6 +52,18 @@ public static class OutputPaths
         }
     }
 
+    /// <summary>Screen recordings: the results folder (its Videos part when sorting), else Videos\Converted Bro.</summary>
+    public static string RecordingsFolder
+    {
+        get
+        {
+            var dir = Folder == null
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Converted Bro")
+                : SortByType ? Path.Combine(Folder, "Videos") : Folder;
+            return Directory.CreateDirectory(dir).FullName;
+        }
+    }
+
     public static string UniqueFolder(string dir, string name)
     {
         var candidate = Path.Combine(dir, name);

@@ -24,6 +24,7 @@ public sealed class DashboardHost
     public required Action<BroAction, List<string>> Run { get; init; }
     public required Action Snip { get; init; }
     public required Action PickColour { get; init; }
+    public required Action Record { get; init; }
     public required Action MakeQr { get; init; }
     public required Action Paste { get; init; }
     public required Action OpenSettings { get; init; }

@@ -21,6 +21,10 @@ public sealed class Settings
     public string ColourHotkey { get; set; } = "Ctrl+Alt+C";
     /// <summary>Global shortcut that opens the wheel on the files selected in Explorer or on the desktop.</summary>
     public string ConvertHotkey { get; set; } = "Ctrl+Alt+X";
+    /// <summary>Screen recording: start (and, pressed again, stop). Not Ctrl+Shift+R: browsers hard-reload with that.</summary>
+    public string RecordHotkey { get; set; } = "Ctrl+Alt+R";
+    public bool RecordMic { get; set; }
+    public bool RecordSound { get; set; } = true;
     /// <summary>Where results go: a folder, or null to keep them next to the original.</summary>
     public string? OutputFolder { get; set; } = OutputPaths.DefaultFolder;
     /// <summary>In the results folder, sort into Images, Videos, Audio, PDFs…</summary>
