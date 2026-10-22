@@ -5,7 +5,7 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{63BD6A06-C1B1-4236-A922-16143334B3B3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConvertedBro", "src\ConvertedBro\ConvertedBro.csproj", "{B0B0C9BB-DBE2-4EB4-9FD8-E9E51624E03C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Shiki", "src\Shiki\Shiki.csproj", "{B0B0C9BB-DBE2-4EB4-9FD8-E9E51624E03C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

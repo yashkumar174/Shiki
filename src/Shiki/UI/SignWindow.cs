@@ -8,14 +8,14 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using ConvertedBro.Core;
+using Shiki.Core;
 using Docnet.Core;
 using Docnet.Core.Models;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf.IO;
 using IOPath = System.IO.Path;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// Place your drawn signature on PDF pages: click a page to put it there, drag to move, use the

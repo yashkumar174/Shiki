@@ -6,9 +6,9 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using ConvertedBro.Core;
+using Shiki.Core;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>Type or paste a link or any text; the QR code updates as you type. Save it or copy it.</summary>
 public sealed class QrWindow : Window
@@ -121,7 +121,7 @@ public sealed class QrWindow : Window
     void Copy()
     {
         if (_png == null) return;
-        var folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "ConvertedBro")).FullName;
+        var folder = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "Shiki")).FullName;
         var file = Path.Combine(folder, $"QR {Safe(_text.Text)}.png");
         File.WriteAllBytes(file, _png);
         ClipboardTools.CopyImage(file);

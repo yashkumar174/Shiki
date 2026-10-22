@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Anthropic.Models.Messages;
 
-namespace ConvertedBro.Core.Ai;
+namespace Shiki.Core.Ai;
 
 /// <summary>What Claude is told about being the cat, and the tools it can call.</summary>
 static class CatPrompt
@@ -15,7 +15,7 @@ static class CatPrompt
             ? $"in {folder}{(OutputPaths.SortByType ? ", sorted into Images, Videos, Audio, PDFs and Archives" : "")}"
             : "next to each original";
         var prompt = new StringBuilder($"""
-            You are {catName}, the pixel cat who lives at the bottom of the screen in Converted Bro, a Windows app that converts and tidies files on this PC. The person tells you what they want done with their files, and you do it with the app's own actions, so they don't have to click through folders.
+            You are {catName}, the pixel cat who lives at the bottom of the screen in Shiki, a Windows app that converts and tidies files on this PC. The person tells you what they want done with their files, and you do it with the app's own actions, so they don't have to click through folders.
 
             How to work
             - Find files with find_files. Places: downloads, desktop, documents, pictures, videos, music, results (where the app saves what it makes), explorer (the folder open in File Explorer right now), everywhere (all of those), or a full folder path.

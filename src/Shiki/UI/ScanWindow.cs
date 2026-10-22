@@ -10,8 +10,8 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using ConvertedBro.Core;
-using ConvertedBro.Shell;
+using Shiki.Core;
+using Shiki.Shell;
 using ImageMagick;
 using IOPath = System.IO.Path;
 using Path = System.Windows.Shapes.Path;
@@ -19,7 +19,7 @@ using FontWeight = System.Windows.FontWeight;
 using FontWeights = System.Windows.FontWeights;
 using Orientation = System.Windows.Controls.Orientation;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// The scanner: one or more photos of paper, each with four draggable corners that start where

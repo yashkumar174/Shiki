@@ -5,9 +5,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using ConvertedBro.Core;
+using Shiki.Core;
 
-namespace ConvertedBro.UI.Dashboard;
+namespace Shiki.UI.Dashboard;
 
 /// <summary>
 /// Every tool in one place, by kind of file: "convert to" chips, then tiles for the tools. Click

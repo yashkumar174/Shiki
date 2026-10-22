@@ -5,9 +5,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Shapes;
-using ConvertedBro.Core;
+using Shiki.Core;
 
-namespace ConvertedBro.UI.Dashboard;
+namespace Shiki.UI.Dashboard;
 
 /// <summary>
 /// Home: a greeting, the black drop card (drop files on it, or pick some), the cat's numbers,
@@ -176,7 +176,7 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
     {
         var s = host.Settings;
         (string Title, string Body, string Button, Action Do)? tip =
-            !host.ExplorerMenuOn() ? ("Right-click to convert", "Add Converted Bro to Explorer's right-click menu.", "Add it", host.AddExplorerMenu)
+            !host.ExplorerMenuOn() ? ("Right-click to convert", "Add Shiki to Explorer's right-click menu.", "Add it", host.AddExplorerMenu)
             : !s.UsedConvertHotkey ? ("The fastest way in", $"Select a file in File Explorer and press {s.ConvertHotkey}.", "Got it", () => { s.UsedConvertHotkey = true; host.SaveSettings(); })
             : host.TeachName != null && Core.Ai.ClaudeKey.Exists && !(s.WakeWord && s.WakeVariants.Count > 0)
                 ? ($"Just say \"Hey {host.CatName()}\"", "Teach the cat its name once (about a minute) and it wakes up when you call it, no keys needed.", "Teach it", host.TeachName)

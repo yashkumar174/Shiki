@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace ConvertedBro.Core.Ai;
+namespace Shiki.Core.Ai;
 
 /// <summary>
 /// The person's Claude API key, kept in Windows Credential Manager (encrypted with their
@@ -10,7 +10,7 @@ namespace ConvertedBro.Core.Ai;
 /// </summary>
 public static class ClaudeKey
 {
-    static readonly SecretStore Store = new("ConvertedBro/ClaudeApiKey");
+    static readonly SecretStore Store = new("Shiki/ClaudeApiKey");
 
     public static bool Exists => Store.Exists;
     public static string? Hint => Store.Hint;
@@ -57,7 +57,7 @@ public sealed class SecretStore(string target)
             {
                 Type = CRED_TYPE_GENERIC,
                 TargetName = target,
-                UserName = "Converted Bro",
+                UserName = "Shiki",
                 CredentialBlob = blob,
                 CredentialBlobSize = bytes.Length,
                 Persist = CRED_PERSIST_LOCAL_MACHINE,

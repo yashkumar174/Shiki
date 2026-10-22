@@ -10,7 +10,7 @@ using ImageMagick;
 using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>Copies the text out of images and PDFs with the OCR engine built into Windows.</summary>
 public static class TextTools

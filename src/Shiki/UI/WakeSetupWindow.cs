@@ -7,10 +7,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using ConvertedBro.Core;
-using ConvertedBro.Core.Voice;
+using Shiki.Core;
+using Shiki.Core.Voice;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// Meet your cat: give it a name, then say "Hey &lt;name&gt;" three times. Nothing is trained in

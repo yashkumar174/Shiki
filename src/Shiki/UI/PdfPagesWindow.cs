@@ -8,13 +8,13 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using ConvertedBro.Core;
+using Shiki.Core;
 using Docnet.Core;
 using Docnet.Core.Models;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// Page editor: every page of the dropped PDFs as a thumbnail. Drag to reorder, rotate or delete,

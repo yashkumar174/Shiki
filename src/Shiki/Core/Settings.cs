@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 public sealed class Settings
 {

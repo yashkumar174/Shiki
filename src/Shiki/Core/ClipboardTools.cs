@@ -8,7 +8,7 @@ using System.Windows;
 using System.Windows.Media.Imaging;
 using ImageMagick;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 public static class ClipboardTools
 {

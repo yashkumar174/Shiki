@@ -9,9 +9,9 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Shell;
-using ConvertedBro.Core;
+using Shiki.Core;
 
-namespace ConvertedBro.UI.Dashboard;
+namespace Shiki.UI.Dashboard;
 
 /// <summary>What the dashboard asks the app to do. The app owns jobs, windows and settings.</summary>
 public sealed class DashboardHost
@@ -90,7 +90,7 @@ public sealed class DashboardWindow : Window
     {
         _host = host;
         _host.Play = Play;
-        Title = "Converted Bro";
+        Title = "Shiki";
         Width = 1240;
         Height = 820;
         MinWidth = 960;
@@ -598,7 +598,7 @@ public sealed class DashboardWindow : Window
         row.Children.Add(head);
         if (!_collapsed)
         {
-            var name = _k.Text("Converted Bro", 22, weight: FontWeights.SemiBold, font: DashKit.Display);
+            var name = _k.Text("Shiki", 22, weight: FontWeights.SemiBold, font: DashKit.Display);
             name.Margin = new Thickness(10, -1, 0, 0);
             name.VerticalAlignment = VerticalAlignment.Center;
             row.Children.Add(name);
@@ -647,7 +647,7 @@ public sealed class DashboardWindow : Window
     }
 
     /// <summary>
-    /// "Set up Converted Bro": the few things that make it feel built in. Each line is checked
+    /// "Set up Shiki": the few things that make it feel built in. Each line is checked
     /// against the real state and does the thing when clicked; the card goes away when all are done.
     /// </summary>
     UIElement? SetupCard()
@@ -668,7 +668,7 @@ public sealed class DashboardWindow : Window
         if (done == steps.Count) return null;
 
         var stack = new StackPanel();
-        stack.Children.Add(_k.Text("Set up Converted Bro", 14, weight: FontWeights.SemiBold));
+        stack.Children.Add(_k.Text("Set up Shiki", 14, weight: FontWeights.SemiBold));
         var track = new Grid { Height = 4, Margin = new Thickness(0, 12, 0, 14) };
         track.Children.Add(new Border { Background = DashKit.B(_p.Hover), CornerRadius = new CornerRadius(2) });
         track.Children.Add(new Border

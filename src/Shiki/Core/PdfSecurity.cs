@@ -8,7 +8,7 @@ using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>Passwords and page numbers for PDFs.</summary>
 public static class PdfSecurity

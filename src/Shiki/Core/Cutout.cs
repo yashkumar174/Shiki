@@ -9,7 +9,7 @@ using ImageMagick;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>A touch-up brush stroke, in the photo's own pixels. Keep paints the subject back in.</summary>
 public sealed record BrushStroke(IReadOnlyList<(double X, double Y)> Points, double Radius, bool Keep);

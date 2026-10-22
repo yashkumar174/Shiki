@@ -7,11 +7,11 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
-using ConvertedBro.Core.Ai;
-using ConvertedBro.Core.Voice;
-using ConvertedBro.UI.Dashboard;
+using Shiki.Core.Ai;
+using Shiki.Core.Voice;
+using Shiki.UI.Dashboard;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// The quick way to talk to the cat: a small card right above it (from the shortcut), with a box

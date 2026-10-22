@@ -3,10 +3,10 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Windows.Media.Imaging;
-using ConvertedBro.Core;
+using Shiki.Core;
 using ImageMagick;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>Icons (tray, Explorer menu) made from the chosen cat's pixel head.</summary>
 public static class BroArt

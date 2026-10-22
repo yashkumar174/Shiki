@@ -6,7 +6,7 @@ using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 
-namespace ConvertedBro.Core.Voice;
+namespace Shiki.Core.Voice;
 
 /// <summary>How a listen ended.</summary>
 public enum HeardKind { Speech, Nothing, Stopped }

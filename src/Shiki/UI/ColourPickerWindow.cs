@@ -6,9 +6,9 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using ConvertedBro.Shell;
+using Shiki.Shell;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// Freezes the screen and shows a magnifier under the cursor; a click picks the pixel's colour.

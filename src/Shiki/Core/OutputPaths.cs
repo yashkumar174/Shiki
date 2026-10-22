@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>
 /// Picks where results go, never overwriting anything: next to the original, or all in one
@@ -16,7 +16,7 @@ public static class OutputPaths
     public static bool SortByType { get; set; }
 
     /// <summary>The suggested folder: in the user's home, not under OneDrive, so big videos don't get synced.</summary>
-    public static string DefaultFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Converted Bro");
+    public static string DefaultFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Shiki");
 
     /// <param name="suffix">Optional tag added to the name, e.g. "small" gives "photo (small).jpg".</param>
     public static string Next(string input, string newExtension, string? suffix = null)
@@ -39,26 +39,26 @@ public static class OutputPaths
 
     /// <summary>
     /// Where things the app makes from scratch go (snips, pasted pictures, QR codes): the results
-    /// folder when there is one, otherwise Pictures\Converted Bro.
+    /// folder when there is one, otherwise Pictures\Shiki.
     /// </summary>
     public static string CreatedFolder
     {
         get
         {
             var dir = Folder == null
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Converted Bro")
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "Shiki")
                 : SortByType ? Path.Combine(Folder, "Images") : Folder;
             return Directory.CreateDirectory(dir).FullName;
         }
     }
 
-    /// <summary>Screen recordings: the results folder (its Videos part when sorting), else Videos\Converted Bro.</summary>
+    /// <summary>Screen recordings: the results folder (its Videos part when sorting), else Videos\Shiki.</summary>
     public static string RecordingsFolder
     {
         get
         {
             var dir = Folder == null
-                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Converted Bro")
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyVideos), "Shiki")
                 : SortByType ? Path.Combine(Folder, "Videos") : Folder;
             return Directory.CreateDirectory(dir).FullName;
         }

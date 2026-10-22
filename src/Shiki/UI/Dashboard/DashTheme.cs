@@ -6,7 +6,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using Microsoft.Win32;
 
-namespace ConvertedBro.UI.Dashboard;
+namespace Shiki.UI.Dashboard;
 
 /// <summary>
 /// The dashboard's look, after Wispr Flow: a warm paper canvas (or deep charcoal), white cards,

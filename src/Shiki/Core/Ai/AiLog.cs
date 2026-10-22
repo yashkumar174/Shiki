@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace ConvertedBro.Core.Ai;
+namespace Shiki.Core.Ai;
 
 /// <summary>
 /// Everything the cat was asked and did, in plain words: what was said, what it searched,

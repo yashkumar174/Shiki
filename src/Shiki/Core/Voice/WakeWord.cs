@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
-namespace ConvertedBro.Core.Voice;
+namespace Shiki.Core.Voice;
 
 /// <summary>
 /// Is this "Hey Latte"? Compares the start of what Whisper wrote down with the ways it wrote the

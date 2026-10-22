@@ -4,9 +4,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
-using ConvertedBro.Shell;
+using Shiki.Shell;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>Shared pieces for the app's own windows, in the current look (Arcade or Glass).</summary>
 public static class UiKit

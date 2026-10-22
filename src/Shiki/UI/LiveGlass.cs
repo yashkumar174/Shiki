@@ -6,10 +6,10 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using ConvertedBro.Core;
-using ConvertedBro.Shell;
+using Shiki.Core;
+using Shiki.Shell;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// Keeps a window's liquid glass in step with whatever is behind it. The window is excluded from
@@ -22,7 +22,7 @@ public sealed class LiveGlass : IDisposable
     public static bool Enabled { get; set; } = true;
 
     /// <summary>Dev aid: when set, the latest frame is written here as PNG every second.</summary>
-    static readonly string? DumpPath = Environment.GetEnvironmentVariable("CONVERTEDBRO_GLASS_DUMP");
+    static readonly string? DumpPath = Environment.GetEnvironmentVariable("SHIKI_GLASS_DUMP");
 
     readonly Window _window;
     readonly Action<ImageSource> _show;

@@ -1,11 +1,11 @@
 using Microsoft.Win32;
 
-namespace ConvertedBro.Shell;
+namespace Shiki.Shell;
 
 public static class StartupRegistration
 {
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    const string ValueName = "ConvertedBro";
+    const string ValueName = "Shiki";
 
     public static bool IsEnabled()
     {

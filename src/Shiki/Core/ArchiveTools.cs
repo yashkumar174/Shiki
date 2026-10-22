@@ -8,7 +8,7 @@ using SharpCompress.Archives;
 using SharpCompress.Common;
 using SharpCompress.Readers;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>Zips files and folders, and extracts zip, 7z, rar and tar archives.</summary>
 public static class ArchiveTools

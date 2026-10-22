@@ -3,9 +3,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using ConvertedBro.Core.Voice;
+using Shiki.Core.Voice;
 
-namespace ConvertedBro.UI.Dashboard;
+namespace Shiki.UI.Dashboard;
 
 /// <summary>
 /// The box you type to the cat in, with a microphone and a send button. While listening, the box

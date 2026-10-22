@@ -7,7 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Whisper.net;
 
-namespace ConvertedBro.Core.Voice;
+namespace Shiki.Core.Voice;
 
 /// <summary>
 /// OpenAI's Whisper (English "base" model, MIT) through whisper.cpp, on this PC: nothing leaves it.

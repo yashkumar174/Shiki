@@ -10,9 +10,9 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using ConvertedBro.Core.Ai;
+using Shiki.Core.Ai;
 
-namespace ConvertedBro.Core.Voice;
+namespace Shiki.Core.Voice;
 
 /// <summary>
 /// Deepgram's Nova-3 speech-to-text, in the cloud, with the person's own API key. Short clips
@@ -21,7 +21,7 @@ namespace ConvertedBro.Core.Voice;
 /// </summary>
 public sealed class Deepgram(Func<IEnumerable<string>> keyterms) : ISpeechToText
 {
-    public static readonly SecretStore Key = new("ConvertedBro/DeepgramApiKey");
+    public static readonly SecretStore Key = new("Shiki/DeepgramApiKey");
     public static bool HasKey => Key.Exists;
 
     /// <summary>Seconds of audio sent so far (for the running cost shown in Settings).</summary>

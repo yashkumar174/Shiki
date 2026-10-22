@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ConvertedBro.Core.Voice;
+namespace Shiki.Core.Voice;
 
 /// <summary>
 /// Turns a short recording into text. Swappable: Whisper runs on this PC (the default), Deepgram

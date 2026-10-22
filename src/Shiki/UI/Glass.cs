@@ -7,9 +7,9 @@ using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using ConvertedBro.Core;
+using Shiki.Core;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// Frosted glass for short-lived popups: a blurred snapshot of what's on screen behind the

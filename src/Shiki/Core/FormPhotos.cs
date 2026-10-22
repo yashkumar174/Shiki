@@ -8,7 +8,7 @@ using ImageMagick;
 using Windows.Graphics.Imaging;
 using Windows.Media.FaceAnalysis;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>A photo or signature size that forms ask for.</summary>
 public sealed record FormPreset(string Id, string Name, string Detail, double WidthMm, double HeightMm, int Dpi, int MinKb, int MaxKb, bool Signature = false)

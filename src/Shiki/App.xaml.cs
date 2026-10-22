@@ -7,23 +7,23 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using ConvertedBro.Core;
-using ConvertedBro.Core.Ai;
-using ConvertedBro.Core.Voice;
-using ConvertedBro.Shell;
-using ConvertedBro.UI;
-using ConvertedBro.UI.Dashboard;
+using Shiki.Core;
+using Shiki.Core.Ai;
+using Shiki.Core.Voice;
+using Shiki.Shell;
+using Shiki.UI;
+using Shiki.UI.Dashboard;
 using Velopack;
 
-namespace ConvertedBro;
+namespace Shiki;
 
 /// <summary>
 /// Command line:
-///   ConvertedBro                      desktop buddy + tray icon
-///   ConvertedBro run &lt;action&gt; files   run an action (what the Explorer menu calls)
-///   ConvertedBro menu files           show the radial menu at the cursor
-///   ConvertedBro files...             same as menu (drag files onto the exe, "Open with")
-///   ConvertedBro --register / --unregister   add or remove the Explorer menu
+///   Shiki                      desktop buddy + tray icon
+///   Shiki run &lt;action&gt; files   run an action (what the Explorer menu calls)
+///   Shiki menu files           show the radial menu at the cursor
+///   Shiki files...             same as menu (drag files onto the exe, "Open with")
+///   Shiki --register / --unregister   add or remove the Explorer menu
 /// </summary>
 public partial class App : Application
 {
@@ -53,6 +53,8 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Formerly Converted Bro: its data folder moves here before anything opens it.
+        FormerName.MoveData();
         // The installer (Velopack) runs the app with special arguments around install, update and
         // uninstall; these hooks do their bit and exit. A normal start goes straight through.
         VelopackApp.Build()
@@ -230,6 +232,7 @@ public partial class App : Application
         Theme.EditorDark = _settings.DashboardDark ?? DashPalette.WindowsIsDark();
         OutputPaths.Folder = _settings.OutputFolder;
         OutputPaths.SortByType = _settings.SortOutputs;
+        FormerName.MoveTheRest(_settings, ExePath, BroArt.EnsureIconFile(Skin));
         Theme.Style = _settings.Style;
         // Page numbers and other PDF text use the fonts installed in Windows.
         PdfFonts.Install();
@@ -509,7 +512,7 @@ public partial class App : Application
         bool visible = _buddy?.IsVisible ?? false;
         _menu = new BroMenu(anchorPx, $"Drop files on me, Shift + drag one, or select files and press {_settings.ConvertHotkey}.",
         [
-            new MenuEntry("\uE80F", "Open Converted Bro", () => ShowDashboard()),
+            new MenuEntry("\uE80F", "Open Shiki", () => ShowDashboard()),
             new MenuEntry("\uE8E5", "Convert files…", PickFiles),
             .. (_settings.OutputFolder is { } results ? [new MenuEntry("\uE838", "Open results folder", () => OpenFolder(results))] : Array.Empty<object?>()),
             new MenuEntry("\uE77F", "Paste from clipboard", PasteToCat),
@@ -632,7 +635,7 @@ public partial class App : Application
         if (on) ContextMenuRegistrar.Register(ExePath, BroArt.EnsureIconFile(Skin));
         else ContextMenuRegistrar.Unregister();
         ToastHost.Show(ToastWindow.Message(on ? "Added to Explorer" : "Removed from Explorer",
-            on ? "Right-click a file, choose Show more options, then Convert with Bro." : "Convert with Bro is no longer in the right-click menu."));
+            on ? "Right-click a file, choose Show more options, then Convert with Shiki." : "Convert with Shiki is no longer in the right-click menu."));
     }
 
     SettingsWindow? _settingsWindow;
@@ -667,7 +670,7 @@ public partial class App : Application
                 new ShortcutSetting($"Talk to {CatName}", () => _settings.TalkHotkey, text => ChangeHotkey(text, () => _settings.TalkHotkey, v => _settings.TalkHotkey = v)),
             ],
             [
-                new SettingSwitch("Right-click menu in Explorer", "Convert with Bro, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu),
+                new SettingSwitch("Right-click menu in Explorer", "Convert with Shiki, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu),
                 new SettingSwitch("Shift + drag opens the wheel", "Hold Shift while dragging any file.", () => _settings.ShiftDragSummon, ToggleShiftDrag),
                 new SettingSwitch("Glass follows what's behind", "Glass look only. Off shows popups in screen recordings.", () => _settings.LiveGlass, ToggleLiveGlass),
                 new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
@@ -1315,7 +1318,7 @@ public partial class App : Application
     {
         var dialog = new Microsoft.Win32.OpenFileDialog
         {
-            Title = "Pick files for the bro",
+            Title = "Pick files for Shiki",
             Multiselect = true,
             Filter = "Everything I can convert|" + string.Join(";", FileKinds.AllExtensions.Select(x => "*" + x)) + "|All files|*.*",
         };

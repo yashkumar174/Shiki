@@ -5,10 +5,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using ConvertedBro.Core.Ai;
-using ConvertedBro.Shell;
+using Shiki.Core.Ai;
+using Shiki.Shell;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>A switch in the settings window: a label and how to read and flip it.</summary>
 public sealed record SettingSwitch(string Label, string Hint, Func<bool> IsOn, Action Toggle);
@@ -43,7 +43,7 @@ public sealed class SettingsWindow : Window
     {
         _output = output;
         _lastFolder = output.GetFolder() ?? Core.OutputPaths.DefaultFolder;
-        Title = "Converted Bro settings";
+        Title = "Shiki settings";
         Width = 520;
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
@@ -215,7 +215,7 @@ public sealed class SettingsWindow : Window
                     : "Add a Deepgram key below. Until then Whisper on this PC is used.",
                 "wispr" => Core.Voice.WisprFlow.Available
                     ? "What you say goes to Wispr Flow to be written down."
-                    : "Wispr Flow's API isn't open to Converted Bro yet (access has been asked for). Until it is, Whisper on this PC is used. You can save your Wispr key now.",
+                    : "Wispr Flow's API isn't open to Shiki yet (access has been asked for). Until it is, Whisper on this PC is used. You can save your Wispr key now.",
                 _ => $"Free and private: Whisper turns your voice into text on this PC (the graphics card when it can). It downloads once ({Core.Voice.WhisperLocal.DownloadSize}).",
             };
             wakeNote.Text = wake == "deepgram"

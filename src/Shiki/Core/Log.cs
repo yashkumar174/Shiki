@@ -1,14 +1,14 @@
 using System;
 using System.IO;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 public static class Log
 {
     static readonly object Gate = new();
 
     public static string DataDir { get; } = Directory.CreateDirectory(
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ConvertedBro")).FullName;
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Shiki")).FullName;
 
     static string LogPath => Path.Combine(DataDir, "log.txt");
 

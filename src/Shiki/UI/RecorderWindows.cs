@@ -9,11 +9,11 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using ConvertedBro.Core;
-using ConvertedBro.Shell;
+using Shiki.Core;
+using Shiki.Shell;
 using Path = System.Windows.Shapes.Path;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// One screen recording, start to finish: pick an area, choose mic and sound, count down, record,

@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using ImageMagick;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 public static class ImageTools
 {

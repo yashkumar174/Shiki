@@ -1,4 +1,4 @@
-# Converted Bro roadmap
+# Shiki roadmap
 
 What's built is in the README. This file is what comes next, in order. Every feature keeps the
 same rules: anything that changes files or the PC asks first (a plan card or a spoken yes), the

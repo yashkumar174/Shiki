@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 public static class FileList
 {

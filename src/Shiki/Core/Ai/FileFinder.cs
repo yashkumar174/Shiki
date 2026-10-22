@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 
-namespace ConvertedBro.Core.Ai;
+namespace Shiki.Core.Ai;
 
 /// <summary>One file (or folder) the cat found, as it's described to Claude and shown in the chat.</summary>
 public sealed record FoundFile(string Path, long Bytes, DateTime Modified, bool IsFolder)

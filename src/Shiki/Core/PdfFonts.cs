@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using PdfSharp.Fonts;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>Gives PDFsharp the Segoe UI files that ship with Windows, for page numbers and similar text.</summary>
 public sealed class PdfFonts : IFontResolver

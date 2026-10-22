@@ -7,9 +7,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using ConvertedBro.Core;
+using Shiki.Core;
 
-namespace ConvertedBro.UI.Dashboard;
+namespace Shiki.UI.Dashboard;
 
 /// <summary>
 /// Results as Flow lists transcripts: one white card, a row per job (time on the left, what

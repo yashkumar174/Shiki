@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>
 /// Records part of the screen to MP4 with FFmpeg: Windows' GPU desktop capture (ddagrab) when the
@@ -38,7 +38,7 @@ public sealed class ScreenRecorder : IDisposable
         _area = (area.X, area.Y, Math.Max(2, area.W & ~1), Math.Max(2, area.H & ~1));
         _mic = mic;
         _sound = sound;
-        _work = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "ConvertedBro", "rec-" + DateTime.Now.ToString("HHmmss"))).FullName;
+        _work = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "Shiki", "rec-" + DateTime.Now.ToString("HHmmss"))).FullName;
         _video = Path.Combine(_work, "video.mkv");
     }
 

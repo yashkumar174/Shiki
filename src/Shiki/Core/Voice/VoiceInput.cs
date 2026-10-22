@@ -3,9 +3,9 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using ConvertedBro.Core.Ai;
+using Shiki.Core.Ai;
 
-namespace ConvertedBro.Core.Voice;
+namespace Shiki.Core.Voice;
 
 public enum VoiceState { Off, GettingReady, Waiting, Hearing, Understanding }
 

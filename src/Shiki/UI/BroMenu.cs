@@ -9,9 +9,9 @@ using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using ConvertedBro.Shell;
+using Shiki.Shell;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>A row in <see cref="BroMenu"/>. Give <see cref="IsOn"/> to make it a switch.</summary>
 public sealed record MenuEntry(string Glyph, string Text, Action OnClick, Func<bool>? IsOn = null);
@@ -48,7 +48,7 @@ public sealed class BroMenu : Window
 
     /// <param name="title">The cat's name at the top.</param>
     /// <param name="stats">A tally line under it ("142 files converted…"), or null for none yet.</param>
-    public BroMenu(Point anchorPx, string subtitle, IReadOnlyList<object?> entries, ImageSource? avatar, string title = "Converted Bro", string? stats = null)
+    public BroMenu(Point anchorPx, string subtitle, IReadOnlyList<object?> entries, ImageSource? avatar, string title = "Shiki", string? stats = null)
     {
         _title = title;
         _stats = stats;

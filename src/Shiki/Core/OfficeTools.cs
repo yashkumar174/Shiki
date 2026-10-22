@@ -6,7 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>
 /// Word, Excel and PowerPoint files to PDF (and PDF to Word) using the Office already on the PC,
@@ -99,7 +99,7 @@ public static class OfficeTools
     {
         var soffice = LibreOffice ?? throw new InvalidOperationException(
             "Turning documents into PDFs needs Microsoft Office or the free LibreOffice (libreoffice.org) on this PC.");
-        var temp = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "ConvertedBro", "office-" + Guid.NewGuid().ToString("N")[..8])).FullName;
+        var temp = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "Shiki", "office-" + Guid.NewGuid().ToString("N")[..8])).FullName;
         try
         {
             var start = new ProcessStartInfo(soffice) { UseShellExecute = false, CreateNoWindow = true };

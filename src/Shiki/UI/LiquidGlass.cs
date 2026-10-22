@@ -6,7 +6,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>Look of one liquid glass surface. Lengths are in physical pixels.</summary>
 public sealed record LiquidGlassStyle

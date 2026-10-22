@@ -5,7 +5,7 @@ using System.Linq;
 using System.Windows;
 using ImageMagick;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 public enum ScanFilter { Color, BlackWhite, Original }
 

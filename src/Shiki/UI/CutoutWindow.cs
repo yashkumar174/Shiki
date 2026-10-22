@@ -11,11 +11,11 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using ConvertedBro.Core;
+using Shiki.Core;
 using ImageMagick;
 using IOPath = System.IO.Path;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// Remove a photo's background: the cut-out appears on a checkerboard, a brush paints back
@@ -661,7 +661,7 @@ public sealed class CutoutWindow : Window
         JobRunner.Start(Job("cutout-copy", "Copy cut-out", (_, _, ct) => Task.Run<IReadOnlyList<string>>(() =>
         {
             using var cut = Render(file, alpha, w, h, strokes, background);
-            var folder = IOPath.Combine(IOPath.GetTempPath(), "ConvertedBro");
+            var folder = IOPath.Combine(IOPath.GetTempPath(), "Shiki");
             Directory.CreateDirectory(folder);
             var temp = IOPath.Combine(folder, IOPath.GetFileNameWithoutExtension(file) + " (no background).png");
             Cutout.WritePng(cut, temp);

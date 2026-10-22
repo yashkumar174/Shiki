@@ -11,19 +11,19 @@ using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using ConvertedBro.Core;
-using ConvertedBro.Shell;
+using Shiki.Core;
+using Shiki.Shell;
 using Path = System.Windows.Shapes.Path;
 using Ellipse = System.Windows.Shapes.Ellipse;
 using Rectangle = System.Windows.Shapes.Rectangle;
 using IOPath = System.IO.Path;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// The frosted wheel of formats. Two ways in:
 /// <list type="bullet">
-/// <item>Click mode: files are known (dropped on the bro, Explorer "More options…"); click a wedge.</item>
+/// <item>Click mode: files are known (dropped on the cat, Explorer "More options…"); click a wedge.</item>
 /// <item>Drag mode: opened under the cursor by Shift + drag; drop the file straight onto a wedge.</item>
 /// </list>
 /// Formats and tools live on two pages; the hub switches between them.
@@ -86,7 +86,7 @@ public sealed class ConvertWheel : Window
         _files = files ?? [];
         _hubFill = new SolidColorBrush(_pixel ? _p.WedgeRest : Colors.Transparent);
 
-        Title = "Converted Bro";
+        Title = "Shiki";
         Width = Height = Size;
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;

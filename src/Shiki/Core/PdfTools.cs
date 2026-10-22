@@ -8,7 +8,7 @@ using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 using PdfSharp.Pdf.IO;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 public static class PdfTools
 {

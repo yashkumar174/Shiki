@@ -9,12 +9,12 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using ConvertedBro.Core;
+using Shiki.Core;
 using ImageMagick;
 using IOPath = System.IO.Path;
 using Path = System.Windows.Shapes.Path;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// Crop a photo (or signature) to a form's exact size: the box starts on the face, keeps the

@@ -6,7 +6,7 @@ using QRCoder;
 using ZXing;
 using ZXing.Common;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>Makes QR codes (QRCoder) and reads QR codes and barcodes in pictures (ZXing).</summary>
 public static class QrTools

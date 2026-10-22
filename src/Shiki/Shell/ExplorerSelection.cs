@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
-using ConvertedBro.Core;
+using Shiki.Core;
 
-namespace ConvertedBro.Shell;
+namespace Shiki.Shell;
 
 /// <summary>
 /// The files selected in the File Explorer window (or on the desktop) that's in front, read

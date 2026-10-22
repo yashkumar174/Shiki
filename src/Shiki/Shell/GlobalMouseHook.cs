@@ -1,9 +1,9 @@
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using static ConvertedBro.Shell.NativeMethods;
+using static Shiki.Shell.NativeMethods;
 
-namespace ConvertedBro.Shell;
+namespace Shiki.Shell;
 
 /// <summary>
 /// Watches the mouse system-wide for "Shift held while dragging" so the buddy can pop up next

@@ -1,9 +1,9 @@
 using System;
 using System.Windows.Media;
-using ConvertedBro.Core;
+using Shiki.Core;
 using Microsoft.Win32;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>Design tokens. Follows the Windows light/dark app setting.</summary>
 public sealed class Palette

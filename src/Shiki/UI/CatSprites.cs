@@ -4,7 +4,7 @@ using System.Linq;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 public enum CatPose { Idle, LookLeft, LookRight, Blink, Pop, Happy, TapLeft, TapRight, Yawn, Startled, StrainLeft, StrainRight, Purr, Grumpy, GrumpyFlick }
 public enum PeekPose { Idle, LeftPaw, RightPaw, Sleep }

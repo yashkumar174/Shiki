@@ -9,10 +9,10 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
-using ConvertedBro.Core;
-using ConvertedBro.Core.Ai;
+using Shiki.Core;
+using Shiki.Core.Ai;
 
-namespace ConvertedBro.UI.Dashboard;
+namespace Shiki.UI.Dashboard;
 
 /// <summary>
 /// Draws the cat chat's items: what you said, what the cat said, the quiet lines about what it

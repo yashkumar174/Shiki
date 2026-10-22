@@ -6,9 +6,9 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using ConvertedBro.Core;
+using Shiki.Core;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>Asks for a PDF password, to unlock a copy or to lock one.</summary>
 public sealed class PasswordWindow : Window

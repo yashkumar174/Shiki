@@ -7,11 +7,11 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
-using ConvertedBro.Core;
-using ConvertedBro.Shell;
+using Shiki.Core;
+using Shiki.Shell;
 using Path = System.Windows.Shapes.Path;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// Freezes the screen, lets you drag a box, saves that part as a PNG and hands it on (to the wheel).
@@ -156,7 +156,7 @@ public sealed class SnipWindow : Window
         Snipped?.Invoke(file, centre);
     }
 
-    /// <summary>Snips live in the results folder (or Pictures\Converted Bro), so they're easy to find.</summary>
+    /// <summary>Snips live in the results folder (or Pictures\Shiki), so they're easy to find.</summary>
     static string Save(BitmapSource snip)
     {
         var folder = OutputPaths.CreatedFolder;

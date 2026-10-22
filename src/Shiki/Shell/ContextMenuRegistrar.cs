@@ -1,18 +1,18 @@
 using System;
-using ConvertedBro.Core;
+using Shiki.Core;
 using Microsoft.Win32;
 
-namespace ConvertedBro.Shell;
+namespace Shiki.Shell;
 
 /// <summary>
-/// Adds "Convert with Bro" to the right-click menu of every supported file type.
+/// Adds "Convert with Shiki" to the right-click menu of every supported file type.
 /// Uses HKCU only, so no admin rights are needed. On Windows 11 it appears under
 /// "Show more options" (or Shift + right-click).
 /// </summary>
 public static class ContextMenuRegistrar
 {
     const string Root = @"Software\Classes\SystemFileAssociations";
-    const string VerbName = "ConvertedBro";
+    const string VerbName = "Shiki";
     const int SeparatorBefore = 0x20; // ECF_SEPARATORBEFORE
 
     public static bool IsRegistered()
@@ -31,7 +31,7 @@ public static class ContextMenuRegistrar
             var verbPath = $@"{Root}\{ext}\shell\{VerbName}";
             Registry.CurrentUser.DeleteSubKeyTree(verbPath, throwOnMissingSubKey: false);
             using var verb = Registry.CurrentUser.CreateSubKey(verbPath);
-            verb.SetValue("MUIVerb", "Convert with Bro");
+            verb.SetValue("MUIVerb", "Convert with Shiki");
             verb.SetValue("Icon", iconPath);
             verb.SetValue("SubCommands", "");
             // Without this Windows hides the verb when more than 15 files are selected.

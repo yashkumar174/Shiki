@@ -8,7 +8,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>Runs the bundled FFmpeg for audio and video work.</summary>
 public static partial class MediaTools
@@ -63,7 +63,7 @@ public static partial class MediaTools
         IProgress<double> progress, CancellationToken ct)
     {
         var ffmpeg = FindFfmpeg() ?? throw new InvalidOperationException(
-            "FFmpeg not found. Put ffmpeg.exe in the tools\\ffmpeg folder next to ConvertedBro.exe, or on PATH.");
+            "FFmpeg not found. Put ffmpeg.exe in the tools\\ffmpeg folder next to Shiki.exe, or on PATH.");
 
         var psi = new ProcessStartInfo(ffmpeg)
         {

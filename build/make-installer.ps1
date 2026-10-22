@@ -1,15 +1,15 @@
-# Builds Releases\ConvertedBroApp-win-Setup.exe: a per-user installer (no admin) made with Velopack.
+# Builds Releases\ShikiApp-win-Setup.exe: a per-user installer (no admin) made with Velopack.
 # Usage:  powershell -ExecutionPolicy Bypass -File build\make-installer.ps1 [-Version 1.0.1]
 param([string]$Version)
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
-$project = Join-Path $root "src\ConvertedBro\ConvertedBro.csproj"
+$project = Join-Path $root "src\Shiki\Shiki.csproj"
 $dotnet = Join-Path $env:USERPROFILE ".dotnet\dotnet.exe"
 if (-not (Test-Path $dotnet)) { $dotnet = "dotnet" }
 
 # The version lives in the project file unless given here.
 if (-not $Version) { $Version = ([xml](Get-Content $project -Raw)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1 }
-Write-Host "Converted Bro $Version"
+Write-Host "Shiki $Version"
 
 if (-not (Test-Path (Join-Path $root "tools\ffmpeg\ffmpeg.exe"))) { throw "tools\ffmpeg is missing: put the FFmpeg build there first (see README)." }
 
@@ -30,13 +30,13 @@ $vpk = Join-Path $env:USERPROFILE ".dotnet\tools\vpk.exe"
 if (-not (Test-Path $vpk)) { & $dotnet tool install -g vpk; if ($LASTEXITCODE -ne 0) { throw "could not install vpk" } }
 
 & $vpk pack `
-    --packId ConvertedBroApp `
+    --packId ShikiApp `
     --packVersion $Version `
     --packDir $publish `
-    --mainExe ConvertedBro.exe `
-    --packTitle "Converted Bro" `
+    --mainExe Shiki.exe `
+    --packTitle "Shiki" `
     --packAuthors "yashkumar172" `
-    --icon (Join-Path $root "src\ConvertedBro\Assets\AppIcon.ico") `
+    --icon (Join-Path $root "src\Shiki\Assets\AppIcon.ico") `
     --splashImage (Join-Path $PSScriptRoot "splash.png") `
     --framework net8-x64-desktop `
     --shortcuts StartMenuRoot `

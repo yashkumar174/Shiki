@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 public enum FileKind { Unknown, Image, Video, Audio, Pdf, Archive, Document }
 

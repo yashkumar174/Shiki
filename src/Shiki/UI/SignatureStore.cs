@@ -6,10 +6,10 @@ using System.Windows.Ink;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using ConvertedBro.Core;
+using Shiki.Core;
 using ImageMagick;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>Your saved signature: a transparent PNG kept in the app's data folder.</summary>
 public static class SignatureStore

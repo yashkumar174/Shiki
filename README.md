@@ -1,4 +1,6 @@
-# Converted Bro
+# Shiki
+
+*Formerly Converted Bro. Updating from it moves your settings, history, keys, models, results folder, Explorer menu and start-with-Windows entry over by itself the first time Shiki starts.*
 
 A little pixel cat for Windows that converts files without opening a browser.
 Select a file and press Ctrl+Alt+X, Shift + drag it anywhere and drop it on a format, drop it on the cat, or right-click it in Explorer.
@@ -22,15 +24,15 @@ The wheel has up to five pages: **formats** (what to convert to), **tools** (wha
 
 - **Size limit** finds the highest quality that fits (binary search on JPEG/WEBP quality, then a smaller picture if even the lowest quality is too big). PDFs are re-rendered page by page, so their pages become pictures.
 - **Copy text** uses the OCR engine built into Windows (offline) and puts the text on the clipboard. It reads the languages installed in Windows.
-- **Snip and convert** (Ctrl+Shift+Q, changeable in Settings): the screen freezes, drag a box, and the wheel opens on the snip. Snips are saved in `Pictures\Converted Bro`. Copy text on a snip reads text from anything on screen.
+- **Snip and convert** (Ctrl+Shift+Q, changeable in Settings): the screen freezes, drag a box, and the wheel opens on the snip. Snips are saved in `Pictures\Shiki`. Copy text on a snip reads text from anything on screen.
 - **Edit pages**: thumbnails of every page (of one or several PDFs); drag to reorder, turn or remove, then save one PDF.
 - **Sign**: draw your signature once (or use a photo of it on paper; the paper is removed), then click to place it on any page, drag to move, drag the corner to resize. It's a visual signature, not a certificate.
 - **Unlock / Lock**: remove a known password (the dialog checks it straight away), or add one (AES-256). Unusual encryption that PDFsharp can't rewrite is unlocked by re-rendering the pages.
 - **Page numbers**: "3 / 10" centred at the bottom of each page.
-- **Remove background**: runs offline on your own PC with BiRefNet (MIT). The model (115 MB) downloads the first time you use it, to `%LOCALAPPDATA%\ConvertedBro\models`. One photo opens an editor: the cut-out on a checkerboard, a background swatch row (transparent, white, black, grey, blue, red, or any colour), and a touch-up brush (Erase / Restore, S–XL, `[` `]` to resize, Ctrl+Z to undo, scroll to zoom, right-drag to pan, "Hold to compare" for the original). Save gives `name (no background).png`, or a JPG on a colour; Copy puts it on the clipboard. Several photos at once are cut out straight to transparent PNGs. The mask is refined at full resolution (guided filter) and the old background's colour is cleaned out of soft edges, so hair and fur don't get a halo. It uses the graphics card through DirectML when it can (about 4 s a photo on a GTX 1650; the first one after a while takes longer while the card warms up) and the processor otherwise.
+- **Remove background**: runs offline on your own PC with BiRefNet (MIT). The model (115 MB) downloads the first time you use it, to `%LOCALAPPDATA%\Shiki\models`. One photo opens an editor: the cut-out on a checkerboard, a background swatch row (transparent, white, black, grey, blue, red, or any colour), and a touch-up brush (Erase / Restore, S–XL, `[` `]` to resize, Ctrl+Z to undo, scroll to zoom, right-drag to pan, "Hold to compare" for the original). Save gives `name (no background).png`, or a JPG on a colour; Copy puts it on the clipboard. Several photos at once are cut out straight to transparent PNGs. The mask is refined at full resolution (guided filter) and the old background's colour is cleaned out of soft edges, so hair and fur don't get a halo. It uses the graphics card through DirectML when it can (about 4 s a photo on a GTX 1650; the first one after a while takes longer while the card warms up) and the processor otherwise.
 - **Form photos**: Exam photo (3.5 × 4.5 cm, 20–50 KB), Passport (2 × 2 in), Visa (35 × 45 mm), Signature (3.5 × 1.5 cm, 10–20 KB). The crop starts centred on the face (Windows' built-in face detector, offline) or on the signature's ink; drag or scroll to adjust. The JPG gets the right pixel size and DPI, and the highest quality inside the size range (a tiny file is padded with an empty comment to reach a minimum). **White background** swaps whatever is behind you for plain white.
-- **Paste onto the cat** (*Paste from clipboard* in its menu): copied files open the wheel, a copied picture (a screenshot, an image from a browser) is saved in `Pictures\Converted Bro` and opens the wheel, and copied text opens the QR maker. Every finished job's card has **Copy**: one picture pastes as a picture, anything else as files.
-- **Record the screen** (Ctrl+Alt+R, changeable in Settings; also in the cat's menu and Tools): the screen dims (live, not frozen); drag a box, or press Enter for the whole screen. A dashed frame marks the area and a small bar offers **microphone** and **system sound** toggles (remembered) and **Record**. After a 3-2-1 countdown the frame turns red and the bar shows the time and **Stop** (or press Ctrl+Alt+R again). The frame and bar never appear in the video. It's saved as `Recording <date>.mp4` (results folder, or `Videos\Converted Bro`), goes into History, and the wheel opens on it, ready for GIF, compress and the rest. Capture uses Windows' GPU desktop duplication through FFmpeg (`ddagrab`) and the graphics card's encoder (NVENC) when there is one, falling back to GDI capture and x264. Sound is captured with WASAPI (NAudio) and mixed in at the end, with silent stretches filled so it stays in sync.
+- **Paste onto the cat** (*Paste from clipboard* in its menu): copied files open the wheel, a copied picture (a screenshot, an image from a browser) is saved in `Pictures\Shiki` and opens the wheel, and copied text opens the QR maker. Every finished job's card has **Copy**: one picture pastes as a picture, anything else as files.
+- **Record the screen** (Ctrl+Alt+R, changeable in Settings; also in the cat's menu and Tools): the screen dims (live, not frozen); drag a box, or press Enter for the whole screen. A dashed frame marks the area and a small bar offers **microphone** and **system sound** toggles (remembered) and **Record**. After a 3-2-1 countdown the frame turns red and the bar shows the time and **Stop** (or press Ctrl+Alt+R again). The frame and bar never appear in the video. It's saved as `Recording <date>.mp4` (results folder, or `Videos\Shiki`), goes into History, and the wheel opens on it, ready for GIF, compress and the rest. Capture uses Windows' GPU desktop duplication through FFmpeg (`ddagrab`) and the graphics card's encoder (NVENC) when there is one, falling back to GDI capture and x264. Sound is captured with WASAPI (NAudio) and mixed in at the end, with silent stretches filled so it stays in sync.
 - **Office documents to PDF**: Word, Excel and PowerPoint files (and their OpenDocument cousins, RTF, CSV) through the Office on the PC, run hidden; LibreOffice is used when Office isn't installed. Apps that were already open with your documents are left running. **PDF to Word** needs Word 2013 or newer; on a PC with an old Office next to a new one the newest Word is used, an unlicensed Word gets a clear message instead of a hang, and Word's own "convert this PDF?" prompt is switched off only for the conversion and put back afterwards.
 - **Pick a colour** (Ctrl+Alt+C, changeable in Settings): the screen freezes with a magnifier under the cursor; click to copy the hex (`#1E90FF`), and the card offers RGB and HSL too. Arrow keys nudge one pixel (Shift for ten), Enter picks, Esc cancels. It isn't Ctrl+Shift+C because terminals copy and browsers inspect with that.
 - **QR codes**: *Make a QR code* in the cat's menu turns a link or any text into a QR code as you type (save as PNG or copy). **Read QR** on any picture or snip reads QR codes and barcodes (light-on-dark too), copies what they say and offers *Open link* for a web address.
@@ -39,22 +41,22 @@ The wheel has up to five pages: **formats** (what to convert to), **tools** (wha
 
 Results never overwrite anything (`photo (1).jpg`, `clip (small).mp4`, `report (pages)\page-01.png`). Where they go is up to you, in Settings → **Where results go**:
 
-- **One folder** (the default): everything lands in `C:\Users\<you>\Converted Bro` (outside OneDrive, so big videos don't get synced), or any folder you pick with *Change…*. Turn on **Sort by type** to get `Images`, `Videos`, `Audio`, `PDFs`, `Archives` and `Extracted` subfolders. Snips, pasted pictures and QR codes go there too. *Open results folder* is in the cat's menu.
-- **Next to the original**: each result sits beside the file it came from (snips then go to `Pictures\Converted Bro`).
+- **One folder** (the default): everything lands in `C:\Users\<you>\Shiki` (outside OneDrive, so big videos don't get synced), or any folder you pick with *Change…*. Turn on **Sort by type** to get `Images`, `Videos`, `Audio`, `PDFs`, `Archives` and `Extracted` subfolders. Snips, pasted pictures and QR codes go there too. *Open results folder* is in the cat's menu.
+- **Next to the original**: each result sits beside the file it came from (snips then go to `Pictures\Shiki`).
 
 ## The dashboard
 
-Open it by launching ConvertedBro.exe, clicking the tray icon, or with *Open Converted Bro* in the cat's menu. It's styled after Wispr Flow: a warm paper canvas or deep charcoal (the moon in the title bar switches; it starts out following Windows), white cards, Instrument Serif for the big moments, and one warm orange accent.
+Open it by launching Shiki.exe, clicking the tray icon, or with *Open Shiki* in the cat's menu. It's styled after Wispr Flow: a warm paper canvas or deep charcoal (the moon in the title bar switches; it starts out following Windows), white cards, Instrument Serif for the big moments, and one warm orange accent.
 
 - **Home**: a greeting, the black card (drop files on it, choose some, or snip the screen), the cat's numbers (files converted, space saved, day streak), one tip for whatever isn't set up yet, and today's results with Open, Copy, Folder and "Do it again" on hover.
 - **Tools**: every tool by kind of file. "Convert to" and "Shrink under" chips, then tiles; pick one and choose the files. Capture tools (snip, colour picker, QR, paste) are at the top.
-- **Player**: videos and sound play right inside the dashboard: click a recording or any video/audio result in Home or History (or its play button). Play/pause, a seek bar you can click or drag, time, volume and mute, speed (1x, 1.5x, 2x, 0.5x) and full screen; Open (in your usual player), Copy, Show in folder and Convert (GIF, compress and the rest) at the top. Keys: Space or K, Left/Right 5 s, J/L 10 s, Up/Down volume, M mute, F full screen, Esc back. Step to another page and it pauses and waits in the sidebar. It uses Windows' own media engine, so it plays what Windows plays; anything else gets a message and an Open button. `ConvertedBro.exe play <file>` opens it directly.
-- **History**: every job ever, grouped by day, with search (Ctrl+F) and filters. Removing a line only forgets it; the files stay. Kept in `%LOCALAPPDATA%\ConvertedBro\history.json` (the newest 2,000).
-- **Set up Converted Bro**: a checklist in the sidebar (Explorer menu, the Ctrl+Alt+X shortcut, results folder, start with Windows) that checks the real state and does each step when clicked. It goes away when everything's done.
+- **Player**: videos and sound play right inside the dashboard: click a recording or any video/audio result in Home or History (or its play button). Play/pause, a seek bar you can click or drag, time, volume and mute, speed (1x, 1.5x, 2x, 0.5x) and full screen; Open (in your usual player), Copy, Show in folder and Convert (GIF, compress and the rest) at the top. Keys: Space or K, Left/Right 5 s, J/L 10 s, Up/Down volume, M mute, F full screen, Esc back. Step to another page and it pauses and waits in the sidebar. It uses Windows' own media engine, so it plays what Windows plays; anything else gets a message and an Open button. `Shiki.exe play <file>` opens it directly.
+- **History**: every job ever, grouped by day, with search (Ctrl+F) and filters. Removing a line only forgets it; the files stay. Kept in `%LOCALAPPDATA%\Shiki\history.json` (the newest 2,000).
+- **Set up Shiki**: a checklist in the sidebar (Explorer menu, the Ctrl+Alt+X shortcut, results folder, start with Windows) that checks the real state and does each step when clicked. It goes away when everything's done.
 - **Editors inside**: Pages, Sign, Remove background, Scan, Form photos, Lock/Unlock and the QR maker open as pages in the dashboard (in its look, with a back arrow), wherever you start them: the wheel, the cat, Explorer or Tools. Step to another page and the editor waits in the sidebar; opening a different editor replaces it. Esc goes back.
 - **Settings** is a page too. Peeking at it never closes an open editor. Click the cat at the bottom of the sidebar to switch cats.
 
-*Start with Windows* starts quietly (`--background`): just the cat, no window. `ConvertedBro.exe dashboard [home|tools|history]` opens a page.
+*Start with Windows* starts quietly (`--background`): just the cat, no window. `Shiki.exe dashboard [home|tools|history]` opens a page.
 
 ## Ask the cat (Claude)
 
@@ -64,12 +66,12 @@ Tell the cat what you want in plain English: *"merge the PDFs I downloaded today
 - **Nothing changes without your OK**: to make files, the cat shows a plan card (one to six steps, built from the same actions as the wheel; a step can work on what the previous one made) with **Do it** and **Not now**. Results are new files as always; nothing is deleted, moved or renamed. Steps that need you (sign, edit pages, passwords, form photos) open their editor in the dashboard as the last step. Ask a follow-up ("now compress it") and the cat remembers what it made.
 - **Your key, your data**: the API key is kept in Windows Credential Manager (Settings → *Ask the cat*, or the Ask page the first time), never in a file or the log. What goes to Anthropic: your words, file and folder names and paths the cat looks at, and what's selected in Explorer. File contents are never sent. File names are treated as data, never as instructions. Switch it off in Settings and nothing is sent at all.
 - **Cost**: a request is usually a tenth of a cent or less (Haiku 5.5 is $0.10 / $0.50 per million tokens in / out, with prompt caching). The Ask page shows what the current chat cost; Settings shows the running total.
-- **Voice**: press the mic button (Ask page or bubble) or **Ctrl+Alt+V** and speak in English; the cat listens until you pause for about two seconds (so a pause to think between words doesn't cut you off; or press the key again, or Enter), writes it down and acts on it. When a spoken request ends in a plan, it listens once more: say "yes" / "do it" or "no" / "not now" to answer the card, or say something else to ask again. **Conversation mode**: after each spoken request and the reply, the cat keeps listening (8 seconds by default; Settings → Voice: off, 5, 8 or 15), so the next thing needs no "Hey <name>" and no button. Nothing is sent to Deepgram while it waits: it connects once this PC hears you start talking, and what you said meanwhile is sent once it's up. "Thanks", "that's all", "stop listening" or a quiet spell ends it; so does a long stretch of words while it waited, or a dozen turns in a row (more likely a video or other people talking), and the bubble goes away if you aren't using it. Speech is turned into text on this PC by Whisper (OpenAI's English base model through whisper.cpp / Whisper.net, MIT; 148 MB, downloaded the first time you talk to `%LOCALAPPDATA%\ConvertedBro\models`). It runs on the graphics card through Vulkan (NVIDIA, AMD or Intel) when there is one, and on the processor otherwise. The microphone is only on while it's listening. The speech engine is swappable, separately for what you say and for the wake word (Settings → *Voice*):
+- **Voice**: press the mic button (Ask page or bubble) or **Ctrl+Alt+V** and speak in English; the cat listens until you pause for about two seconds (so a pause to think between words doesn't cut you off; or press the key again, or Enter), writes it down and acts on it. When a spoken request ends in a plan, it listens once more: say "yes" / "do it" or "no" / "not now" to answer the card, or say something else to ask again. **Conversation mode**: after each spoken request and the reply, the cat keeps listening (8 seconds by default; Settings → Voice: off, 5, 8 or 15), so the next thing needs no "Hey <name>" and no button. Nothing is sent to Deepgram while it waits: it connects once this PC hears you start talking, and what you said meanwhile is sent once it's up. "Thanks", "that's all", "stop listening" or a quiet spell ends it; so does a long stretch of words while it waited, or a dozen turns in a row (more likely a video or other people talking), and the bubble goes away if you aren't using it. Speech is turned into text on this PC by Whisper (OpenAI's English base model through whisper.cpp / Whisper.net, MIT; 148 MB, downloaded the first time you talk to `%LOCALAPPDATA%\Shiki\models`). It runs on the graphics card through Vulkan (NVIDIA, AMD or Intel) when there is one, and on the processor otherwise. The microphone is only on while it's listening. The speech engine is swappable, separately for what you say and for the wake word (Settings → *Voice*):
   - **On this PC** (Whisper, the default): free and private.
   - **Deepgram** (Nova-3, your own API key, kept in Credential Manager and checked before it's saved): commands stream live over a WebSocket, so your words appear in the box as you speak and Deepgram judges when you've finished (0.9 s of silence, or 1.2 s without new words); the microphone starts straight away and what you said while it connects is sent once it's up. For the wake word, this PC still notices when someone is talking and only those short bursts of speech (under six seconds) are sent, never silence; that does include anyone else talking nearby while listening is on. The cat's name goes in as a Deepgram key term. A check takes about 0.3 to 0.4 s once connected (connections are kept open for ten idle minutes). If Deepgram can't be reached, Whisper takes over. Settings shows the minutes sent so far.
   - **Wispr Flow** (for commands): its API is enterprise-only for now, so Whisper is used until that adapter can be written against their docs; its key can be saved already.
-- **Wake word**: name your cat whatever you like and teach it: *Teach your cat its name* (in the setup checklist, Settings → Voice, or `ConvertedBro.exe teach`) asks you to say "Hey <name>" three times (it saves by itself after the third) and remembers how Whisper writes it in your voice ("hey lottie", "hey latte"); nothing is trained in the machine-learning sense. With *Listen for "Hey <name>"* on, the microphone stays open (Windows shows its mic icon) and a small voice detector cuts it into bursts of speech; only bursts under six seconds are written down by Whisper on this PC (two threads, in the background) and checked against those spellings plus "hi", "hello" and "okay <name>", allowing one slip for most names and none for very short ones. What it hears is never saved or sent; long talk (calls, videos) is skipped unread. The model stays loaded (and warmed up) while listening is on; checks give Whisper the name as a hint so it spells it the same way each time, use half its usual window and stop after a few words, so "Hey Latte" is recognised in 0.1 to 0.3 s on the graphics card, about half a second after you finish saying it. "Hey Latte" opens the bubble listening; "Hey Latte, merge my PDFs" goes straight to the request. It pauses while the cat is already listening or thinking, while you record the screen, and while you teach it. Toggle it in Settings → Voice or the cat's menu.
-- **Log**: everything the cat was asked, searched, proposed and ran is written in plain words to `%LOCALAPPDATA%\ConvertedBro\cat-log.txt` (*Open the cat's log* in Settings).
+- **Wake word**: name your cat whatever you like and teach it: *Teach your cat its name* (in the setup checklist, Settings → Voice, or `Shiki.exe teach`) asks you to say "Hey <name>" three times (it saves by itself after the third) and remembers how Whisper writes it in your voice ("hey lottie", "hey latte"); nothing is trained in the machine-learning sense. With *Listen for "Hey <name>"* on, the microphone stays open (Windows shows its mic icon) and a small voice detector cuts it into bursts of speech; only bursts under six seconds are written down by Whisper on this PC (two threads, in the background) and checked against those spellings plus "hi", "hello" and "okay <name>", allowing one slip for most names and none for very short ones. What it hears is never saved or sent; long talk (calls, videos) is skipped unread. The model stays loaded (and warmed up) while listening is on; checks give Whisper the name as a hint so it spells it the same way each time, use half its usual window and stop after a few words, so "Hey Latte" is recognised in 0.1 to 0.3 s on the graphics card, about half a second after you finish saying it. "Hey Latte" opens the bubble listening; "Hey Latte, merge my PDFs" goes straight to the request. It pauses while the cat is already listening or thinking, while you record the screen, and while you teach it. Toggle it in Settings → Voice or the cat's menu.
+- **Log**: everything the cat was asked, searched, proposed and ran is written in plain words to `%LOCALAPPDATA%\Shiki\cat-log.txt` (*Open the cat's log* in Settings).
 
 ## The cat's moods
 
@@ -81,14 +83,14 @@ The cat hides below the taskbar edge with its ears and paws showing, and comes u
 - **Petting.** Rub the mouse back and forth over its head: happy eyes and hearts. Six seconds straight is too much: a frown and a tail flick, and no petting for a moment.
 - **Counter.** Its menu shows the tally under its name ("142 files converted, 1.3 GB saved"; saved counts only results that came out smaller). At 10, 25, 50, 100, 250, 500, 1,000 files and so on it throws a little party.
 
-Dev aid: `ConvertedBro.exe cat <sleep|startle|purr|grumpy|strain|party>` acts out a mood; `ConvertedBro.exe catmenu` opens its menu at the mouse.
+Dev aid: `Shiki.exe cat <sleep|startle|purr|grumpy|strain|party>` acts out a mood; `Shiki.exe catmenu` opens its menu at the mouse.
 
 ## Ways to use it
 
 - **Select and press Ctrl+Alt+X.** Select files in File Explorer (any tab) or on the desktop, press Ctrl+Alt+X, and the wheel opens at the mouse. Press a wedge's number or click it; Tab switches pages. Change the shortcut in Settings.
 - **Shift + drag.** Start dragging a file anywhere and hold Shift: the wheel opens right under the cursor. Drop the file on a wedge. To reach the tools, rest on the centre for half a second while dragging.
 - **Drop on the cat.** Drag files onto the cat (even while it's hiding) and the wheel opens next to it. Click a wedge or press its number; click the centre, scroll, or press Tab to switch pages.
-- **Right-click in Explorer.** Right-click a file → *Show more options* (or Shift + right-click) → **Convert with Bro**. Select many files and they're handled as one batch (a multi-select "Merge" makes one PDF).
+- **Right-click in Explorer.** Right-click a file → *Show more options* (or Shift + right-click) → **Convert with Shiki**. Select many files and they're handled as one batch (a multi-select "Merge" makes one PDF).
 - **Double-click the cat**, or *Convert files…* in its menu, to pick files from a dialog.
 - **Right-click the cat** or the tray icon for the menu: paste, snip, pick a colour, make a QR code, pick a cat, pick a look, Explorer menu, Shift + drag, start with Windows, quit.
 
@@ -98,7 +100,7 @@ Dev aid: `ConvertedBro.exe cat <sleep|startle|purr|grumpy|strain|party>` acts ou
 - When there's nothing to do it ducks behind the edge, leaving only its ears and paws peeking over. It pops up when you hover it, Shift + drag a file, drop something on it, or a conversion is running.
 - While converting it taps its paws; when a file is done it does a happy hop, then ducks again.
 - Three cats to choose from in the menu: **Mochi** (calico), **Latte** (Siamese) and **Sky** (white and pale blue).
-- The art is drawn as text grids in `UI/CatSprites.cs` (one character per pixel, poses are small patches on top). `ConvertedBro.exe --export-sprites <folder>` writes every frame as PNG.
+- The art is drawn as text grids in `UI/CatSprites.cs` (one character per pixel, poses are small patches on top). `Shiki.exe --export-sprites <folder>` writes every frame as PNG.
 
 ## Looks
 
@@ -127,11 +129,11 @@ The hovered wedge is lit in the colour of the file type: tangerine for images, i
 Needs the .NET 8 SDK. On this machine it's installed at `%USERPROFILE%\.dotnet` (not on PATH).
 
 ```bash
-~/.dotnet/dotnet.exe build src/ConvertedBro/ConvertedBro.csproj
+~/.dotnet/dotnet.exe build src/Shiki/Shiki.csproj
 ```
 
 ```bash
-~/.dotnet/dotnet.exe publish src/ConvertedBro/ConvertedBro.csproj -c Release -o publish/ConvertedBro
+~/.dotnet/dotnet.exe publish src/Shiki/Shiki.csproj -c Release -o publish/Shiki
 ```
 
 FFmpeg is not in the repo. Put `ffmpeg.exe` and its DLLs in `tools/ffmpeg/` (the BtbN `win64-gpl-shared` build) and the build copies them next to the exe. The app also finds `ffmpeg.exe` on PATH.
@@ -142,13 +144,13 @@ FFmpeg is not in the repo. Put `ffmpeg.exe` and its DLLs in `tools/ffmpeg/` (the
 powershell -ExecutionPolicy Bypass -File build/make-installer.ps1
 ```
 
-This publishes the app and packs it with [Velopack](https://velopack.io) (MIT; `dotnet tool install -g vpk`) into `Releases/ConvertedBroApp-win-Setup.exe` (about 120 MB, most of it FFmpeg and the AI runtimes). The version comes from `<Version>` in the project file, or `-Version 1.0.1`.
+This publishes the app and packs it with [Velopack](https://velopack.io) (MIT; `dotnet tool install -g vpk`) into `Releases/ShikiApp-win-Setup.exe` (about 120 MB, most of it FFmpeg and the AI runtimes). The version comes from `<Version>` in the project file, or `-Version 1.0.1`.
 
 What Setup.exe does:
 
-- Installs for the current user, no admin prompt, to `%LOCALAPPDATA%\ConvertedBroApp` (the app's own data stays in `%LOCALAPPDATA%\ConvertedBro`), shows a splash with the cat, and installs the .NET 8 Desktop Runtime if it's missing.
-- Adds **Converted Bro** to the Start menu, turns on *Start with Windows* (`--background`: just the cat at sign-in) and adds the Explorer right-click menu, then opens the dashboard.
-- Registers an uninstaller in Settings → Apps. Uninstalling removes the app, the shortcut, the startup entry and the Explorer menu; settings, history, signatures and the background model stay, in case it comes back (delete `%LOCALAPPDATA%\ConvertedBro` to remove them too).
+- Installs for the current user, no admin prompt, to `%LOCALAPPDATA%\ShikiApp` (the app's own data stays in `%LOCALAPPDATA%\Shiki`), shows a splash with the cat, and installs the .NET 8 Desktop Runtime if it's missing.
+- Adds **Shiki** to the Start menu, turns on *Start with Windows* (`--background`: just the cat at sign-in) and adds the Explorer right-click menu, then opens the dashboard.
+- Registers an uninstaller in Settings → Apps. Uninstalling removes the app, the shortcut, the startup entry and the Explorer menu; settings, history, signatures and the background model stay, in case it comes back (delete `%LOCALAPPDATA%\Shiki` to remove them too).
 - The build also writes the files Velopack needs for one-click updates later (`releases.win.json`, the `.nupkg`).
 
 Setup.exe isn't code-signed, so a copy downloaded from the internet gets Windows SmartScreen's "Windows protected your PC" (More info → Run anyway). Signing needs a code-signing certificate (`vpk pack --signParams`). The bundled FFmpeg is the GPL build: fine for personal use; sharing the installer publicly means following the GPL (or switching to an LGPL build).
@@ -156,28 +158,28 @@ Setup.exe isn't code-signed, so a copy downloaded from the internet gets Windows
 Command line (what the Explorer menu calls):
 
 ```
-ConvertedBro.exe                          start the bro + tray icon
-ConvertedBro.exe run <action-id> <files>  run one action, e.g. run video-mp4 "a.mov"
-ConvertedBro.exe menu <files>             show the format ring at the cursor
-ConvertedBro.exe paste                    give the clipboard to the cat
-ConvertedBro.exe pick                     pick a colour from the screen
-ConvertedBro.exe qr [text]                open the QR maker
-ConvertedBro.exe settings                 open Settings
-ConvertedBro.exe selected                 the wheel for what's selected in the Explorer window in front
-ConvertedBro.exe --register               add the Explorer right-click menu (current user, no admin)
-ConvertedBro.exe --unregister             remove it
+Shiki.exe                          start the cat + tray icon
+Shiki.exe run <action-id> <files>  run one action, e.g. run video-mp4 "a.mov"
+Shiki.exe menu <files>             show the format ring at the cursor
+Shiki.exe paste                    give the clipboard to the cat
+Shiki.exe pick                     pick a colour from the screen
+Shiki.exe qr [text]                open the QR maker
+Shiki.exe settings                 open Settings
+Shiki.exe selected                 the wheel for what's selected in the Explorer window in front
+Shiki.exe --register               add the Explorer right-click menu (current user, no admin)
+Shiki.exe --unregister             remove it
 ```
 
-Dev aids (run and exit, results in the log): `--export-sprites <folder>`, `--scan-test <photo>`, `--pdf-test <pdf>`, `--sign-test <pdf> <signature photo>`, `--form-test <exam|passport|visa|signature> <photo> [white]`, `--cutout-test <folder of jpgs>`, `--qr-test <text> <out.png>`, `--desktop-selection-test`, `--record-test <seconds> <out.mp4>`; `ConvertedBro.exe record-demo <seconds>` runs the recorder on a fixed area (set `CB_SHOW_RECORDER=1` to let screenshots see its frame and bar).
+Dev aids (run and exit, results in the log): `--export-sprites <folder>`, `--scan-test <photo>`, `--pdf-test <pdf>`, `--sign-test <pdf> <signature photo>`, `--form-test <exam|passport|visa|signature> <photo> [white]`, `--cutout-test <folder of jpgs>`, `--qr-test <text> <out.png>`, `--desktop-selection-test`, `--record-test <seconds> <out.mp4>`; `Shiki.exe record-demo <seconds>` runs the recorder on a fixed area (set `CB_SHOW_RECORDER=1` to let screenshots see its frame and bar).
 
-Only one ConvertedBro runs per user. Extra launches (Explorer starts one per selected file) pass their files to it over a named pipe, and they're batched for 0.7 s. When started from Explorer without the bro running, it works quietly and exits when done.
+Only one Shiki runs per user. Extra launches (Explorer starts one per selected file) pass their files to it over a named pipe, and they're batched for 0.7 s. When started from Explorer without the cat running, it works quietly and exits when done.
 
-Logs and settings: `%LOCALAPPDATA%\ConvertedBro\`.
+Logs and settings: `%LOCALAPPDATA%\Shiki\`.
 
 ## Project layout
 
 ```
-src/ConvertedBro/
+src/Shiki/
   Core/   FileKind, ActionCatalog (every action lives here), ImageTools (Magick.NET),
           MediaTools (FFmpeg), PdfTools (PDFium + PDFsharp), SizeTools, TextTools (Windows OCR),
           ScanTools, Cutout (background removal, ONNX Runtime), FormPhotos, ArchiveTools, QrTools, JobRunner, OutputPaths

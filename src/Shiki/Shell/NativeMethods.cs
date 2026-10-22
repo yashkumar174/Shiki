@@ -1,7 +1,7 @@
 using System;
 using System.Runtime.InteropServices;
 
-namespace ConvertedBro.Shell;
+namespace Shiki.Shell;
 
 internal static class NativeMethods
 {

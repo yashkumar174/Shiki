@@ -5,7 +5,7 @@ using System.Runtime.InteropServices;
 using System.Windows.Input;
 using System.Windows.Interop;
 
-namespace ConvertedBro.Shell;
+namespace Shiki.Shell;
 
 /// <summary>A shortcut like Ctrl+Shift+Q, as stored in settings and shown in the UI.</summary>
 public readonly record struct Hotkey(ModifierKeys Modifiers, Key Key)
@@ -63,7 +63,7 @@ public sealed class Hotkeys : IDisposable
     public Hotkeys()
     {
         // A message-only window just to receive WM_HOTKEY.
-        _window = new HwndSource(new HwndSourceParameters("ConvertedBro hotkeys") { ParentWindow = new IntPtr(-3), WindowStyle = 0 });
+        _window = new HwndSource(new HwndSourceParameters("Shiki hotkeys") { ParentWindow = new IntPtr(-3), WindowStyle = 0 });
         _window.AddHook(WndProc);
     }
 

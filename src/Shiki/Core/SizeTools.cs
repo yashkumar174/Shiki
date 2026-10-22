@@ -5,7 +5,7 @@ using ImageMagick;
 using PdfSharp.Drawing;
 using PdfSharp.Pdf;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>"Make this under 200 KB": shrinks images and PDFs until they fit a size limit.</summary>
 public static class SizeTools

@@ -8,10 +8,10 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using ConvertedBro.Core;
-using ConvertedBro.Shell;
+using Shiki.Core;
+using Shiki.Shell;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>
 /// The pixel cat in the bottom-left corner. It sits on the taskbar edge while there's something
@@ -70,7 +70,7 @@ public sealed class CatWindow : Window
         _skin = CatSprites.Skin(settings.Cat);
         _cell = PixelSize / NativeMethods.SystemScale;
 
-        Title = "Converted Bro";
+        Title = "Shiki";
         WindowStyle = WindowStyle.None;
         AllowsTransparency = true;
         Background = Brushes.Transparent;

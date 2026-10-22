@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Forms;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>The notification-area icon. Its menu is <see cref="BroMenu"/>, opened by the app.</summary>
 public sealed class TrayIcon : IDisposable
@@ -14,7 +14,7 @@ public sealed class TrayIcon : IDisposable
 
     public TrayIcon(CatSkin skin)
     {
-        _icon = new NotifyIcon { Text = "Converted Bro", Visible = true };
+        _icon = new NotifyIcon { Text = "Shiki", Visible = true };
         SetCat(skin);
         _icon.MouseUp += (_, e) =>
         {

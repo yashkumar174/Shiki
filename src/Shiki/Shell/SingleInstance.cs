@@ -4,17 +4,17 @@ using System.IO.Pipes;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using ConvertedBro.Core;
+using Shiki.Core;
 
-namespace ConvertedBro.Shell;
+namespace Shiki.Shell;
 
 /// <summary>
-/// Keeps one ConvertedBro process per user. Explorer starts a new process for every selected
+/// Keeps one Shiki process per user. Explorer starts a new process for every selected
 /// file; those hand their arguments to the first one over a named pipe and exit.
 /// </summary>
 public sealed class SingleInstance : IDisposable
 {
-    static readonly string Id = $"ConvertedBro-{Environment.UserName}";
+    static readonly string Id = $"Shiki-{Environment.UserName}";
     readonly Mutex _mutex;
     readonly CancellationTokenSource _stop = new();
 

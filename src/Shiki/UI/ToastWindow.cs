@@ -14,11 +14,11 @@ using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
-using ConvertedBro.Core;
-using ConvertedBro.Shell;
+using Shiki.Core;
+using Shiki.Shell;
 using IOPath = System.IO.Path;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 /// <summary>A card in the bottom-right corner showing one job's progress and result.</summary>
 public sealed class ToastWindow : Window
@@ -517,7 +517,7 @@ public static class ToastHost
 {
     static readonly List<ToastWindow> Open = [];
 
-    /// <summary>Screen area (DIPs) the toasts should stay clear of, i.e. where the bro sits.</summary>
+    /// <summary>Screen area (DIPs) the toasts should stay clear of, i.e. where the cat sits.</summary>
     public static Func<Rect?>? Avoid { get; set; }
 
     public static void Show(ToastWindow toast)
@@ -537,8 +537,8 @@ public static class ToastHost
         double right = area.Right + ToastWindow.Pad - 10;
         double bottom = area.Bottom + ToastWindow.Pad - 10;
 
-        if (Avoid?.Invoke() is { } bro && bro.Right > right - ToastWindow.CardWidth - 40 && bro.Bottom > area.Bottom - 320)
-            right = Math.Max(area.Left + ToastWindow.CardWidth, bro.Left + 22);
+        if (Avoid?.Invoke() is { } cat && cat.Right > right - ToastWindow.CardWidth - 40 && cat.Bottom > area.Bottom - 320)
+            right = Math.Max(area.Left + ToastWindow.CardWidth, cat.Left + 22);
 
         for (int i = Open.Count - 1; i >= 0; i--)
         {

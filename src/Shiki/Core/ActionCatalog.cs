@@ -5,14 +5,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 public delegate Task<IReadOnlyList<string>> ActionRunner(IReadOnlyList<string> inputs, IProgress<double> progress, CancellationToken ct);
 
 /// <summary>Which page of the wheel an action sits on.</summary>
 public enum ActionGroup { Format, Tool, Size, Form, Files }
 
-/// <summary>One thing the bro can do to files, e.g. "to MP4".</summary>
+/// <summary>One thing the cat can do to files, e.g. "to MP4".</summary>
 public sealed class BroAction
 {
     public required string Id { get; init; }

@@ -5,7 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 public enum JobState { Queued, Running, Done, Failed, Canceled }
 

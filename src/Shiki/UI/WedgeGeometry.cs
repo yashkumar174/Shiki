@@ -2,7 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Media;
 
-namespace ConvertedBro.UI;
+namespace Shiki.UI;
 
 public static class WedgeGeometry
 {

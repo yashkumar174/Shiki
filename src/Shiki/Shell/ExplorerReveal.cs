@@ -4,9 +4,9 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using ConvertedBro.Core;
+using Shiki.Core;
 
-namespace ConvertedBro.Shell;
+namespace Shiki.Shell;
 
 /// <summary>Opens File Explorer with files highlighted ("show me"), one window per folder.</summary>
 public static class ExplorerReveal

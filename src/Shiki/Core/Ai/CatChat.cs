@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using Anthropic;
 using Anthropic.Models.Messages;
 
-namespace ConvertedBro.Core.Ai;
+namespace Shiki.Core.Ai;
 
 // ---- What the chat shows ----
 
