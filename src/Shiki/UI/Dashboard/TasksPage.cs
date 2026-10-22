@@ -124,7 +124,7 @@ public sealed class TasksPage(DashKit k, DashboardHost host, Action rebuild)
         grid.ColumnDefinitions.Add(new ColumnDefinition());
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var tick = k.IconButton(todo.Done ? "" : "", () =>
+        var tick = k.IconButton(todo.Done ? "\uE73E" : "\uEA3A", () =>
         {
             todo.Done = !todo.Done;
             Todos.Update(todo);
@@ -153,8 +153,8 @@ public sealed class TasksPage(DashKit k, DashboardHost host, Action rebuild)
 
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Hidden };
         if (todo.MeetingId is { } meetingId && host.OpenMeeting != null)
-            actions.Children.Add(k.IconButton("", () => host.OpenMeeting(meetingId), "Open the meeting", 14, P.Muted));
-        actions.Children.Add(k.IconButton("", () => { Todos.Remove(todo); rebuild(); }, "Remove", 14, P.Muted));
+            actions.Children.Add(k.IconButton("\uE8F2", () => host.OpenMeeting(meetingId), "Open the meeting", 14, P.Muted));
+        actions.Children.Add(k.IconButton("\uE74D", () => { Todos.Remove(todo); rebuild(); }, "Remove", 14, P.Muted));
         Grid.SetColumn(actions, 2);
         grid.Children.Add(actions);
         grid.MouseEnter += (_, _) => actions.Visibility = Visibility.Visible;

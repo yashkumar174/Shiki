@@ -33,7 +33,7 @@ public sealed class MeetingsPage(DashKit k, DashboardHost host, string? openId, 
         bool running = host.NotesRunning?.Invoke() ?? false;
         if (host.ToggleNotes != null)
         {
-            var notes = k.Button(running ? "Stop notes" : "Take notes", () => { host.ToggleNotes(); rebuild(); }, running ? DashKit.Pill.Quiet : DashKit.Pill.Accent, running ? "" : "", 13.5);
+            var notes = k.Button(running ? "Stop notes" : "Take notes", () => { host.ToggleNotes(); rebuild(); }, running ? DashKit.Pill.Quiet : DashKit.Pill.Accent, running ? "\uE71A" : "\uE720", 13.5);
             notes.VerticalAlignment = VerticalAlignment.Top;
             notes.Margin = new Thickness(0, 6, 0, 0);
             DockPanel.SetDock(notes, Dock.Right);
@@ -82,7 +82,7 @@ public sealed class MeetingsPage(DashKit k, DashboardHost host, string? openId, 
             changed(box.Text);
         };
         var row = new DockPanel();
-        var icon = k.Icon("", 15, P.Faint);
+        var icon = k.Icon("\uE721", 15, P.Faint);
         icon.Margin = new Thickness(0, 0, 12, 0);
         DockPanel.SetDock(icon, Dock.Left);
         row.Children.Add(icon);
@@ -141,7 +141,7 @@ public sealed class MeetingsPage(DashKit k, DashboardHost host, string? openId, 
     {
         var page = new StackPanel { Margin = new Thickness(40, 30, 52, 48), MaxWidth = 960, HorizontalAlignment = HorizontalAlignment.Stretch };
         var top = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
-        var back = k.IconButton("", () => open(null), "All meetings", 14, P.Muted);
+        var back = k.IconButton("\uE72B", () => open(null), "All meetings", 14, P.Muted);
         back.VerticalAlignment = VerticalAlignment.Top;
         back.Margin = new Thickness(0, 4, 8, 0);
         DockPanel.SetDock(back, Dock.Left);
@@ -156,16 +156,16 @@ public sealed class MeetingsPage(DashKit k, DashboardHost host, string? openId, 
 
         var buttons = new WrapPanel { Margin = new Thickness(44, 0, 0, 18) };
         void Add(Border b) { b.Margin = new Thickness(0, 0, 8, 8); buttons.Children.Add(b); }
-        if (host.AskAboutMeeting != null) Add(k.Button($"Ask {host.CatName()} about it", () => host.AskAboutMeeting(meeting), DashKit.Pill.Accent, "", 13));
-        Add(k.Button("Copy notes", () => Copy(Notes(meeting)), DashKit.Pill.Quiet, "", 13));
-        Add(k.Button("Copy transcript", () => Copy(meeting.Transcript()), DashKit.Pill.Quiet, "", 13));
+        if (host.AskAboutMeeting != null) Add(k.Button($"Ask {host.CatName()} about it", () => host.AskAboutMeeting(meeting), DashKit.Pill.Accent, "\uE8BD", 13));
+        Add(k.Button("Copy notes", () => Copy(Notes(meeting)), DashKit.Pill.Quiet, "\uE8C8", 13));
+        Add(k.Button("Copy transcript", () => Copy(meeting.Transcript()), DashKit.Pill.Quiet, "\uE8C8", 13));
         if (meeting.Audio is { } audio && File.Exists(audio))
-            Add(k.Button("Play the recording", () => host.OpenFile(audio), DashKit.Pill.Quiet, "", 13));
+            Add(k.Button("Play the recording", () => host.OpenFile(audio), DashKit.Pill.Quiet, "\uE768", 13));
         Add(k.Button("Forget this meeting", () =>
         {
             MeetingStore.Remove(meeting);
             open(null);
-        }, DashKit.Pill.Quiet, "", 13));
+        }, DashKit.Pill.Quiet, "\uE74D", 13));
         page.Children.Add(buttons);
 
         var body = new StackPanel { Margin = new Thickness(44, 0, 0, 0) };
@@ -237,7 +237,7 @@ public sealed class MeetingsPage(DashKit k, DashboardHost host, string? openId, 
             var text = k.Text(email, 14.5, P.Text, wrap: true);
             text.Margin = new Thickness(0, 8, 0, 14);
             stack.Children.Add(text);
-            stack.Children.Add(k.Button("Copy email", () => Copy($"{meeting.EmailSubject}\r\n\r\n{email}"), DashKit.Pill.Quiet, "", 13));
+            stack.Children.Add(k.Button("Copy email", () => Copy($"{meeting.EmailSubject}\r\n\r\n{email}"), DashKit.Pill.Quiet, "\uE8C8", 13));
             body.Children.Add(k.Card(stack, new Thickness(22, 18, 22, 18), 16));
         }
         Speakers(body, meeting);

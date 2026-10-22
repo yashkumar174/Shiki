@@ -71,12 +71,12 @@ public sealed class NotesPill : Window
         left.Children.Add(_time);
         left.Children.Add(meters);
 
-        var mark = _k.IconButton("", () => MarkRequested?.Invoke(), "Mark this moment (or say \"Hey Sky, mark that\")", 13, p.Text, 30);
-        var stop = _k.Button("Stop", () => StopRequested?.Invoke(), DashKit.Pill.Quiet, "", 12.5);
+        var mark = _k.IconButton("\uE734", () => MarkRequested?.Invoke(), "Mark this moment (or say \"Hey Sky, mark that\")", 13, p.Text, 30);
+        var stop = _k.Button("Stop", () => StopRequested?.Invoke(), DashKit.Pill.Quiet, "\uE71A", 12.5);
         stop.Padding = new Thickness(10, 4, 12, 5);
         stop.Margin = new Thickness(4, 0, 2, 0);
         stop.ToolTip = "Stop and write the notes";
-        _openGlyph = _k.Icon("", 11, p.Muted);
+        _openGlyph = _k.Icon("\uE70D", 11, p.Muted);
         var open = new Border { Width = 28, Height = 28, CornerRadius = new CornerRadius(8), Background = Brushes.Transparent, Cursor = Cursors.Hand, Child = _openGlyph, ToolTip = "Show the live notes" };
         open.MouseLeftButtonUp += (_, e) => { e.Handled = true; _open = !_open; Refresh(); };
         var right = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
@@ -155,7 +155,7 @@ public sealed class NotesPill : Window
             _status.Text = "Writing your notes…";
             _status.Visibility = Visibility.Visible;
         }
-        _openGlyph.Text = _open ? "" : "";
+        _openGlyph.Text = _open ? "\uE70E" : "\uE70D";
         _panel.Visibility = _open ? Visibility.Visible : Visibility.Collapsed;
         if (!_open) return;
 
