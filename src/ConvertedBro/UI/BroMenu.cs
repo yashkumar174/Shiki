@@ -77,7 +77,14 @@ public sealed class BroMenu : Window
                 _ => Separator(),
             });
 
-        _panel = new Border { Width = MenuWidth, CornerRadius = new CornerRadius(_radius), Child = stack };
+        // Taller than the screen (a small or zoomed display): scroll rather than run off the edge.
+        var screen = System.Windows.Forms.Screen.FromPoint(new System.Drawing.Point((int)anchorPx.X, (int)anchorPx.Y)).WorkingArea;
+        double room = screen.Height / NativeMethods.SystemScale - 24;
+        stack.Measure(new Size(MenuWidth, double.PositiveInfinity));
+        UIElement body = stack;
+        if (stack.DesiredSize.Height > room)
+            body = new ScrollViewer { Content = stack, Height = room, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        _panel = new Border { Width = MenuWidth, CornerRadius = new CornerRadius(_radius), Child = body };
         _host.Margin = new Thickness(Pad);
         _outer.Children.Add(_glassImage);
         _outer.Children.Add(_host);
@@ -112,8 +119,9 @@ public sealed class BroMenu : Window
         // Open toward the free side of the screen, like Windows does for tray menus.
         _opensUp = anchor.Y + Height - Pad > area.Bottom;
         double left = anchor.X - Pad, top = _opensUp ? anchor.Y - Height + Pad : anchor.Y - Pad;
-        Left = Snap(Math.Clamp(left, area.Left - Pad, area.Right - Width + Pad));
-        Top = Snap(Math.Clamp(top, area.Top - Pad, area.Bottom - Height + Pad));
+        // Max before min: if it's still bigger than the screen, it sits at the top-left rather than throwing.
+        Left = Snap(Math.Max(area.Left - Pad, Math.Min(left, area.Right - Width + Pad)));
+        Top = Snap(Math.Max(area.Top - Pad, Math.Min(top, area.Bottom - Height + Pad)));
 
         var rect = new Rect(0, 0, MenuWidth, Height - Pad * 2);
         if (_pixel)
