@@ -42,6 +42,10 @@ public sealed class Microphone : IDisposable
     /// <summary>Raised once speech is detected (the meter can switch from "waiting" to "hearing").</summary>
     public event Action? SpeechStarted;
 
+    Action<float[]>? _sink;
+
+    public int SampleRate => _rate;
+
     /// <param name="pauseEnds">Seconds of quiet after speech that end the listen.</param>
     public Microphone(double pauseEnds = 1.9)
     {
@@ -94,13 +98,30 @@ public sealed class Microphone : IDisposable
         lock (_gate)
         {
             if (_finished) return;
+            var chunk = _sink != null ? new float[count] : null;
             for (int i = 0; i < count; i++)
             {
                 float sample = MonoSample(format, e.Buffer, i);
                 _mono.Add(sample);
+                if (chunk != null) chunk[i] = sample;
                 _frameSum += sample * sample;
                 if (++_frameCount == _frame) EndFrame();
             }
+            // Under the lock, so nothing is sent twice or skipped when streaming starts late.
+            if (chunk != null) _sink!(chunk);
+        }
+    }
+
+    /// <summary>
+    /// Streams what's heard (mono, at <see cref="SampleRate"/>) to the sink: everything so far at
+    /// once, then each piece as it comes. Lets the cloud connect while you're already talking.
+    /// </summary>
+    public void StreamTo(Action<float[]> sink)
+    {
+        lock (_gate)
+        {
+            if (_mono.Count > 0) sink(_mono.ToArray());
+            _sink = sink;
         }
     }
 
@@ -118,9 +139,12 @@ public sealed class Microphone : IDisposable
 
         if (_elapsed <= 0.25)
         {
-            _floor = _floor < 0 ? rms : Math.Max(_floor, rms);
+            // The room's level is its quietest moment here, so talking straight away isn't taken for noise.
+            _floor = _floor < 0 ? rms : Math.Min(_floor, rms);
             return;
         }
+        // A noisy start can still set it too high; no room is louder than this.
+        _floor = Math.Min(_floor, 0.015);
         // Once you're talking, softer sounds (the end of a word, a quiet syllable) still count as talking.
         double threshold = _speaking ? Math.Max(_floor * 1.8, 0.008) : Math.Max(_floor * 2.8, 0.012);
         bool loud = rms > threshold;

@@ -21,7 +21,8 @@ public sealed record OutputSetting(Func<string?> GetFolder, Action<string?> SetF
 
 /// <summary>Ask the cat: the name it goes by, the on/off switch, what it has cost, and its log. The key itself is handled here.</summary>
 public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
-    Func<string> GetVoiceEngine, Action<string> SetVoiceEngine, Func<bool> VoiceAnswers, Action ToggleVoiceAnswers,
+    Func<string> GetVoiceEngine, Action<string> SetVoiceEngine, Func<string> GetWakeEngine, Action<string> SetWakeEngine, Func<string> DeepgramUsage,
+    Func<bool> VoiceAnswers, Action ToggleVoiceAnswers,
     Func<bool> WakeOn, Action ToggleWake, Action TeachName,
     Func<string> Spent, Action OpenLog);
 
@@ -110,8 +111,10 @@ public sealed class SettingsWindow : Window
         var key = new PasswordBox();
         var field = UiKit.Field(key);
         field.Width = 300;
-        var save = UiKit.Button("Save", () => { });
-        var remove = UiKit.Button("Remove", () => { });
+        // The buttons need Save and Show, which need the buttons: wire them up once both exist.
+        Action saveKey = () => { }, showKey = () => { };
+        var save = UiKit.Button("Save", () => saveKey());
+        var remove = UiKit.Button("Remove", () => { ClaudeKey.Remove(); showKey(); });
         void Show()
         {
             status.Text = ClaudeKey.Hint is { } end ? $"API key saved (ends in {end}), kept in Windows Credential Manager." : "No API key yet. Create one at console.anthropic.com, then paste it here.";
@@ -134,8 +137,8 @@ public sealed class SettingsWindow : Window
             key.Clear();
             Show();
         }
-        save.MouseLeftButtonUp += (_, _) => Save();
-        remove.MouseLeftButtonUp += (_, _) => { ClaudeKey.Remove(); Show(); };
+        saveKey = Save;
+        showKey = Show;
         key.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; Save(); } };
         stack.Children.Add(status);
         var row = UiKit.Row(field, save, remove);
@@ -151,73 +154,151 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(UiKit.Button("Open the cat's log", ai.OpenLog));
     }
 
-    /// <summary>Voice: which engine writes down what you say, and the Wispr Flow key for later.</summary>
+    /// <summary>
+    /// Voice: which engine writes down commands (Whisper here, Deepgram, Wispr Flow later) and
+    /// which hears the wake word (Whisper here, or Deepgram for the speech bursts), plus their keys.
+    /// </summary>
     void AddVoice(StackPanel stack, AiSetting ai)
     {
         stack.Children.Add(UiKit.Heading("Voice"));
-        stack.Children.Add(UiKit.Body($"Press the mic or the talk shortcut and speak (English). {ai.CatName} listens until you pause. The microphone is only on while it's listening."));
+        stack.Children.Add(UiKit.Body($"Press the mic or the talk shortcut and speak (English). The microphone is only on while {ai.CatName} is listening, unless \"Hey {ai.CatName}\" is on."));
 
-        var whisper = UiKit.Button("Whisper on this PC", () => { });
-        var wispr = UiKit.Button("Wispr Flow", () => { });
-        var engines = UiKit.Row(whisper, wispr);
-        engines.Margin = new Thickness(0, 10, 0, 4);
-        var note = UiKit.Body("");
-        var keyPart = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+        Action refresh = () => { };
+
+        // ---- Commands ----
+        var cmdWhisper = UiKit.Button("On this PC", () => { ai.SetVoiceEngine("whisper"); refresh(); });
+        var cmdDeepgram = UiKit.Button("Deepgram", () => { ai.SetVoiceEngine("deepgram"); refresh(); });
+        var cmdWispr = UiKit.Button("Wispr Flow", () => { ai.SetVoiceEngine("wispr"); refresh(); });
+        stack.Children.Add(Line("What you say", "Who writes down your requests.", new Border()));
+        var cmdRow = UiKit.Row(cmdWhisper, cmdDeepgram, cmdWispr);
+        cmdRow.Margin = new Thickness(0, 0, 0, 4);
+        stack.Children.Add(cmdRow);
+        var cmdNote = UiKit.Body("");
+        stack.Children.Add(cmdNote);
+
+        // ---- Wake word ----
+        var wakeWhisper = UiKit.Button("On this PC", () => { ai.SetWakeEngine("whisper"); refresh(); });
+        var wakeDeepgram = UiKit.Button("Deepgram", () => { ai.SetWakeEngine("deepgram"); refresh(); });
+        stack.Children.Add(Line($"\"Hey {ai.CatName}\"", "Who listens for the name.", new Border()));
+        var wakeRow = UiKit.Row(wakeWhisper, wakeDeepgram);
+        wakeRow.Margin = new Thickness(0, 0, 0, 4);
+        stack.Children.Add(wakeRow);
+        var wakeNote = UiKit.Body("");
+        stack.Children.Add(wakeNote);
+
+        var deepgramKey = KeyPart("Deepgram", Core.Voice.Deepgram.Key, Core.Voice.Deepgram.TestKey, () =>
+        {
+            // Saving a Deepgram key means wanting Deepgram: use it for both, unless already chosen.
+            if (ai.GetVoiceEngine() == "whisper") ai.SetVoiceEngine("deepgram");
+            if (ai.GetWakeEngine() == "whisper") ai.SetWakeEngine("deepgram");
+        }, "Create one at console.deepgram.com.");
+        var wisprKey = KeyPart("Wispr", Core.Voice.WisprFlow.Key, null, null, "");
+        stack.Children.Add(deepgramKey.Root);
+        stack.Children.Add(wisprKey.Root);
+        var usage = UiKit.Body("");
+        stack.Children.Add(usage);
+
         void Show()
         {
-            bool useWispr = ai.GetVoiceEngine() == "wispr";
-            UiKit.Select(whisper, !useWispr);
-            UiKit.Select(wispr, useWispr);
-            note.Text = useWispr
-                ? Core.Voice.WisprFlow.Available
-                    ? "What you say goes to Wispr Flow to be written down. The wake word still runs on this PC."
-                    : "Wispr Flow's API isn't open to Converted Bro yet (access has been asked for). Until it is, Whisper on this PC is used. You can save your Wispr key now."
-                : $"Free and private: Whisper turns your voice into text on this PC. It downloads once ({Core.Voice.WhisperLocal.DownloadSize}) the first time you talk.";
-            keyPart.Visibility = useWispr ? Visibility.Visible : Visibility.Collapsed;
+            var cmd = ai.GetVoiceEngine();
+            var wake = ai.GetWakeEngine();
+            bool hasDeepgram = Core.Voice.Deepgram.HasKey;
+            UiKit.Select(cmdWhisper, cmd == "whisper");
+            UiKit.Select(cmdDeepgram, cmd == "deepgram");
+            UiKit.Select(cmdWispr, cmd == "wispr");
+            UiKit.Select(wakeWhisper, wake == "whisper");
+            UiKit.Select(wakeDeepgram, wake == "deepgram");
+            cmdNote.Text = cmd switch
+            {
+                "deepgram" => hasDeepgram
+                    ? "Deepgram Nova-3 writes your words down live, as you speak, and judges when you've finished. Your voice goes to Deepgram; if it can't be reached, Whisper here takes over."
+                    : "Add a Deepgram key below. Until then Whisper on this PC is used.",
+                "wispr" => Core.Voice.WisprFlow.Available
+                    ? "What you say goes to Wispr Flow to be written down."
+                    : "Wispr Flow's API isn't open to Converted Bro yet (access has been asked for). Until it is, Whisper on this PC is used. You can save your Wispr key now.",
+                _ => $"Free and private: Whisper turns your voice into text on this PC (the graphics card when it can). It downloads once ({Core.Voice.WhisperLocal.DownloadSize}).",
+            };
+            wakeNote.Text = wake == "deepgram"
+                ? hasDeepgram
+                    ? $"This PC notices when someone talks; only those short bits of speech (under six seconds) go to Deepgram to check for the name. That includes anyone talking near the PC while listening is on. Silence never leaves the PC. Offline, Whisper here takes over."
+                    : "Add a Deepgram key below. Until then Whisper on this PC listens."
+                : "Free and private: short bits of speech are checked for the name on this PC and then forgotten.";
+            deepgramKey.Root.Visibility = cmd == "deepgram" || wake == "deepgram" ? Visibility.Visible : Visibility.Collapsed;
+            wisprKey.Root.Visibility = cmd == "wispr" ? Visibility.Visible : Visibility.Collapsed;
+            usage.Text = ai.DeepgramUsage();
+            usage.Visibility = usage.Text.Length > 0 && deepgramKey.Root.Visibility == Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
         }
-        whisper.MouseLeftButtonUp += (_, _) => { ai.SetVoiceEngine("whisper"); Show(); };
-        wispr.MouseLeftButtonUp += (_, _) => { ai.SetVoiceEngine("wispr"); Show(); };
-        stack.Children.Add(engines);
-        stack.Children.Add(note);
+        refresh = Show;
+        deepgramKey.Changed += Show;
+        Show();
 
+        stack.Children.Add(Line("Answer plans by voice", "After a spoken request, listen for \"yes\" or \"no\" when a plan card shows.",
+            Toggle(new SettingSwitch("", "", ai.VoiceAnswers, ai.ToggleVoiceAnswers))));
+        stack.Children.Add(Line($"Listen for \"Hey {ai.CatName}\"", "The mic stays on while this is on (Windows shows its mic icon). Pauses while you record the screen.",
+            Toggle(new SettingSwitch("", "", ai.WakeOn, ai.ToggleWake))));
+        var teach = UiKit.Button("Name your cat and teach it…", ai.TeachName);
+        teach.Margin = new Thickness(0, 4, 0, 0);
+        stack.Children.Add(teach);
+    }
+
+    sealed class KeyBox
+    {
+        public required StackPanel Root { get; init; }
+        public event Action? Changed;
+        public void Raise() => Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// A saved-or-not line, a box to paste a key in, Save and Remove. With a test, the key is
+    /// checked with the service before it's saved.
+    /// </summary>
+    KeyBox KeyPart(string service, Core.Ai.SecretStore store, Func<string, System.Threading.Tasks.Task<string?>>? test, Action? saved, string where)
+    {
+        var root = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var box = new KeyBox { Root = root };
         var status = UiKit.Body("");
         var key = new PasswordBox();
         var field = UiKit.Field(key);
         field.Width = 300;
         field.Margin = new Thickness(0, 0, 8, 0);
-        var save = UiKit.Button("Save", () => { });
-        var remove = UiKit.Button("Remove", () => { });
-        var store = Core.Voice.WisprFlow.Key;
+        Action saveKey = () => { }, showKey = () => { };
+        var save = UiKit.Button("Save", () => saveKey());
+        var remove = UiKit.Button("Remove", () => { store.Remove(); showKey(); box.Raise(); });
         void ShowKey()
         {
-            status.Text = store.Hint is { } end ? $"Wispr key saved (ends in {end}), kept in Windows Credential Manager." : "No Wispr key saved.";
+            status.Text = store.Hint is { } end ? $"{service} key saved (ends in {end}), kept in Windows Credential Manager." : $"No {service} key yet. {where}".Trim();
+            status.Foreground = Theme.Brush(_p.SubtleText);
             remove.Visibility = store.Exists ? Visibility.Visible : Visibility.Collapsed;
         }
-        void SaveKey()
+        async void SaveKey()
         {
-            if (key.Password.Trim().Length < 10) return;
-            store.Save(key.Password);
+            var value = key.Password.Trim();
+            if (value.Length < 10) return;
+            if (test != null)
+            {
+                status.Text = $"Checking the key with {service}…";
+                if (await test(value) is { } problem)
+                {
+                    status.Text = problem;
+                    status.Foreground = Theme.Brush(Color.FromRgb(0xE8, 0x5A, 0x3C));
+                    return;
+                }
+            }
+            store.Save(value);
             key.Clear();
+            saved?.Invoke();
             ShowKey();
+            box.Raise();
         }
-        save.MouseLeftButtonUp += (_, _) => SaveKey();
-        remove.MouseLeftButtonUp += (_, _) => { store.Remove(); ShowKey(); };
+        saveKey = SaveKey;
+        showKey = ShowKey;
         key.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; SaveKey(); } };
-        keyPart.Children.Add(status);
+        root.Children.Add(status);
         var row = UiKit.Row(field, save, remove);
         row.Margin = new Thickness(0, 6, 0, 0);
-        keyPart.Children.Add(row);
-        stack.Children.Add(keyPart);
+        root.Children.Add(row);
         ShowKey();
-        Show();
-
-        stack.Children.Add(Line("Answer plans by voice", "After a spoken request, listen for \"yes\" or \"no\" when a plan card shows.",
-            Toggle(new SettingSwitch("", "", ai.VoiceAnswers, ai.ToggleVoiceAnswers))));
-        stack.Children.Add(Line($"Listen for \"Hey {ai.CatName}\"", "The mic stays on; what it hears stays on this PC and is only checked for the name. Pauses while you record the screen.",
-            Toggle(new SettingSwitch("", "", ai.WakeOn, ai.ToggleWake))));
-        var teach = UiKit.Button("Name your cat and teach it…", ai.TeachName);
-        teach.Margin = new Thickness(0, 4, 0, 0);
-        stack.Children.Add(teach);
+        return box;
     }
 
     void SetMode(bool oneFolder)

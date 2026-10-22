@@ -383,6 +383,11 @@ public partial class App : Application
                 EnterBuddyMode();
                 _ = WakeFile(args[1]);
                 break;
+            case "stream-file" when args.Length == 2:
+                // Dev aid: stream a WAV to Deepgram in real time, as the microphone would; partials and the end go to the log.
+                EnterBuddyMode();
+                _ = StreamFile(args[1]);
+                break;
             case "say-file" when args.Length == 2:
                 // Dev aid: a recording (WAV) goes through speech-to-text and to the cat, as if spoken.
                 EnterBuddyMode();
@@ -672,6 +677,9 @@ public partial class App : Application
                 () => { _settings.AiEnabled = !_settings.AiEnabled; _settings.Save(); ApplyWake(); },
                 () => _settings.VoiceEngine,
                 engine => { _settings.VoiceEngine = engine; _settings.Save(); },
+                () => _settings.WakeEngine,
+                engine => { _settings.WakeEngine = engine; _settings.Save(); Speech.WakeOnDeepgram = engine == "deepgram"; },
+                () => _settings.DeepgramSeconds < 1 ? "" : $"Deepgram so far: {_settings.DeepgramSeconds / 60:0.0} minutes of speech (about ${_settings.DeepgramSeconds / 60 * 0.0077:0.00} at Nova-3's streaming price).",
                 () => _settings.VoiceAnswers,
                 () => { _settings.VoiceAnswers = !_settings.VoiceAnswers; _settings.Save(); },
                 () => _settings.WakeWord && _settings.WakeVariants.Count > 0,
@@ -746,6 +754,8 @@ public partial class App : Application
         _hotkeys = new Hotkeys();
         BindHotkeys(quiet: false);
         ApplyWake();
+        // Deepgram's running total, for Settings.
+        Deepgram.Sent += seconds => Dispatcher.BeginInvoke(() => { _settings.DeepgramSeconds += seconds; _settings.Save(); });
     }
 
     /// <summary>(Re)binds every shortcut from settings. Unless quiet, says which one another app owns.</summary>
@@ -850,6 +860,7 @@ public partial class App : Application
     /// <summary>Starts or stops the always-on listener to match settings (it needs Ask the cat, a key and a taught name).</summary>
     void ApplyWake()
     {
+        Speech.WakeOnDeepgram = _settings.WakeEngine == "deepgram";
         bool want = _settings.WakeWord && _settings.AiEnabled && _settings.WakeVariants.Count > 0 && ClaudeKey.Exists;
         if (want && _wake == null)
         {
@@ -862,7 +873,8 @@ public partial class App : Application
             _wake.Start();
             Speech.Whisper.KeepLoaded = true;
             // Load the model now, so the first "Hey Sky" is as quick as the rest.
-            _ = System.Threading.Tasks.Task.Run(() => Speech.Whisper.Transcribe(new float[16000], "", default, 1, shortClip: true, maxTokens: 1));
+            // With Deepgram, this also opens the connection, so the first check is as quick as the rest.
+            _ = System.Threading.Tasks.Task.Run(() => WakeListener.Recognize(new float[16000], CatName, default));
         }
         else if (!want && _wake != null)
         {
@@ -986,6 +998,37 @@ public partial class App : Application
         return all.ToArray();
     }
 
+    async System.Threading.Tasks.Task StreamFile(string wav)
+    {
+        try
+        {
+            var samples = ReadWav(wav);
+            var key = Deepgram.Key.Read() ?? throw new InvalidOperationException("no Deepgram key");
+            var watch = Stopwatch.StartNew();
+            await using var live = await DeepgramLive.Open(key, 16000, Speech.KeyTerms(CatName), default);
+            Log.Info($"stream-file: connected in {watch.ElapsedMilliseconds} ms");
+            bool ended = false;
+            live.Partial += text => Log.Info($"stream-file: {watch.ElapsedMilliseconds} ms partial \"{text}\"");
+            live.Ended += () => { ended = true; Log.Info($"stream-file: {watch.ElapsedMilliseconds} ms Deepgram says finished"); };
+            // 20 ms pieces at real speed, then two seconds of silence, as a person pausing.
+            var all = samples.Concat(new float[32000]).ToArray();
+            // Paced by the clock (Task.Delay alone runs slow on Windows' 15 ms timer), like a real microphone.
+            var pace = Stopwatch.StartNew();
+            for (int i = 0; i < all.Length && !ended; i += 320)
+            {
+                live.Send(all[i..Math.Min(all.Length, i + 320)]);
+                var due = (i + 320) / 16.0 - pace.Elapsed.TotalMilliseconds;
+                if (due > 1) await System.Threading.Tasks.Task.Delay((int)due);
+            }
+            Log.Info($"stream-file: audio sent by {watch.ElapsedMilliseconds} ms");
+            Log.Info($"stream-file: final \"{await live.Finish()}\" after {watch.ElapsedMilliseconds} ms ({samples.Length / 16000.0:0.0} s of speech)");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("stream-file failed", ex);
+        }
+    }
+
     async System.Threading.Tasks.Task WakeFile(string wav)
     {
         string text;
@@ -993,7 +1036,7 @@ public partial class App : Application
         try
         {
             var samples = ReadWav(wav);
-            text = await WakeListener.Recognize(samples, default);
+            text = await WakeListener.Recognize(samples, CatName, default);
             var (quickHit, quickRest) = WakeMatcher.Match(text, CatName, _settings.WakeVariants);
             if (quickHit && quickRest.Length > 0)
                 Log.Info($"wake-file: request after the name, in full: {await WakeListener.RequestAfterName(samples, CatName, _settings.WakeVariants, quickRest, default)} ({watch.ElapsedMilliseconds} ms in all)");

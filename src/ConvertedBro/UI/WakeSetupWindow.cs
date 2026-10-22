@@ -46,7 +46,9 @@ public sealed class WakeSetupWindow : Window
 
         var stack = new StackPanel { Margin = new Thickness(26, 22, 26, 24) };
         stack.Children.Add(UiKit.Title("Teach your cat its name"));
-        stack.Children.Add(UiKit.Body("Say \"Hey\" and its name, and it wakes up and listens, no keys needed. It learns how the name sounds in your voice. Everything here happens on this PC."));
+        bool cloud = Speech.WakeOnDeepgram && Deepgram.HasKey;
+        stack.Children.Add(UiKit.Body("Say \"Hey\" and its name, and it wakes up and listens, no keys needed. It learns how the name sounds in your voice."
+            + (cloud ? " The wake word is set to Deepgram, so these takes are written down by Deepgram too." : " Everything here happens on this PC.")));
 
         stack.Children.Add(UiKit.Heading("Its name"));
         _name.Text = catName;
@@ -85,7 +87,9 @@ public sealed class WakeSetupWindow : Window
         line.Children.Add(toggle);
         var words = new StackPanel();
         words.Children.Add(new TextBlock { Text = "Listen for \"Hey\" and its name", FontFamily = Theme.TextFont, FontSize = 14, Foreground = Theme.Brush(_p.Text) });
-        words.Children.Add(UiKit.Body("The microphone stays on (Windows shows its mic icon), but what it hears stays on this PC: short bits of speech are checked for the name and then forgotten. It pauses while you record the screen.", 11.5));
+        words.Children.Add(UiKit.Body(cloud
+            ? "The microphone stays on (Windows shows its mic icon). This PC notices when someone talks, and only those short bits of speech go to Deepgram to check for the name, including anyone else talking nearby. It pauses while you record the screen."
+            : "The microphone stays on (Windows shows its mic icon), but what it hears stays on this PC: short bits of speech are checked for the name and then forgotten. It pauses while you record the screen.", 11.5));
         line.Children.Add(words);
         stack.Children.Add(line);
 
@@ -236,7 +240,7 @@ public sealed class WakeSetupWindow : Window
         if (ct.IsCancellationRequested) return null;
         if (heard.Kind != HeardKind.Speech) return "";
         // Heard exactly the way the wake word hears, so the spellings learned are the ones it'll see.
-        return await WakeListener.Recognize(heard.Samples, ct);
+        return await WakeListener.Recognize(heard.Samples, CatName, ct);
     }
 
     void Stop()

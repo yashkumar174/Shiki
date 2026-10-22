@@ -28,6 +28,9 @@ public sealed class WhisperLocal : ISpeechToText
 
     public string Name => "Whisper (on this PC)";
 
+    /// <summary>Running on the graphics card (Vulkan or CUDA) rather than the processor; known once the model has loaded.</summary>
+    public static bool OnGpu { get; private set; }
+
     public static string ModelPath => Path.Combine(Log.DataDir, "models", "ggml-base.en.bin");
 
     public static bool Downloaded => File.Exists(ModelPath);
@@ -72,7 +75,14 @@ public sealed class WhisperLocal : ISpeechToText
         await _gate.WaitAsync(ct);
         try
         {
-            _factory ??= WhisperFactory.FromPath(ModelPath);
+            if (_factory == null)
+            {
+                // The graphics card (Vulkan works on NVIDIA, AMD and Intel) when there is one; the processor otherwise.
+                _factory = WhisperFactory.FromPath(ModelPath, new WhisperFactoryOptions { UseGpu = true });
+                var library = Whisper.net.LibraryLoader.RuntimeOptions.LoadedLibrary;
+                OnGpu = library is Whisper.net.LibraryLoader.RuntimeLibrary.Vulkan or Whisper.net.LibraryLoader.RuntimeLibrary.Cuda;
+                Log.Info($"Whisper loaded on {library}");
+            }
             var builder = _factory.CreateBuilder()
                 .WithLanguage("en")
                 .WithNoContext()
@@ -80,7 +90,8 @@ public sealed class WhisperLocal : ISpeechToText
             // No hint for the wake word: a hint with the name in it makes Whisper hear the name everywhere.
             if (hint.Length > 0) builder = builder.WithPrompt(hint);
             // 50 audio frames a second (1500 for 30 s), with room to spare.
-            if (shortClip) builder = builder.WithAudioContextSize(Math.Clamp((int)(samples.Length / 16000.0 * 50) + 96, 160, 1500));
+            // Half the window (15 s): about twice as fast, and still reads real voices well. (Much smaller garbles them.)
+            if (shortClip && samples.Length < 16000 * 12) builder = builder.WithAudioContextSize(768);
             // A small window can make Whisper repeat itself ("the sky the sky…"); a cap keeps that short.
             if (maxTokens > 0) builder = builder.WithMaxTokensPerSegment(maxTokens).WithSingleSegment();
             using var processor = builder.Build();

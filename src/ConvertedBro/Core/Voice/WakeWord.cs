@@ -215,9 +215,10 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
         _elapsed += FrameSeconds;
         if (_elapsed <= 0.5)
         {
-            _floor = _floor < 0 ? rms : Math.Max(_floor, rms);
+            _floor = _floor < 0 ? rms : Math.Min(_floor, rms);
             return;
         }
+        _floor = Math.Min(_floor, 0.015);
         double threshold = Math.Max(_floor * 3, 0.01);
         bool loud = rms > threshold;
 
@@ -258,7 +259,7 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
         try
         {
             var watch = System.Diagnostics.Stopwatch.StartNew();
-            var text = await Recognize(samples, CancellationToken.None);
+            var text = await Recognize(samples, name(), CancellationToken.None);
             if (text.Length == 0) return;
             var (hit, rest) = WakeMatcher.Match(text, name(), learned());
             if (!hit) return;
@@ -286,8 +287,27 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
     /// How the wake word hears: short-clip Whisper with no hint. Teaching uses the same, so the
     /// spellings it learns are the ones it will see.
     /// </summary>
-    public static Task<string> Recognize(float[] samples, CancellationToken ct) =>
-        Speech.Whisper.Transcribe(samples, "", ct, threads: Math.Clamp(Environment.ProcessorCount / 2, 2, 6), shortClip: true, maxTokens: 10);
+    /// <remarks>
+    /// The name goes in as a hint so Whisper spells it the same way each time ("Hey Sky", not
+    /// "he s kai" one time and "face guy" the next). Half the usual window keeps it quick
+    /// (0.1 to 0.3 s on the graphics card) without garbling real voices.
+    /// </remarks>
+    public static async Task<string> Recognize(float[] samples, string name, CancellationToken ct)
+    {
+        if (Speech.WakeOnDeepgram && Deepgram.HasKey)
+        {
+            try
+            {
+                return await Deepgram.Transcribe(samples, [$"Hey {name}", name], ct);
+            }
+            catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or DeepgramException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                Log.Error("Deepgram wake check failed; using Whisper", ex);
+            }
+        }
+        return await Speech.Whisper.Transcribe(samples, $"Hey {name}.", ct, threads: Math.Clamp(Environment.ProcessorCount - 1, 2, 8),
+            shortClip: true, maxTokens: 10);
+    }
 
     /// <summary>
     /// "Hey Sky, merge my PDFs": the quick check only keeps the first few words, so what came after
@@ -295,6 +315,8 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
     /// </summary>
     public static async Task<string> RequestAfterName(float[] samples, string name, IEnumerable<string> learned, string quickRest, CancellationToken ct)
     {
+        // Deepgram already wrote the whole burst down; only the capped Whisper check needs a second pass.
+        if (Speech.WakeOnDeepgram && Deepgram.HasKey) return quickRest;
         var full = await Speech.Whisper.Transcribe(samples, $"Hey {name}. Convert, merge, compress, PDF, JPG, Downloads, Desktop.", ct);
         var (hit, rest) = WakeMatcher.Match(full, name, learned);
         return hit && rest.Length >= quickRest.Length ? rest : quickRest;

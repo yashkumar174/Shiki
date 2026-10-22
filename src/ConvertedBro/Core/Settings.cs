@@ -51,8 +51,12 @@ public sealed class Settings
     public int AiRequests { get; set; }
     /// <summary>Global shortcut that opens the ask bubble already listening.</summary>
     public string TalkHotkey { get; set; } = "Ctrl+Alt+V";
-    /// <summary>Speech to text for commands: "whisper" (on this PC) or "wispr" (Wispr Flow, once its API is open).</summary>
+    /// <summary>Speech to text for commands: "whisper" (on this PC), "deepgram", or "wispr" (Wispr Flow, once its API is open).</summary>
     public string VoiceEngine { get; set; } = "whisper";
+    /// <summary>Who checks speech for the wake word: "whisper" (on this PC) or "deepgram" (speech bursts only).</summary>
+    public string WakeEngine { get; set; } = "whisper";
+    /// <summary>Seconds of audio sent to Deepgram so far.</summary>
+    public double DeepgramSeconds { get; set; }
     /// <summary>After a spoken request, listen for "yes" or "no" when the cat shows a plan.</summary>
     public bool VoiceAnswers { get; set; } = true;
     /// <summary>Listen all the time (on this PC) for "Hey &lt;cat name&gt;".</summary>

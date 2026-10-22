@@ -1,12 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace ConvertedBro.Core.Voice;
 
 /// <summary>
-/// Turns a short recording into text. Swappable: Whisper runs on this PC (the default); Wispr
-/// Flow is the cloud option once its API is open to us. The wake word always stays on Whisper.
+/// Turns a short recording into text. Swappable: Whisper runs on this PC (the default), Deepgram
+/// in the cloud with the person's key, and Wispr Flow once its API is open to us. When Deepgram
+/// can't be reached, Whisper takes over.
 /// </summary>
 public interface ISpeechToText
 {
@@ -25,6 +27,17 @@ public static class Speech
 {
     public static readonly WhisperLocal Whisper = new();
 
-    public static ISpeechToText ForCommands(Settings settings) =>
-        settings.VoiceEngine == "wispr" && WisprFlow.Available && WisprFlow.HasKey ? new WisprFlow() : Whisper;
+    /// <summary>The wake word goes to Deepgram (speech bursts only) rather than Whisper; set from settings.</summary>
+    public static bool WakeOnDeepgram { get; set; }
+
+    public static bool CommandsOnDeepgram(Settings settings) => settings.VoiceEngine == "deepgram" && Deepgram.HasKey;
+
+    /// <summary>Words Deepgram should expect: the cat's name and the app's vocabulary.</summary>
+    public static IEnumerable<string> KeyTerms(string catName) =>
+        [catName, $"Hey {catName}", "PDF", "JPG", "PNG", "WEBP", "MP4", "MP3", "GIF", "Downloads", "zip"];
+
+    public static ISpeechToText ForCommands(Settings settings, Func<string> catName) =>
+        settings.VoiceEngine == "wispr" && WisprFlow.Available && WisprFlow.HasKey ? new WisprFlow()
+        : CommandsOnDeepgram(settings) ? new Deepgram(() => KeyTerms(catName()))
+        : Whisper;
 }
