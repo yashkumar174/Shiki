@@ -33,6 +33,8 @@ public sealed class DashboardHost
     public required Func<bool> StartsWithWindows { get; init; }
     public required Action StartWithWindows { get; init; }
     public required Action<string> SetCat { get; init; }
+    /// <summary>Plays a video or audio file in the dashboard (set by the dashboard itself).</summary>
+    public Action<string>? Play { get; set; }
 }
 
 public enum DashPage { Home, Tools, History }
@@ -65,9 +67,15 @@ public sealed class DashboardWindow : Window
     }
     Hosted? _editor, _settingsPage, _showing;
 
+    // The media player: one at a time, parked (paused) when you look at another page.
+    PlayerView? _player;
+    bool _onPlayer, _fullscreen;
+    WindowState _stateBeforeFullscreen;
+
     public DashboardWindow(DashboardHost host)
     {
         _host = host;
+        _host.Play = Play;
         Title = "Converted Bro";
         Width = 1240;
         Height = 820;
@@ -106,9 +114,15 @@ public sealed class DashboardWindow : Window
             Names.Found -= OnHistoryChanged;
             _settingsPage?.Window.Close();
             _editor?.Window.Close();
+            _player?.Close();
         };
         PreviewKeyDown += (_, e) =>
         {
+            if (_onPlayer && _player != null && Keyboard.FocusedElement is not TextBox)
+            {
+                if (_player.HandleKey(e.Key)) e.Handled = true;
+                return;
+            }
             if (_showing != null) { Forward(e, Keyboard.PreviewKeyDownEvent); return; }
             if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { _historySearch ??= ""; Show(DashPage.History); e.Handled = true; }
         };
@@ -135,6 +149,7 @@ public sealed class DashboardWindow : Window
         // Settings has nothing to lose: leaving it closes it. Editors are parked instead.
         _settingsPage?.Window.Close();
         _showing = null;
+        ParkPlayer();
         Rebuild();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         if (!IsVisible) base.Show();
@@ -146,6 +161,13 @@ public sealed class DashboardWindow : Window
         _root.Children.Clear();
         _root.ColumnDefinitions.Clear();
         _root.RowDefinitions.Clear();
+        if (_fullscreen && _onPlayer && _player != null)
+        {
+            // Full screen: just the player, edge to edge.
+            if (_player.Root.Parent is Decorator holder) holder.Child = null;
+            _root.Children.Add(new Border { Background = DashKit.B(_p.Panel), Child = _player.Root });
+            return;
+        }
         _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(_collapsed ? SidebarCollapsed : SidebarWidth) });
         _root.ColumnDefinitions.Add(new ColumnDefinition());
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(TitleHeight) });
@@ -179,7 +201,12 @@ public sealed class DashboardWindow : Window
         // Pages open at the top, even if something inside takes focus and asks to be shown.
         scroll.Loaded += (_, _) => scroll.ScrollToTop();
         scroll.RequestBringIntoView += (_, e) => { if (!scroll.IsMouseOver) e.Handled = true; };
-        if (_showing != null)
+        if (_onPlayer && _player != null)
+        {
+            if (_player.Root.Parent is Decorator old) old.Child = null;
+            panel.Child = _player.Root;
+        }
+        else if (_showing != null)
         {
             if (_showing.Frame.Parent is Decorator old) old.Child = null;
             panel.Child = _showing.Frame;
@@ -196,6 +223,60 @@ public sealed class DashboardWindow : Window
         _root.Children.Add(panel);
     }
 
+    // ---- The media player ----
+
+    /// <summary>Opens a video or audio file in the dashboard's player.</summary>
+    public void Play(string path)
+    {
+        if (_player?.Path != path)
+        {
+            _player?.Close();
+            _player = new PlayerView(_k, _host, path, ClosePlayer, ToggleFullscreen);
+        }
+        else _player.Play();
+        _onPlayer = true;
+        Rebuild();
+        Bring();
+    }
+
+    void ClosePlayer()
+    {
+        if (_fullscreen) ToggleFullscreen();
+        _player?.Close();
+        _player = null;
+        _onPlayer = false;
+        Rebuild();
+    }
+
+    /// <summary>Looking at another page pauses the player; it waits in the sidebar.</summary>
+    void ParkPlayer()
+    {
+        if (!_onPlayer) return;
+        _player?.Pause();
+        _onPlayer = false;
+        if (_fullscreen) ToggleFullscreen();
+    }
+
+    void ToggleFullscreen()
+    {
+        if (_player == null) return;
+        _fullscreen = !_fullscreen;
+        _player.Fullscreen = _fullscreen;
+        var chrome = WindowChrome.GetWindowChrome(this);
+        if (_fullscreen)
+        {
+            _stateBeforeFullscreen = WindowState;
+            chrome.CaptionHeight = 0;
+            WindowState = WindowState.Maximized;
+        }
+        else
+        {
+            chrome.CaptionHeight = TitleHeight;
+            WindowState = _stateBeforeFullscreen;
+        }
+        Rebuild();
+    }
+
     // ---- Editors and settings inside the dashboard ----
 
     /// <summary>
@@ -205,6 +286,7 @@ public sealed class DashboardWindow : Window
     /// </summary>
     public void ShowWindow(Window window, bool isSettings = false)
     {
+        ParkPlayer();
         var existing = isSettings ? _settingsPage : _editor;
         if (existing?.Window == window)
         {
@@ -407,17 +489,23 @@ public sealed class DashboardWindow : Window
 
         var top = new StackPanel();
         top.Children.Add(Logo());
+        if (_player is { } player)
+        {
+            var playing = System.IO.Path.GetFileNameWithoutExtension(player.Path);
+            if (playing.Length > 22) playing = playing[..21] + "\u2026";
+            top.Children.Add(NavItem("\uE768", playing, _onPlayer, () => { _showing = null; Play(player.Path); }, null, player.Path));
+        }
         if (_editor is { } editor)
         {
             // The open editor, so it's one click away after looking at another page.
             var name = editor.Window.Title.Split(':')[0].Trim();
             if (name.Length > 24) name = name[..23] + "\u2026";
-            top.Children.Add(NavItem("\uE70F", name, _showing == editor, () => { _showing = editor; Rebuild(); }, null, editor.Window.Title));
+            top.Children.Add(NavItem("\uE70F", name, _showing == editor && !_onPlayer, () => { ParkPlayer(); _showing = editor; Rebuild(); }, null, editor.Window.Title));
         }
         top.Children.Add(Nav("\uE80F", "Home", DashPage.Home));
         top.Children.Add(Nav("\uE90F", "Tools", DashPage.Tools));
         top.Children.Add(Nav("\uE81C", "History", DashPage.History));
-        top.Children.Add(NavItem("\uE713", "Settings", _showing != null && _showing == _settingsPage, _host.OpenSettings, null, "Settings"));
+        top.Children.Add(NavItem("\uE713", "Settings", !_onPlayer && _showing != null && _showing == _settingsPage, _host.OpenSettings, null, "Settings"));
         if (!_collapsed && SetupCard() is { } setup) top.Children.Add(setup);
         DockPanel.SetDock(top, Dock.Top);
         dock.Children.Add(top);
@@ -455,7 +543,7 @@ public sealed class DashboardWindow : Window
     }
 
     Border Nav(string glyph, string label, DashPage page) =>
-        NavItem(glyph, label, _page == page && _showing == null, () => Show(page), null, label);
+        NavItem(glyph, label, _page == page && _showing == null && !_onPlayer, () => Show(page), null, label);
 
     Border NavAction(string glyph, string label, Action action) => NavItem(glyph, label, false, action, null, label);
 

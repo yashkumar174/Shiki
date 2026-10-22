@@ -84,9 +84,17 @@ public sealed class HistoryList(DashKit k, DashboardHost host, bool canRemove = 
 
         var what = new StackPanel { Margin = new Thickness(0, 17, 16, 18) };
         var title = new TextBlock { FontFamily = DashKit.Sans, FontSize = 15.5, Foreground = DashKit.B(P.Text), TextTrimming = TextTrimming.CharacterEllipsis };
-        title.Inlines.Add(new System.Windows.Documents.Run(Subject(entry)));
-        title.Inlines.Add(new System.Windows.Documents.Run("  →  ") { Foreground = DashKit.B(P.Faint) });
-        title.Inlines.Add(new System.Windows.Documents.Run(entry.Action) { FontWeight = FontWeights.SemiBold });
+        if (entry.ActionId == "record-save")
+        {
+            // A recording has no "from": it just is one.
+            title.Inlines.Add(new System.Windows.Documents.Run("Screen recording") { FontWeight = FontWeights.SemiBold });
+        }
+        else
+        {
+            title.Inlines.Add(new System.Windows.Documents.Run(Subject(entry)));
+            title.Inlines.Add(new System.Windows.Documents.Run("  →  ") { Foreground = DashKit.B(P.Faint) });
+            title.Inlines.Add(new System.Windows.Documents.Run(entry.Action) { FontWeight = FontWeights.SemiBold });
+        }
         what.Children.Add(title);
         var detail = k.Text(Detail(entry, outputs), 13.5, entry.Failed ? P.Danger : P.Muted, wrap: true);
         detail.Margin = new Thickness(0, 4, 0, 0);
@@ -96,9 +104,11 @@ public sealed class HistoryList(DashKit k, DashboardHost host, bool canRemove = 
 
         // Actions show on hover, so the list stays calm.
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 14, 0), VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Hidden };
+        bool playable = outputs.Count == 1 && File.Exists(outputs[0]) && PlayerView.CanPlay(outputs[0]) && host.Play != null;
+        if (playable) actions.Children.Add(k.IconButton("\uE768", () => host.Play!(outputs[0]), "Play here", 14, P.Muted));
         if (outputs.Count > 0)
         {
-            actions.Children.Add(k.IconButton("\uE8A7", () => Open(outputs), outputs.Count == 1 ? "Open" : "Open the folder", 14, P.Muted));
+            actions.Children.Add(k.IconButton("\uE8A7", () => Open(outputs), outputs.Count == 1 ? "Open in its usual app" : "Open the folder", 14, P.Muted));
             actions.Children.Add(k.IconButton("\uE8C8", () => Copy(outputs), "Copy", 14, P.Muted));
             actions.Children.Add(k.IconButton("\uE838", () => ShowInFolder(outputs[0]), "Show in folder", 14, P.Muted));
         }
@@ -114,7 +124,12 @@ public sealed class HistoryList(DashKit k, DashboardHost host, bool canRemove = 
         grid.Background = hover;
         grid.MouseEnter += (_, _) => { hover.Color = DashKit.A(P.Hover, P.Dark ? (byte)0xFF : (byte)0x90); actions.Visibility = Visibility.Visible; };
         grid.MouseLeave += (_, _) => { hover.Color = Colors.Transparent; actions.Visibility = Visibility.Hidden; };
-        grid.MouseLeftButtonUp += (_, _) => { if (outputs.Count > 0) Open(outputs); };
+        // Videos and sound play right here; anything else opens in its usual app.
+        grid.MouseLeftButtonUp += (_, _) =>
+        {
+            if (playable) host.Play!(outputs[0]);
+            else if (outputs.Count > 0) Open(outputs);
+        };
         return grid;
     }
 

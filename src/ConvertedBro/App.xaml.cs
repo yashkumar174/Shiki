@@ -335,6 +335,12 @@ public partial class App : Application
                 _recording.Ended += () => _recording = null;
                 _recording.Demo(new Int32Rect(320, 200, 960, 540), int.Parse(args[1]));
                 break;
+            case "play" when args.Length == 2:
+                // Plays a video or audio file in the dashboard.
+                EnterBuddyMode();
+                ShowDashboard();
+                _dashboard!.Play(System.IO.Path.GetFullPath(args[1]));
+                break;
             case "record":
                 EnterBuddyMode();
                 StartRecording();
