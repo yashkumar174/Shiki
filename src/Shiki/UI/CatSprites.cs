@@ -6,7 +6,7 @@ using System.Windows.Media.Imaging;
 
 namespace Shiki.UI;
 
-public enum CatPose { Idle, LookLeft, LookRight, Blink, Pop, Happy, TapLeft, TapRight, Yawn, Startled, StrainLeft, StrainRight, Purr, Grumpy, GrumpyFlick }
+public enum CatPose { Idle, LookLeft, LookRight, Blink, Pop, Happy, TapLeft, TapRight, Yawn, Startled, StrainLeft, StrainRight, Purr, Grumpy, GrumpyFlick, Listen, PointLeft, PointRight }
 public enum PeekPose { Idle, LeftPaw, RightPaw, Sleep }
 
 /// <summary>Little sprites that float up from the cat: sleep, love, surprise, effort, joy.</summary>
@@ -89,6 +89,11 @@ public static class CatSprites
         [CatPose.Purr] = [(7, 3, "bkb"), (8, 3, "kbk"), (7, 13, "bkb"), (8, 13, "kbk")],
         // Petted too long: flat eyes, a frown, and the tail flicks.
         [CatPose.Grumpy] = [(7, 4, "bb"), (8, 4, "EE"), (7, 14, "bb"), (8, 14, "EE"), (10, 8, "bkkb"), (11, 8, "kbbk")],
+        // Listening to you: wide, attentive eyes.
+        [CatPose.Listen] = [(6, 3, "EEE"), (7, 3, "EWE"), (8, 3, "EEE"), (6, 13, "EEE"), (7, 13, "EWE"), (8, 13, "EEE")],
+        // "There it is": a paw raised toward one side, eyes looking that way.
+        [CatPose.PointLeft] = [(9, 1, "kkkk"), (10, 1, "kffk"), (11, 1, "kfek"), (12, 1, "kffk"), (13, 1, "kffk"), (7, 3, "EWb"), (8, 3, "EEb"), (7, 13, "EWb"), (8, 13, "EEb")],
+        [CatPose.PointRight] = [(9, 15, "kkkk"), (10, 15, "kffk"), (11, 15, "kefk"), (12, 15, "kffk"), (13, 15, "kffk"), (7, 4, "bEW"), (8, 4, "bEE"), (7, 14, "bEW"), (8, 14, "bEE")],
         [CatPose.GrumpyFlick] = [(7, 4, "bb"), (8, 4, "EE"), (7, 14, "bb"), (8, 14, "EE"), (10, 8, "bkkb"), (11, 8, "kbbk"), (13, 18, "kk"), (14, 17, "kpk"), (15, 19, "x")],
     };
 

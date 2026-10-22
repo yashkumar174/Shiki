@@ -578,6 +578,8 @@ public partial class App : Application
                 () => _settings.Cat, SetCat),
             new MenuChoice("Look", [new ChoiceOption("arcade", "Arcade", Font: Theme.PixelFont), new ChoiceOption("glass", "Glass", Font: Theme.DisplayFont)],
                 () => _settings.Style, SetStyle),
+            new MenuChoice("Moves", [new ChoiceOption("lively", "Lively"), new ChoiceOption("calm", "Calm"), new ChoiceOption("still", "Still")],
+                () => _settings.CatLife, life => { _settings.CatLife = life; _settings.Save(); _buddy?.SetLife(life); }),
             null,
             new MenuEntry("\uE713", "Settings…", ShowSettings),
             new MenuEntry("\uE81C", "Open log folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Log.DataDir}\"") { UseShellExecute = true })),
@@ -993,6 +995,8 @@ public partial class App : Application
             if (_voice != null) return _voice;
             _voice = new VoiceInput(Chat, _settings, () => CatName) { Commands = VoiceCommand };
             // The conversation is over: put the bubble away if you're not using it.
+            // Attentive eyes while you're talking to it.
+            _voice.Changed += () => _buddy?.Listening(_voice.State is VoiceState.Waiting or VoiceState.Hearing);
             _voice.ConversationEnded += () => Dispatcher.BeginInvoke(() => { if (_bubble is { IsActive: false } bubble) bubble.Close(); },
                 DispatcherPriority.ApplicationIdle);
             return _voice;
@@ -1085,7 +1089,7 @@ public partial class App : Application
     CatChat Chat => _chat ??= new CatChat(new CatHands
     {
         Start = StartForCat,
-        Reveal = ExplorerReveal.Show,
+        Reveal = RevealAndPoint,
         Open = OpenFile,
         UseTool = UseToolForCat,
         ReadScreen = () => ExplorerSelection.Frontmost() is { } front ? new ScreenContext(front.Folder, front.Selected) : null,
@@ -1273,6 +1277,29 @@ public partial class App : Application
             _buddy?.Act("startle");
         }
     }
+
+    /// <summary>
+    /// "Show me": File Explorer opens with the files selected, and the cat raises a paw toward it
+    /// instead of running across the screen.
+    /// </summary>
+    void RevealAndPoint(IReadOnlyList<string> paths)
+    {
+        ExplorerReveal.Show(paths);
+        var look = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(900) };
+        look.Tick += (_, _) =>
+        {
+            look.Stop();
+            var explorer = WindowShots.TopOtherWindow();
+            if (explorer != IntPtr.Zero && GetWindowRect(explorer, out var r)) _buddy?.PointToward((r.Left + r.Right) / 2.0);
+        };
+        look.Start();
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    struct RECT { public int Left, Top, Right, Bottom; }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
 
     /// <summary>
     /// "What's this error?" in one press: a picture of the window in front is taken right away

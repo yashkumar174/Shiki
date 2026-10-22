@@ -52,7 +52,7 @@ gives you the summary.
 The cat learns your voice when you teach it its name, so "Hey Sky" from a video, a call or a
 friend doesn't wake it. Checked on this PC.
 
-### 6. Alive, without the distraction
+### 6. Alive, without the distraction (built, v2.5)
 The cat moves, but never pulls you away from work:
 - It stays in its lane along the bottom edge: a few steps now and then, stretches, yawns, looks
   toward the pointer or the window you're in.

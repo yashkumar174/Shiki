@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -59,6 +60,17 @@ public sealed class CatWindow : Window
     // Sleepier late at night, and when the battery's nearly empty.
     TimeSpan SleepAfter => _lowBattery ? TimeSpan.FromMinutes(1) : DateTime.Now.Hour is >= 22 or < 6 ? TimeSpan.FromMinutes(2) : TimeSpan.FromMinutes(5);
 
+    // ---- Alive, without the distraction ----
+    // Listening to you, pointing at something it found, small walks and stretches now and then;
+    // and out of the way while you type, and gone while something runs full screen.
+    bool _listening, _pointLeft, _fullScreen;
+    int _pointing;
+    DateTime _nextAct = DateTime.Now.AddMinutes(2), _typingUntil;
+    uint _lastInput;
+    System.Drawing.Point _lastCursor;
+    int _walkLeft, _walkStep;
+    Canvas? _stage;
+
     // The PC's state: a nearly empty battery, or the processor working flat out.
     bool _lowBattery, _pcBusy;
     int _nextPcFloat;
@@ -89,6 +101,7 @@ public sealed class CatWindow : Window
         Height = StageHeight * _cell;
 
         var stage = new Canvas { Width = Width, Height = Height, ClipToBounds = true };
+        _stage = stage;
         foreach (var image in new[] { _cat, _peek }) RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
         _cat.Width = CatSprites.Width * _cell;
         _cat.Height = CatSprites.Height * _cell;
@@ -259,6 +272,108 @@ public sealed class CatWindow : Window
         Later(2600, () => { _greeting = false; Evaluate(); });
     }
 
+    /// <summary>You're talking to it: it comes up with attentive eyes until you're done.</summary>
+    public void Listening(bool on)
+    {
+        if (on == _listening) return;
+        _listening = on;
+        if (on) { _asleep = false; Touch(); }
+        Evaluate();
+    }
+
+    /// <summary>"There it is": a paw raised toward something it found (a point on screen, in physical pixels).</summary>
+    public void PointToward(double screenX)
+    {
+        _pointLeft = screenX < CenterPx().X;
+        _pointing = 28;
+        _asleep = false;
+        Touch();
+        Evaluate();
+    }
+
+    /// <summary>How much it moves on its own: lively, calm or still.</summary>
+    public void SetLife(string life)
+    {
+        _nextAct = DateTime.Now + NextActIn(life);
+    }
+
+    static TimeSpan NextActIn(string life) => life switch
+    {
+        "lively" => TimeSpan.FromSeconds(Random.Shared.Next(40, 100)),
+        "still" => TimeSpan.FromDays(1),
+        _ => TimeSpan.FromSeconds(Random.Shared.Next(180, 420)),
+    };
+
+    /// <summary>
+    /// Once a second: is something full screen on this screen (then the cat steps out of sight),
+    /// are you typing (then it stays put), and is it time for a little stretch or walk?
+    /// </summary>
+    void Life()
+    {
+        // Full screen: a video, a game, a presentation, on the cat's own screen.
+        var front = NativeMethods.GetForegroundWindow();
+        bool fullScreen = false;
+        if (front != IntPtr.Zero && front != new WindowInteropHelper(this).Handle)
+        {
+            NativeMethods.GetWindowThreadProcessId(front, out uint pid);
+            if (pid != (uint)Environment.ProcessId && GetWindowRect(front, out var r))
+            {
+                var screen = System.Windows.Forms.Screen.FromHandle(front).Bounds;
+                var mine = System.Windows.Forms.Screen.FromHandle(new WindowInteropHelper(this).Handle);
+                var cls = new System.Text.StringBuilder(32);
+                GetClassName(front, cls, cls.Capacity);
+                fullScreen = cls.ToString() is not ("Progman" or "WorkerW") && mine.Bounds == screen
+                    && r.Left <= screen.Left && r.Top <= screen.Top && r.Right >= screen.Right && r.Bottom >= screen.Bottom;
+            }
+        }
+        if (fullScreen != _fullScreen)
+        {
+            _fullScreen = fullScreen;
+            if (_stage != null) _stage.Visibility = fullScreen ? Visibility.Hidden : Visibility.Visible;
+        }
+
+        // Typing: input keeps arriving but the pointer hasn't moved.
+        var info = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
+        if (GetLastInputInfo(ref info))
+        {
+            NativeMethods.GetCursorPos(out var cursor);
+            var at = new System.Drawing.Point(cursor.X, cursor.Y);
+            if (info.dwTime != _lastInput && at == _lastCursor) _typingUntil = DateTime.Now.AddSeconds(4);
+            _lastInput = info.dwTime;
+            _lastCursor = at;
+        }
+
+        // Now and then, if nothing's going on: a few steps along the edge, or a stretch.
+        var life = _settings.CatLife;
+        if (DateTime.Now < _nextAct) return;
+        _nextAct = DateTime.Now + NextActIn(life);
+        if (life == "still" || _fullScreen || DateTime.Now < _typingUntil || _out || _asleep || WantsOut || _walkStep > 0) return;
+        if (_random.NextDouble() < (life == "lively" ? 0.3 : 0.15))
+        {
+            _yawn = 12;
+            Touch();
+            Evaluate();
+            return;
+        }
+        // Walk a few steps, staying near home; back toward it if it has wandered.
+        double home = _settings.CatLeft ?? Left;
+        int offset = (int)Math.Round((Left - home) / _cell);
+        int steps = _random.Next(3, 7);
+        _walkLeft = Math.Abs(offset) > 6 ? -Math.Sign(offset) * Math.Abs(offset) : (_random.Next(2) == 0 ? -steps : steps);
+        _walkStep = Math.Abs(_walkLeft);
+    }
+
+    /// <summary>One step of a walk: the cat shifts a pixel along the edge, paws tapping in turn.</summary>
+    void WalkStep()
+    {
+        if (_walkStep <= 0) return;
+        _walkStep--;
+        var area = SystemParameters.WorkArea;
+        Left = Snap(Math.Clamp(Left + Math.Sign(_walkLeft) * _cell, area.Left, area.Right - Width));
+        var paw = _walkStep % 2 == 0 ? PeekPose.LeftPaw : PeekPose.RightPaw;
+        if (!_out && !_asleep) { _peek.Source = CatSprites.Peek(_skin, paw); _shownPeek = paw; }
+    }
+
     /// <summary>Dev aid ("cat &lt;mood&gt;" on the command line): act out a mood without the mouse.</summary>
     public void Act(string mood)
     {
@@ -284,6 +399,9 @@ public sealed class CatWindow : Window
             case "plugged": Cheer(Floater.Bolt); break;
             case "download": Cheer(Floater.Download); break;
             case "back": WelcomeBack(); break;
+            case "listen": Listening(!_listening); break;
+            case "point": PointToward(0); break;
+            case "walk": _nextAct = DateTime.Now; _yawn = 0; break;
             case "strain":
                 SetBusy(1);
                 _busySince = now.AddSeconds(-10);
@@ -395,7 +513,7 @@ public sealed class CatWindow : Window
 
     // ---- Out and in ----
 
-    bool WantsOut => _hover || _dragOver || _noticing || _busy > 0 || _celebrating || _greeting || _dragging || _startled > 0 || _yawn > 0 || _grumpy > 0 || Petting;
+    bool WantsOut => _hover || _dragOver || _noticing || _busy > 0 || _celebrating || _greeting || _dragging || _startled > 0 || _yawn > 0 || _grumpy > 0 || Petting || _listening || _pointing > 0;
 
     void Evaluate()
     {
@@ -486,6 +604,8 @@ public sealed class CatWindow : Window
     void Animate()
     {
         _tick++;
+        if (_tick % 10 == 0) Life();
+        if (_walkStep > 0 && _tick % 2 == 0) WalkStep();
         var now = DateTime.Now;
         if (!_asleep && !_out && !WantsOut && now - _lastActivity > SleepAfter)
         {
@@ -539,6 +659,8 @@ public sealed class CatWindow : Window
         else if (_startled > 0) { pose = CatPose.Startled; if (--_startled == 0) Evaluate(); }
         else if (_yawn > 0) { pose = CatPose.Yawn; if (--_yawn == 0) Evaluate(); }
         else if (_grumpy > 0) { pose = (_tick / 3) % 2 == 0 ? CatPose.Grumpy : CatPose.GrumpyFlick; if (--_grumpy == 0) Evaluate(); }
+        else if (_pointing > 0) { pose = _pointLeft ? CatPose.PointLeft : CatPose.PointRight; if (--_pointing == 0) Evaluate(); }
+        else if (_listening) pose = _tick % 30 < 2 ? CatPose.Blink : CatPose.Listen;
         else if (_celebrating) pose = CatPose.Happy;
         else if (_dragOver) pose = (_tick / 2) % 2 == 0 ? CatPose.Pop : CatPose.Idle; // pop, pop
         else if (Petting)
@@ -683,6 +805,16 @@ public sealed class CatWindow : Window
     }
 
     // ---- Placement ----
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct LASTINPUTINFO { public uint cbSize; public uint dwTime; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct RECT { public int Left, Top, Right, Bottom; }
+
+    [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int count);
 
     void Place()
     {
