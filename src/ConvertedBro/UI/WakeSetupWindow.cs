@@ -166,10 +166,14 @@ public sealed class WakeSetupWindow : Window
                 _learned.Add(said);
                 Refresh();
             }
+            // Saved straight away: three good takes is the whole job.
             var unique = _learned.Distinct().ToList();
-            Say(unique.Count == 1
-                ? $"Got it. I'll wake up to \"{unique[0]}\". Press Try it to check, then Save."
-                : $"Got it. I'll wake up to {string.Join(", ", unique.Select(u => $"\"{u}\""))}. Press Try it to check, then Save.");
+            _onSave(CatName, unique, _listenOn);
+            ((TextBlock)_save.Child).Text = "Done";
+            var heard = unique.Count == 1 ? $"\"{unique[0]}\"" : string.Join(", ", unique.Select(u => $"\"{u}\""));
+            Say(_listenOn
+                ? $"Saved. I wake up to {heard}. Say \"Hey {CatName}\" any time, or press Try it."
+                : $"Saved. I'll answer to {heard} once listening is on.");
         }
         catch (OperationCanceledException)
         {
@@ -225,13 +229,14 @@ public sealed class WakeSetupWindow : Window
     async Task<string?> HearOnce(CancellationToken ct)
     {
         Heard heard;
-        using (_mic = new Microphone())
+        // "Hey Sky" is short: a brief pause is enough to know it's been said.
+        using (_mic = new Microphone(pauseEnds: 0.7))
             heard = await _mic.Listen(ct);
         _mic = null;
         if (ct.IsCancellationRequested) return null;
         if (heard.Kind != HeardKind.Speech) return "";
-        // No hint here: the point is to learn how Whisper hears the name unaided.
-        return await Speech.Whisper.Transcribe(heard.Samples, "", ct);
+        // Heard exactly the way the wake word hears, so the spellings learned are the ones it'll see.
+        return await WakeListener.Recognize(heard.Samples, ct);
     }
 
     void Stop()
@@ -248,6 +253,7 @@ public sealed class WakeSetupWindow : Window
             return;
         }
         Stop();
+        // Already saved after the third take; Done still picks up a change to the listening switch.
         _onSave(CatName, _learned.Distinct().ToList(), _listenOn);
         Close();
     }

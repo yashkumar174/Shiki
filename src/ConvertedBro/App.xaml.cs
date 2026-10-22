@@ -857,12 +857,18 @@ public partial class App : Application
                 // Hear nothing while the cat is already listening or thinking, while recording, or while being taught.
                 () => _recording != null || (_voice?.Active ?? false) || (_chat?.Busy ?? false) || (_teach?.Listening ?? false));
             _wake.Woke += OnWoke;
+            // "Hey Sky, …": show the bubble straight away, before the rest is written down.
+            _wake.Waking += () => { if (_voice is not { Active: true } && !Chat.Busy) { ShowAskBubble(); _buddy?.Act("purr"); } };
             _wake.Start();
+            Speech.Whisper.KeepLoaded = true;
+            // Load the model now, so the first "Hey Sky" is as quick as the rest.
+            _ = System.Threading.Tasks.Task.Run(() => Speech.Whisper.Transcribe(new float[16000], "", default, 1, shortClip: true, maxTokens: 1));
         }
         else if (!want && _wake != null)
         {
             _wake.Dispose();
             _wake = null;
+            Speech.Whisper.KeepLoaded = false;
         }
     }
 
@@ -878,7 +884,7 @@ public partial class App : Application
     void OnWoke(string after)
     {
         if (_voice is { Active: true } || Chat.Busy) return;
-        ShowAskBubble();
+        if (_bubble == null) ShowAskBubble();
         if (_bubble == null) return;
         _buddy?.Act("purr");
         if (after.Length == 0) _ = Voice.Listen();
@@ -983,9 +989,14 @@ public partial class App : Application
     async System.Threading.Tasks.Task WakeFile(string wav)
     {
         string text;
+        var watch = Stopwatch.StartNew();
         try
         {
-            text = await Speech.Whisper.Transcribe(ReadWav(wav), "", default, threads: 2);
+            var samples = ReadWav(wav);
+            text = await WakeListener.Recognize(samples, default);
+            var (quickHit, quickRest) = WakeMatcher.Match(text, CatName, _settings.WakeVariants);
+            if (quickHit && quickRest.Length > 0)
+                Log.Info($"wake-file: request after the name, in full: {await WakeListener.RequestAfterName(samples, CatName, _settings.WakeVariants, quickRest, default)} ({watch.ElapsedMilliseconds} ms in all)");
         }
         catch (Exception ex)
         {
@@ -993,7 +1004,7 @@ public partial class App : Application
             return;
         }
         var (hit, after) = WakeMatcher.Match(text, CatName, _settings.WakeVariants);
-        Log.Info($"wake-file: heard \"{text}\" -> {(hit ? $"wakes, then \"{after}\"" : "no wake")}");
+        Log.Info($"wake-file: heard \"{text}\" -> {(hit ? $"wakes, then \"{after}\"" : "no wake")} in {watch.ElapsedMilliseconds} ms");
     }
 
     /// <summary>Dev aid for voice without a microphone: transcribe a WAV and use it like speech.</summary>

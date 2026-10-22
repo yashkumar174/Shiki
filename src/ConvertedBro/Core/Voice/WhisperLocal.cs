@@ -23,6 +23,9 @@ public sealed class WhisperLocal : ISpeechToText
     WhisperFactory? _factory;
     Timer? _idle;
 
+    /// <summary>Keep the model in memory (the wake word is on, and loading it costs time on every check).</summary>
+    public bool KeepLoaded { get; set; }
+
     public string Name => "Whisper (on this PC)";
 
     public static string ModelPath => Path.Combine(Log.DataDir, "models", "ggml-base.en.bin");
@@ -58,7 +61,12 @@ public sealed class WhisperLocal : ISpeechToText
     public Task<string> Transcribe(float[] samples, string hint, CancellationToken ct) => Transcribe(samples, hint, ct, Math.Clamp(Environment.ProcessorCount - 1, 1, 8));
 
     /// <param name="threads">Fewer for the wake word, which runs in the background.</param>
-    public async Task<string> Transcribe(float[] samples, string hint, CancellationToken ct, int threads)
+    /// <param name="shortClip">
+    /// A second or two of speech: Whisper normally works on a 30-second window whatever the length;
+    /// shrinking it to the clip makes short checks several times faster.
+    /// </param>
+    /// <param name="maxTokens">Stop after this many tokens (0: no limit); a quick check only needs the first few words.</param>
+    public async Task<string> Transcribe(float[] samples, string hint, CancellationToken ct, int threads, bool shortClip = false, int maxTokens = 0)
     {
         await Prepare(null, ct);
         await _gate.WaitAsync(ct);
@@ -71,6 +79,10 @@ public sealed class WhisperLocal : ISpeechToText
                 .WithThreads(threads);
             // No hint for the wake word: a hint with the name in it makes Whisper hear the name everywhere.
             if (hint.Length > 0) builder = builder.WithPrompt(hint);
+            // 50 audio frames a second (1500 for 30 s), with room to spare.
+            if (shortClip) builder = builder.WithAudioContextSize(Math.Clamp((int)(samples.Length / 16000.0 * 50) + 96, 160, 1500));
+            // A small window can make Whisper repeat itself ("the sky the sky…"); a cap keeps that short.
+            if (maxTokens > 0) builder = builder.WithMaxTokensPerSegment(maxTokens).WithSingleSegment();
             using var processor = builder.Build();
             var text = new StringBuilder();
             await foreach (var segment in processor.ProcessAsync(samples, ct))
@@ -95,9 +107,10 @@ public sealed class WhisperLocal : ISpeechToText
 
     void ReleaseLater()
     {
+        if (KeepLoaded) return;
         _idle ??= new Timer(_ =>
         {
-            if (!_gate.Wait(0)) return;
+            if (KeepLoaded || !_gate.Wait(0)) return;
             try
             {
                 _factory?.Dispose();

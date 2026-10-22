@@ -21,7 +21,9 @@ public sealed record Heard(HeardKind Kind, float[] Samples);
 public sealed class Microphone : IDisposable
 {
     const double FrameSeconds = 0.03;
-    const double WaitForSpeech = 7, PauseEnds = 1.2, MaxLength = 30;
+    const double WaitForSpeech = 7, MaxLength = 30;
+    // How long a pause ends the listen: long enough to think between words, short enough not to wait around.
+    readonly double _pauseEnds;
 
     readonly WasapiCapture _capture;
     readonly List<float> _mono = [];
@@ -40,8 +42,10 @@ public sealed class Microphone : IDisposable
     /// <summary>Raised once speech is detected (the meter can switch from "waiting" to "hearing").</summary>
     public event Action? SpeechStarted;
 
-    public Microphone()
+    /// <param name="pauseEnds">Seconds of quiet after speech that end the listen.</param>
+    public Microphone(double pauseEnds = 1.9)
     {
+        _pauseEnds = pauseEnds;
         var device = new MMDeviceEnumerator().GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
         _capture = new WasapiCapture(device) { ShareMode = AudioClientShareMode.Shared };
         _rate = _capture.WaveFormat.SampleRate;
@@ -117,7 +121,8 @@ public sealed class Microphone : IDisposable
             _floor = _floor < 0 ? rms : Math.Max(_floor, rms);
             return;
         }
-        double threshold = Math.Max(_floor * 2.8, 0.012);
+        // Once you're talking, softer sounds (the end of a word, a quiet syllable) still count as talking.
+        double threshold = _speaking ? Math.Max(_floor * 1.8, 0.008) : Math.Max(_floor * 2.8, 0.012);
         bool loud = rms > threshold;
         if (loud)
         {
@@ -138,7 +143,7 @@ public sealed class Microphone : IDisposable
         if (_speaking) _heardSeconds += FrameSeconds;
 
         if (!_speaking && _elapsed > WaitForSpeech) StopSoon();
-        else if (_speaking && _quietSeconds > PauseEnds) StopSoon();
+        else if (_speaking && _quietSeconds > _pauseEnds) StopSoon();
         else if (_elapsed > MaxLength) StopSoon();
     }
 

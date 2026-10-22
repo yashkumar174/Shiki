@@ -79,7 +79,8 @@ public static class WakeMatcher
 /// </summary>
 public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> learned, Func<bool> paused) : IDisposable
 {
-    const double FrameSeconds = 0.03, PreRoll = 0.3, EndPause = 0.5, MinSpeech = 0.3, MaxSpeech = 6;
+    // A short pause ends a burst: "Hey Sky" is checked about a third of a second after you say it.
+    const double FrameSeconds = 0.03, PreRoll = 0.3, EndPause = 0.33, MinSpeech = 0.3, MaxSpeech = 6;
 
     readonly SynchronizationContext _ui = SynchronizationContext.Current ?? new SynchronizationContext();
     readonly object _gate = new();
@@ -98,6 +99,9 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
 
     /// <summary>The name was heard; the text is what came after it (empty for just "Hey Latte").</summary>
     public event Action<string>? Woke;
+
+    /// <summary>The name was heard with more after it, which is still being written down.</summary>
+    public event Action? Waking;
 
     public bool Running => _running;
 
@@ -253,11 +257,19 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
     {
         try
         {
-            var text = await Speech.Whisper.Transcribe(samples, "", CancellationToken.None, threads: 2);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var text = await Recognize(samples, CancellationToken.None);
             if (text.Length == 0) return;
             var (hit, rest) = WakeMatcher.Match(text, name(), learned());
             if (!hit) return;
-            Ai.AiLog.Write("woke", rest.Length > 0 ? $"heard the name, then: {rest}" : "heard the name");
+            long check = watch.ElapsedMilliseconds;
+            if (rest.Length > 0)
+            {
+                // Wake the cat now; the request follows once it's written down in full.
+                _ui.Post(_ => Waking?.Invoke(), null);
+                rest = await RequestAfterName(samples, name(), learned(), rest, CancellationToken.None);
+            }
+            Ai.AiLog.Write("woke", (rest.Length > 0 ? $"heard the name, then: {rest}" : "heard the name") + $" ({check} ms to check)");
             _ui.Post(_ => { if (_running && !paused()) Woke?.Invoke(rest); }, null);
         }
         catch (Exception ex)
@@ -268,6 +280,24 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
         {
             Interlocked.Exchange(ref _checking, 0);
         }
+    }
+
+    /// <summary>
+    /// How the wake word hears: short-clip Whisper with no hint. Teaching uses the same, so the
+    /// spellings it learns are the ones it will see.
+    /// </summary>
+    public static Task<string> Recognize(float[] samples, CancellationToken ct) =>
+        Speech.Whisper.Transcribe(samples, "", ct, threads: Math.Clamp(Environment.ProcessorCount / 2, 2, 6), shortClip: true, maxTokens: 10);
+
+    /// <summary>
+    /// "Hey Sky, merge my PDFs": the quick check only keeps the first few words, so what came after
+    /// the name is written down again properly before it goes to the cat.
+    /// </summary>
+    public static async Task<string> RequestAfterName(float[] samples, string name, IEnumerable<string> learned, string quickRest, CancellationToken ct)
+    {
+        var full = await Speech.Whisper.Transcribe(samples, $"Hey {name}. Convert, merge, compress, PDF, JPG, Downloads, Desktop.", ct);
+        var (hit, rest) = WakeMatcher.Match(full, name, learned);
+        return hit && rest.Length >= quickRest.Length ? rest : quickRest;
     }
 
     public void Dispose() => Stop();
