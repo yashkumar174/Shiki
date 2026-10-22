@@ -164,6 +164,8 @@ public sealed class AskBubble : Window
         int start = Math.Max(_first, LastSaid());
         for (int i = start; i < items.Count; i++) _items.Children.Add(cards.Render(items[i]));
         if (_chat.Busy) _items.Children.Add(cards.Thinking());
+        else if (_chat.Picture is { } picture)
+            _items.Children.Add(cards.PictureStrip(picture, question => _ = _chat.Send(question), _chat.ForgetPicture));
         _scroll.Visibility = _items.Children.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         _scroll.Dispatcher.BeginInvoke(() => _scroll.ScrollToEnd(), System.Windows.Threading.DispatcherPriority.Loaded);
     }

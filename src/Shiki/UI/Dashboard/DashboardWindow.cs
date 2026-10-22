@@ -25,6 +25,10 @@ public sealed class DashboardHost
     public required Action Snip { get; init; }
     public required Action PickColour { get; init; }
     public required Action Record { get; init; }
+    /// <summary>Paw to ask: pick something on screen and ask the cat about it.</summary>
+    public Action? Paw { get; init; }
+    /// <summary>The cat looks at the window in front and explains its error.</summary>
+    public Action? ExplainError { get; init; }
     public required Action MakeQr { get; init; }
     public required Action Paste { get; init; }
     public required Action OpenSettings { get; init; }

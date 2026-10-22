@@ -26,7 +26,8 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
 
     public UIElement Render(ChatItem item) => item switch
     {
-        YouSaid you => You(you.Text, you.Spoken),
+        YouSaid you => You(you.Text, you.Spoken, you.Picture),
+        TableItem table => Table(table),
         CatSaid cat => Cat(cat.Text),
         CatDid did => Did(did.Glyph, did.Text),
         ChatProblem problem => Problem(problem),
@@ -34,9 +35,20 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         _ => new Border(),
     };
 
-    UIElement You(string text, bool spoken)
+    UIElement You(string text, bool spoken, byte[]? picture)
     {
         UIElement content = Selectable(text, Size, P.Text);
+        if (picture != null)
+        {
+            // What the paw picked, above the words that went with it.
+            var stack = new StackPanel();
+            var thumb = Thumbnail(picture, compact ? 260 : 420, compact ? 150 : 240);
+            thumb.Margin = new Thickness(0, 2, 0, 8);
+            thumb.HorizontalAlignment = HorizontalAlignment.Left;
+            stack.Children.Add(thumb);
+            stack.Children.Add(content);
+            content = stack;
+        }
         if (spoken)
         {
             // Said out loud: a small mic in front, so misheard words make sense.
@@ -205,6 +217,112 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         return footer;
     }
 
+    /// <summary>A picture, fitted inside a box, with rounded corners.</summary>
+    public static FrameworkElement Thumbnail(byte[] png, double maxWidth, double maxHeight)
+    {
+        var bitmap = new System.Windows.Media.Imaging.BitmapImage();
+        bitmap.BeginInit();
+        bitmap.CacheOption = System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;
+        bitmap.StreamSource = new MemoryStream(png);
+        bitmap.EndInit();
+        bitmap.Freeze();
+        var image = new Image { Source = bitmap, Stretch = Stretch.Uniform, MaxWidth = maxWidth, MaxHeight = maxHeight };
+        return new Border { CornerRadius = new CornerRadius(10), ClipToBounds = true, Child = image, Background = Brushes.Transparent };
+    }
+
+    /// <summary>
+    /// The paw's picture waiting to be asked about, with the questions people ask most. Clicking
+    /// one asks it; the box asks anything else; the x lets it go.
+    /// </summary>
+    public UIElement PictureStrip(byte[] png, Action<string> ask, Action forget)
+    {
+        var stack = new StackPanel { Margin = new Thickness(compact ? 0 : 36, compact ? 6 : 14, 0, 6) };
+        var top = new DockPanel();
+        var close = k.IconButton("\uE711", forget, "Don't ask about it", 11, P.Muted, 28);
+        close.VerticalAlignment = VerticalAlignment.Top;
+        DockPanel.SetDock(close, Dock.Right);
+        top.Children.Add(close);
+        var thumb = Thumbnail(png, compact ? 300 : 420, compact ? 140 : 220);
+        thumb.HorizontalAlignment = HorizontalAlignment.Left;
+        top.Children.Add(thumb);
+        stack.Children.Add(top);
+        var label = k.Text("Ask about this:", compact ? 12.5 : 13, P.Muted);
+        label.Margin = new Thickness(0, 8, 0, 6);
+        stack.Children.Add(label);
+        var chips = new WrapPanel();
+        foreach (var question in new[] { "What is this?", "Copy the text", "Make it a table", "Explain it simply" })
+        {
+            var chip = k.Button(question, () => ask(question), DashKit.Pill.Quiet, size: compact ? 12.5 : 13);
+            chip.Padding = new Thickness(12, 6, 12, 7);
+            chip.Margin = new Thickness(0, 0, 6, 6);
+            chips.Children.Add(chip);
+        }
+        stack.Children.Add(chips);
+        return stack;
+    }
+
+    /// <summary>A table read off the screen: a preview, Copy (cells for Excel or Sheets) and Save as CSV.</summary>
+    UIElement Table(TableItem table)
+    {
+        var stack = new StackPanel();
+        stack.Children.Add(k.Text(table.Title, compact ? 14 : 15.5, weight: FontWeights.SemiBold));
+        var grid = new Grid { Margin = new Thickness(0, 10, 0, 10) };
+        int columns = Math.Min(6, table.Rows.Max(r => r.Length));
+        for (int c = 0; c < columns; c++) grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        int shown = Math.Min(table.Rows.Count, 8);
+        for (int r = 0; r < shown; r++)
+        {
+            grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int c = 0; c < columns && c < table.Rows[r].Length; c++)
+            {
+                var cell = k.Text(table.Rows[r][c], compact ? 12 : 12.5, r == 0 ? P.Text : P.Muted, r == 0 ? FontWeights.SemiBold : FontWeights.Normal);
+                cell.Margin = new Thickness(0, 2, 16, 2);
+                cell.MaxWidth = 180;
+                Grid.SetRow(cell, r);
+                Grid.SetColumn(cell, c);
+                grid.Children.Add(cell);
+            }
+        }
+        stack.Children.Add(new ScrollViewer { Content = grid, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled });
+        if (table.Rows.Count > shown)
+            stack.Children.Add(k.Text($"and {table.Rows.Count - shown} more rows", 12, P.Faint));
+
+        var buttons = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+        TextBlock? note = null;
+        var copy = k.Button("Copy", () =>
+        {
+            bool ok = TryCopy(CatChat.TableText(table));
+            note!.Text = ok ? "Copied: paste into Excel or Sheets and it lands in cells." : "The clipboard is busy. Try again.";
+        }, DashKit.Pill.Accent, "\uE8C8", 13);
+        copy.Margin = new Thickness(0, 0, 8, 0);
+        buttons.Children.Add(copy);
+        if (table.SavedAs is { } saved)
+            buttons.Children.Add(k.Button("Open", () => open(saved), DashKit.Pill.Quiet, "\uE8A7", 13));
+        else
+            buttons.Children.Add(k.Button("Save as CSV", () => chat.SaveTable(table), DashKit.Pill.Quiet, "\uE74E", 13));
+        stack.Children.Add(buttons);
+        note = k.Text(table.SavedAs is { } file ? $"Saved as {Path.GetFileName(file)}" : "", 12.5, P.Muted, wrap: true);
+        note.Margin = new Thickness(0, 6, 0, 0);
+        stack.Children.Add(note);
+
+        var card = k.Card(stack, compact ? new Thickness(16, 14, 16, 14) : new Thickness(20, 18, 20, 18), 16);
+        card.Margin = new Thickness(compact ? 30 : 36, 10, 0, 4);
+        return card;
+    }
+
+    static bool TryCopy(string text)
+    {
+        try
+        {
+            Core.ClipboardTools.Retry(() => Clipboard.SetText(text));
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
     /// <summary>"Mochi is thinking…", with a Stop link.</summary>
     public UIElement Thinking()
     {
@@ -318,7 +436,7 @@ public sealed class AskView
         head.Children.Add(tools);
         var titles = new StackPanel();
         titles.Children.Add(k.Text($"Ask {CatName}", 30, weight: FontWeights.SemiBold, font: DashKit.Display));
-        var sub = k.Text($"Say what you want done with your files. {CatName} finds them, shows you the plan, and waits for your OK.", 15, P.Muted, wrap: true);
+        var sub = k.Text($"Say what you want done with your files, or ask about anything on screen ({host.Settings.PawHotkey} to point at it). {CatName} shows you the plan and waits for your OK.", 15, P.Muted, wrap: true);
         sub.Margin = new Thickness(0, 6, 0, 0);
         titles.Children.Add(sub);
         head.Children.Add(titles);
@@ -360,7 +478,7 @@ public sealed class AskView
         var stack = new StackPanel();
         stack.Children.Add(_input.Root);
         var talk = _host.Voice != null ? $" Press the mic or {_host.Settings.TalkHotkey} to talk; your voice is turned into text on this PC." : "";
-        var note = _k.Text($"Enter sends, Shift+Enter adds a line.{talk} Uses {CatChat.ModelName} with your API key: your words and the names of files involved go to Anthropic, the files themselves don't.", 12, P.Faint, wrap: true);
+        var note = _k.Text($"Enter sends, Shift+Enter adds a line.{talk} Uses {CatChat.ModelName} with your API key: your words, the names of files involved and anything you show it on screen go to Anthropic; your files themselves don't.", 12, P.Faint, wrap: true);
         note.Margin = new Thickness(18, 8, 18, 0);
         stack.Children.Add(note);
         return stack;
@@ -387,6 +505,8 @@ public sealed class AskView
         else if (_chat.Items.Count == 0) _transcript.Children.Add(Ideas_());
         foreach (var item in _chat.Items) _transcript.Children.Add(cards.Render(item));
         if (_chat.Busy) _transcript.Children.Add(cards.Thinking());
+        else if (_chat.Picture is { } picture)
+            _transcript.Children.Add(cards.PictureStrip(picture, question => _ = _chat.Send(question), _chat.ForgetPicture));
         _scroll.Dispatcher.BeginInvoke(() => _scroll.ScrollToEnd(), System.Windows.Threading.DispatcherPriority.Loaded);
     }
 

@@ -51,6 +51,10 @@ public sealed class Settings
     public int AiRequests { get; set; }
     /// <summary>Global shortcut that opens the ask bubble already listening.</summary>
     public string TalkHotkey { get; set; } = "Ctrl+Alt+V";
+    /// <summary>Paw to ask: swipe the cat's paw around something on screen and ask about it.</summary>
+    public string PawHotkey { get; set; } = "Ctrl+Alt+P";
+    /// <summary>"What's this error?": the cat looks at the window in front and explains it.</summary>
+    public string ErrorHotkey { get; set; } = "Ctrl+Alt+E";
     /// <summary>Speech to text for commands: "whisper" (on this PC), "deepgram", or "wispr" (Wispr Flow, once its API is open).</summary>
     public string VoiceEngine { get; set; } = "whisper";
     /// <summary>Who checks speech for the wake word: "whisper" (on this PC) or "deepgram" (speech bursts only).</summary>

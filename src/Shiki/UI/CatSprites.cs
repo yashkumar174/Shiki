@@ -101,6 +101,47 @@ public static class CatSprites
 
     static readonly string[] Paw = [".kkkk.", "kffffk", "kfefek", "kffffk"];
 
+    // Paw to ask: a print it leaves on the screen (toe beans and pad), and the paw itself as the pointer.
+    static readonly string[] PrintArt =
+    [
+        "...kk...kk...",
+        "..keek.keek..",
+        "..keek.keek..",
+        "kk.kk...kk.kk",
+        "keek.....keek",
+        "keek.kkk.keek",
+        ".kk.keeek.kk.",
+        "...keeeeek...",
+        "..keeeeeeek..",
+        "..keeeeeeek..",
+        "..keeeeeeek..",
+        "...kkkkkkk...",
+    ];
+
+    static readonly string[] PawArt =
+    [
+        "..kk.kk.kk..",
+        ".kffkffkffk.",
+        ".kfekfekfek.",
+        "kkfkkfkkfkkk",
+        "kffffffffffk",
+        "kfffkeekfffk",
+        "kffkeeeekffk",
+        "kffkeeeekffk",
+        "kfffkkkkfffk",
+        ".kffffffffk.",
+        "..kffffffk..",
+        "..kffffffk..",
+        "..kffffffk..",
+        "..kffffffk..",
+    ];
+
+    /// <summary>A paw print (toes up) in the cat's colours, for the trail.</summary>
+    public static BitmapSource PawPrint(CatSkin skin) => Cached($"{skin.Id}/print", () => Render(PrintArt.Select(r => r.ToCharArray()).ToArray(), skin));
+
+    /// <summary>The cat's paw reaching up, toes first: the pointer while picking. Its tip is the middle of the top row.</summary>
+    public static BitmapSource PawPointer(CatSkin skin) => Cached($"{skin.Id}/pawpointer", () => Render(PawArt.Select(r => r.ToCharArray()).ToArray(), skin));
+
     public static IReadOnlyList<CatSkin> Skins { get; } =
     [
         new CatSkin
@@ -221,6 +262,8 @@ public static class CatSprites
             foreach (var pose in Enum.GetValues<PeekPose>()) Save(Peek(skin, pose), $"{skin.Id}-peek-{pose}");
             foreach (var kind in Enum.GetValues<Floater>()) Save(Float(skin, kind), $"{skin.Id}-float-{kind}");
             Save(Head(skin), $"{skin.Id}-head");
+            Save(PawPrint(skin), $"{skin.Id}-pawprint");
+            Save(PawPointer(skin), $"{skin.Id}-pawpointer");
         }
     }
 

@@ -39,9 +39,10 @@ public partial class App : Application
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
     Hotkeys? _hotkeys;
-    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1, _talkHotkeyId = -1;
+    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1, _talkHotkeyId = -1, _pawHotkeyId = -1, _errorHotkeyId = -1;
     RecordingSession? _recording;
     SnipWindow? _snip;
+    PawWindow? _paw;
     ColourPickerWindow? _picker;
     Point _menuAnchor;
     bool _headless;
@@ -305,6 +306,32 @@ public partial class App : Application
                 EnterBuddyMode();
                 ShowQr(string.Join(" ", args[1..]));
                 break;
+            case "paw-test" when args.Length >= 3:
+                // Dev aid: ask about a picture file as if the paw had picked it.
+                EnterBuddyMode();
+                Chat.Show(File.ReadAllBytes(args[1]), "Test picture");
+                _ = Chat.Send(string.Join(" ", args[2..]));
+                break;
+            case "look-test" when args.Length >= 3:
+                // Dev aid: "the window in front" is this picture, then ask (e.g. "what's this error?").
+                EnterBuddyMode();
+                WindowShots.TestPicture = (File.ReadAllBytes(args[1]), Path.GetFileNameWithoutExtension(args[1]));
+                _ = Chat.Send(string.Join(" ", args[2..])).ContinueWith(_ => WindowShots.TestPicture = null);
+                break;
+            case "window-shot" when args.Length == 2:
+                // Dev aid: save the picture "what's this error?" would take (nothing is sent anywhere).
+                if (WindowShots.Capture(WindowShots.TopOtherWindow()) is { } front)
+                {
+                    File.WriteAllBytes(args[1], front.Png);
+                    Log.Info($"window-shot: \"{front.Title}\", {front.Png.Length / 1024} KB");
+                }
+                else Log.Info("window-shot: no window");
+                break;
+            case "paw":
+                // Paw to ask, as the shortcut opens it.
+                EnterBuddyMode();
+                StartPaw();
+                break;
             case "paste":
                 EnterBuddyMode();
                 PasteToCat();
@@ -519,6 +546,8 @@ public partial class App : Application
             _settings.WakeVariants.Count > 0
                 ? new MenuEntry("\uE720", $"Listen for \"Hey {CatName}\"", ToggleWake, () => _settings.WakeWord)
                 : new MenuEntry("\uE720", $"Teach me to answer to \"Hey {CatName}\"…", TeachName),
+            new MenuEntry("\uE8B0", $"Paw to ask ({_settings.PawHotkey})", () => StartPaw()),
+            new MenuEntry("\uE783", $"What's this error? ({_settings.ErrorHotkey})", ExplainError),
             new MenuEntry("\uE924", $"Snip and convert ({_settings.SnipHotkey})", StartSnip),
             new MenuEntry("\uE714", $"Record the screen ({_settings.RecordHotkey})", StartRecording),
             new MenuEntry("\uE790", $"Pick a colour ({_settings.ColourHotkey})", StartColourPicker),
@@ -668,6 +697,8 @@ public partial class App : Application
                 new ShortcutSetting("Pick a colour", () => _settings.ColourHotkey, text => ChangeHotkey(text, () => _settings.ColourHotkey, v => _settings.ColourHotkey = v)),
                 new ShortcutSetting($"Ask {CatName}", () => _settings.AskHotkey, text => ChangeHotkey(text, () => _settings.AskHotkey, v => _settings.AskHotkey = v)),
                 new ShortcutSetting($"Talk to {CatName}", () => _settings.TalkHotkey, text => ChangeHotkey(text, () => _settings.TalkHotkey, v => _settings.TalkHotkey = v)),
+                new ShortcutSetting("Paw to ask", () => _settings.PawHotkey, text => ChangeHotkey(text, () => _settings.PawHotkey, v => _settings.PawHotkey = v)),
+                new ShortcutSetting("What's this error?", () => _settings.ErrorHotkey, text => ChangeHotkey(text, () => _settings.ErrorHotkey, v => _settings.ErrorHotkey = v)),
             ],
             [
                 new SettingSwitch("Right-click menu in Explorer", "Convert with Shiki, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu),
@@ -702,7 +733,7 @@ public partial class App : Application
     {
         var previous = get();
         // Shortcuts can't share keys.
-        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey || text == _settings.TalkHotkey)) return false;
+        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey || text == _settings.TalkHotkey || text == _settings.PawHotkey || text == _settings.ErrorHotkey)) return false;
         set(text);
         if (BindHotkeys(quiet: true))
         {
@@ -773,7 +804,9 @@ public partial class App : Application
         bool record = Bind(ref _recordHotkeyId, _settings.RecordHotkey, StartRecording, quiet);
         bool ask = Bind(ref _askHotkeyId, _settings.AskHotkey, () => ShowAskBubble(), quiet);
         bool talk = Bind(ref _talkHotkeyId, _settings.TalkHotkey, Talk, quiet);
-        return snip && colour && convert && record && ask && talk;
+        bool paw = Bind(ref _pawHotkeyId, _settings.PawHotkey, () => StartPaw(), quiet);
+        bool error = Bind(ref _errorHotkeyId, _settings.ErrorHotkey, ExplainError, quiet);
+        return snip && colour && convert && record && ask && talk && paw && error;
     }
 
     bool Bind(ref int id, string text, Action handler, bool quiet)
@@ -822,6 +855,8 @@ public partial class App : Application
                 Snip = StartSnip,
                 PickColour = StartColourPicker,
                 Record = StartRecording,
+                Paw = () => StartPaw(),
+                ExplainError = ExplainError,
                 MakeQr = () => ShowQr(""),
                 Paste = PasteToCat,
                 OpenSettings = ShowSettings,
@@ -965,13 +1000,68 @@ public partial class App : Application
             _settings.AiRequests++;
             _settings.Save();
         },
+        Copy = TrySetClipboard,
+        LookAtScreen = () => WindowShots.Capture(WindowShots.TopOtherWindow()),
     });
+
+    /// <summary>
+    /// "What's this error?" in one press: a picture of the window in front is taken right away
+    /// (before the bubble opens over it), and the cat explains what went wrong and how to fix it.
+    /// </summary>
+    void ExplainError()
+    {
+        _menu?.CloseAnimated();
+        if (!_settings.AiEnabled || !ClaudeKey.Exists)
+        {
+            ShowDashboard(DashPage.Ask);
+            return;
+        }
+        if (Chat.Busy) { ShowAskBubble(); return; }
+        if (WindowShots.Capture(WindowShots.TopOtherWindow()) is not { } shot)
+        {
+            ToastHost.Show(ToastWindow.Message("Nothing to look at", "Bring the window with the error to the front, then press " + _settings.ErrorHotkey + " again."));
+            return;
+        }
+        Chat.Show(shot.Png, shot.Title);
+        ShowAskBubble("What's this error? Explain it simply and tell me how to fix it.");
+    }
+
+    /// <summary>
+    /// Paw to ask: the screen holds still, the paw picks something, and the bubble opens beside it
+    /// with that picture ready to ask about. From voice, it listens straight away.
+    /// </summary>
+    void StartPaw(bool listen = false)
+    {
+        if (_paw != null || _snip != null || _picker != null) return;
+        _menu?.CloseAnimated();
+        if (!_settings.AiEnabled || !ClaudeKey.Exists)
+        {
+            ShowDashboard(DashPage.Ask);
+            return;
+        }
+        _bubble?.Close();
+        _paw = new PawWindow(Skin);
+        _paw.Closed += (_, _) => _paw = null;
+        _paw.Picked += pick =>
+        {
+            Chat.Show(pick.Png, pick.WindowTitle);
+            double scale = NativeMethods.SystemScale;
+            var area = SystemParameters.WorkArea;
+            double centre = (pick.ScreenPx.X + pick.ScreenPx.Width / 2.0) / scale;
+            double top = pick.ScreenPx.Y / scale, bottom = (pick.ScreenPx.Y + pick.ScreenPx.Height) / scale;
+            // Above what was picked when there's room, otherwise below it.
+            var spot = top - area.Top > 360 ? new Point(centre, top - 6) : new Point(centre, Math.Min(area.Bottom - 8, bottom + 380));
+            ShowAskBubble(at: spot);
+            if (listen) _ = Voice.Listen();
+        };
+        _paw.Show();
+    }
 
     /// <summary>
     /// The ask shortcut: a bubble above the cat. What's selected is read first, while File Explorer
     /// (or the desktop) is still in front, so "these" means what you were looking at.
     /// </summary>
-    void ShowAskBubble(string? say = null)
+    void ShowAskBubble(string? say = null, Point? at = null)
     {
         _menu?.CloseAnimated();
         if (!_settings.AiEnabled || !ClaudeKey.Exists)
@@ -990,9 +1080,9 @@ public partial class App : Application
             _bubble.Closed += (_, _) => _bubble = null;
             double scale = NativeMethods.SystemScale;
             var area = SystemParameters.WorkArea;
-            var spot = _buddy is { IsVisible: true } cat
+            var spot = at ?? (_buddy is { IsVisible: true } cat
                 ? new Point(cat.WheelSpotPx(0).X / scale, cat.WheelSpotPx(0).Y / scale)
-                : new Point(area.Right - 260, area.Bottom - 8);
+                : new Point(area.Right - 260, area.Bottom - 8));
             _bubble.Place(spot);
             _bubble.Show();
             _buddy?.Notice(true);
@@ -1130,6 +1220,7 @@ public partial class App : Application
             case "snip": StartSnip(); return true;
             case "record_screen": StartRecording(); return true;
             case "pick_colour": StartColourPicker(); return true;
+            case "paw_to_ask": Dispatcher.BeginInvoke(() => StartPaw(listen: _voice?.FollowingUp == true || _voice?.Active == true)); return true;
             case "make_qr": ShowQr(text ?? ""); return true;
             case "paste_clipboard": PasteToCat(); return true;
             case "open_history": ShowDashboard(DashPage.History); return true;

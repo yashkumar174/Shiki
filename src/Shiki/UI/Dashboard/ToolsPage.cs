@@ -95,6 +95,8 @@ public sealed class ToolsPage(DashKit k, DashboardHost host)
 
     UIElement Quick() => Tiles(
     [
+        .. (host.Paw != null ? [Tile("\uE8B0", "Paw to ask", $"Point at anything on screen and ask ({host.Settings.PawHotkey})", host.Paw)] : Array.Empty<Border>()),
+        .. (host.ExplainError != null ? [Tile("\uE783", "What's this error?", $"The cat reads the window in front and explains ({host.Settings.ErrorHotkey})", host.ExplainError)] : Array.Empty<Border>()),
         Tile("\uE924", "Snip and convert", $"Drag a box on screen ({host.Settings.SnipHotkey})", host.Snip),
         Tile("\uE714", "Record the screen", $"Video of an area or the whole screen ({host.Settings.RecordHotkey})", host.Record),
         Tile("\uE790", "Pick a colour", $"Copy any colour on screen ({host.Settings.ColourHotkey})", host.PickColour),

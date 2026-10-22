@@ -8,7 +8,7 @@ cat never types passwords or pays for anything, and nothing is deleted without a
 
 Built in this order unless we decide otherwise.
 
-### 1. Paw to ask
+### 1. Paw to ask (built, v2.1)
 Hold a shortcut (or say "Hey Sky, look at this") and the pointer becomes the cat's pixel paw.
 Swipe the paw around anything on screen: it leaves a trail of little paw prints around what you
 picked. Then ask about it, by voice or typing: "what is this?", "make this a table", "copy the
@@ -16,7 +16,7 @@ text", "what does this chart say?". The picked area goes to Claude (vision) with
 - The paw trail closes into the area you meant; a plain drag works too.
 - Results come back in the bubble, with buttons where they make sense (Copy, Save as Excel, Open link).
 
-### 2. "Hey Sky, what's this error?"
+### 2. "Hey Sky, what's this error?" (built, v2.1)
 The cat looks at the window in front (or what you pawed), reads the error, explains it in plain
 words and suggests the fix. Shares the screen capture and Claude vision of item 1.
 - Offers the fix as a step-by-step card; anything it would change on the PC asks first.
