@@ -113,8 +113,12 @@ public sealed class AskBubble : Window
             else Close();
         };
         // Clicking elsewhere puts it away, unless the cat is listening, busy or waiting for an answer.
+        bool closing = false;
+        Closing += (_, _) => closing = true;
         Deactivated += (_, _) =>
         {
+            // Closing itself (Esc, the X) deactivates it too; it's already on its way out.
+            if (closing) return;
             if (_voice is { Active: true } || _chat.Busy || _chat.Items.OfType<PlanItem>().Any(x => x.State is PlanState.Waiting or PlanState.Running)) return;
             Close();
         };
