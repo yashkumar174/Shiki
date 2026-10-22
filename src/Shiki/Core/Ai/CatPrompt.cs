@@ -27,7 +27,13 @@ static class CatPrompt
             - Pick the files yourself when the request is clear, and say which in the plan summary. Ask a short question only when it's truly unclear (two different files fit, or no file kind was named and several fit).
             - "Show me", "where is it", "open the folder": show_in_explorer. "Open" or "play" a file: open_file. Snipping, recording the screen, picking a colour, QR codes and pasting the clipboard: use_app_tool.
             - There's no delete, move or rename yet. Say so plainly if asked. Results are always new files, saved {results}; originals are never changed.
-            - You can't browse the web, read what's inside files, send messages or use other apps yet. You see the screen only in a picture the person pawed or through look_at_screen.
+            - You can't browse the web, read what's inside files, send messages or work inside other apps yet (you can open and close them). You see the screen only in a picture the person pawed or through look_at_screen.
+
+            The PC itself
+            - Volume, mute, the sound output (speakers or headphones), brightness, dark mode and Do not disturb: control_pc. "Turn it up" without a number means about 10 more; "a lot" about 25.
+            - "Open Chrome", "start Spotify": open_app with the app's name as said. "Close it", "close Word": close_app; it closes like the app's own X button, so the app can still ask to save.
+            - Lock, sleep, restart and shut down: pc_power. The app shows a card and nothing happens until the person presses Do it (or says yes).
+            - Say what you did in a few words ("Volume's at 40."). Don't ask before volume, brightness, dark mode or opening an app; just do it.
 
             Seeing the screen
             - A message can come with a picture: the person swiped the cat's paw around part of their screen. Answer about that picture. Read text in it exactly as written.
@@ -64,7 +70,67 @@ static class CatPrompt
         return prompt.ToString();
     }
 
-    public static List<ToolUnion> Tools() => [.. FileTools(), .. ScreenTools()];
+    public static List<ToolUnion> Tools() => [.. FileTools(), .. ScreenTools(), .. PcTools()];
+
+    static IEnumerable<ToolUnion> PcTools() =>
+    [
+        new Tool
+        {
+            Name = "control_pc",
+            Description = "Change or read the PC's settings: volume, mute, sound output, brightness, dark mode, Do not disturb. Also lists the app windows open now. Returns what happened.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["action"] = J(new
+                    {
+                        type = "string",
+                        @enum = new[]
+                        {
+                            "status", "set_volume", "volume_up", "volume_down", "mute", "unmute", "list_sound_outputs", "switch_sound_output",
+                            "set_brightness", "brightness_up", "brightness_down", "dark_mode_on", "dark_mode_off",
+                            "do_not_disturb_on", "do_not_disturb_off", "open_apps",
+                        },
+                    }),
+                    ["value"] = J(new { type = "string", description = "For set_volume and set_brightness: 0 to 100. For the up and down actions: how much (default 10 for volume, 15 for brightness). For switch_sound_output: the output's name as said (\"headphones\", \"speakers\", \"TV\")." }),
+                },
+                Required = ["action"],
+            },
+        },
+        new Tool
+        {
+            Name = "open_app",
+            Description = "Open an app from the Start menu by its name (\"Chrome\", \"Word\", \"Spotify\", \"Calculator\"). If there's no such app, you get the close names.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement> { ["name"] = J(new { type = "string" }) },
+                Required = ["name"],
+            },
+        },
+        new Tool
+        {
+            Name = "close_app",
+            Description = "Close an open app's windows by its name or window title, like its own X button (it can still ask to save). Never forces it.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement> { ["name"] = J(new { type = "string" }) },
+                Required = ["name"],
+            },
+        },
+        new Tool
+        {
+            Name = "pc_power",
+            Description = "Lock, sleep, restart or shut down the PC. Shows the person a card; nothing happens until they press Do it. You get the outcome with their next message.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["action"] = J(new { type = "string", @enum = new[] { "lock", "sleep", "restart", "shut_down" } }),
+                },
+                Required = ["action"],
+            },
+        },
+    ];
 
     static IEnumerable<ToolUnion> FileTools() =>
     [

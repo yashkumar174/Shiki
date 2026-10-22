@@ -56,6 +56,10 @@ public enum PlanState { Waiting, Running, Done, Failed, Declined, Skipped }
 public sealed class PlanItem(string summary, IReadOnlyList<PlanStep> steps) : ChatItem
 {
     public string Summary { get; } = summary;
+    /// <summary>Instead of steps: one thing to do on the PC (lock, sleep), which says what happened.</summary>
+    public Func<string>? Run { get; init; }
+    /// <summary>A line under the summary when there are no steps to show.</summary>
+    public string? Detail { get; init; }
     public IReadOnlyList<PlanStep> Steps { get; } = steps;
     public PlanState State { get; internal set; } = PlanState.Waiting;
     /// <summary>The step running now (0-based) while Running.</summary>
@@ -386,7 +390,28 @@ public sealed class CatChat(CatHands hands)
                     results.Add(Result(use.ID, problem!, error: true));
                     continue;
                 }
-                if (use.Name == "propose_plan")
+                if (use.Name == "pc_power" && !waitForPerson)
+                {
+                    if (Shell.PcControl.ParsePower(Str(input, "action")) is not { } power)
+                    {
+                        results.Add(Result(use.ID, "The action must be lock, sleep, restart or shut_down.", error: true));
+                        continue;
+                    }
+                    var card = new PlanItem(Shell.PcControl.Describe(power), [])
+                    {
+                        Run = () => Shell.PcControl.Do(power),
+                        Detail = power is Shell.PcControl.Power.Restart or Shell.PcControl.Power.ShutDown
+                            ? "Apps with unsaved work will ask to save first."
+                            : power == Shell.PcControl.Power.Sleep ? "Press a key or the power button to wake it." : "Sign in again to come back.",
+                    };
+                    _plan = card;
+                    _planToolId = use.ID;
+                    _items.Add(card);
+                    waitForPerson = true;
+                    AiLog.Write("plan", card.Summary);
+                    continue;
+                }
+                if (use.Name is "propose_plan" or "pc_power")
                 {
                     results.Add(Result(use.ID, "Only one plan at a time; this one was ignored.", error: true));
                     continue;
@@ -433,6 +458,26 @@ public sealed class CatChat(CatHands hands)
         plan.State = PlanState.Running;
         AiLog.Write("confirmed", plan.Summary);
         Notify();
+
+        if (plan.Run is { } run)
+        {
+            // Let the card show "Working on it" before the screen locks or the PC sleeps.
+            await Task.Delay(400);
+            try
+            {
+                plan.Outcome = run();
+                plan.State = PlanState.Done;
+                Finish(plan, $"The person pressed Do it. {plan.Outcome}");
+            }
+            catch (Exception ex)
+            {
+                plan.State = PlanState.Failed;
+                plan.Outcome = $"That didn't work: {ex.Message}";
+                Finish(plan, $"The person pressed Do it, but it failed: {ex.Message}");
+            }
+            Notify();
+            return;
+        }
 
         IReadOnlyList<string> previous = [];
         var report = new StringBuilder();
@@ -637,6 +682,49 @@ public sealed class CatChat(CatHands hands)
                 var open = Todos.All.Where(t => !t.Done).OrderBy(t => t.Due ?? DateTime.MaxValue).ToList();
                 return open.Count == 0 ? "No open tasks." : string.Join("\n", open.Take(40).Select(t => $"- {t.Text}{(t.Due != null ? $" (due {t.DueText()})" : "")}{(t.From != null ? $" [from {t.From}]" : "")}"));
             }
+            case "control_pc":
+            {
+                var action = Str(input, "action") ?? "";
+                var value = Str(input, "value") ?? (input.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Number ? v.ToString() : null);
+                int Amount(int fallback) => int.TryParse(value, out var n) ? n : fallback;
+                var done = await Task.Run(() => action switch
+                {
+                    "status" => Shell.PcControl.Status(),
+                    "set_volume" => Shell.PcControl.SetVolume(Amount(50)),
+                    "volume_up" => Shell.PcControl.ChangeVolume(Amount(10)),
+                    "volume_down" => Shell.PcControl.ChangeVolume(-Amount(10)),
+                    "mute" => Shell.PcControl.Mute(true),
+                    "unmute" => Shell.PcControl.Mute(false),
+                    "list_sound_outputs" => string.Join("\n", Shell.PcControl.Outputs().Select(o => o.Name + (o.Current ? " (in use)" : ""))),
+                    "switch_sound_output" => Shell.PcControl.SetOutput(value ?? ""),
+                    "set_brightness" => Shell.PcControl.SetBrightness(Amount(70)),
+                    "brightness_up" => Shell.PcControl.ChangeBrightness(Amount(15)),
+                    "brightness_down" => Shell.PcControl.ChangeBrightness(-Amount(15)),
+                    "dark_mode_on" => Shell.PcControl.SetDarkMode(true),
+                    "dark_mode_off" => Shell.PcControl.SetDarkMode(false),
+                    "do_not_disturb_on" => Shell.PcControl.SetDoNotDisturb(true),
+                    "do_not_disturb_off" => Shell.PcControl.SetDoNotDisturb(false),
+                    "open_apps" => OpenApps(),
+                    _ => $"There's no PC control called \"{action}\".",
+                });
+                if (action is not ("status" or "list_sound_outputs" or "open_apps")) _items.Add(new CatDid(PcGlyph(action), done));
+                AiLog.Write("pc", $"{action} {value}: {done}");
+                return done;
+            }
+            case "open_app":
+            {
+                var app = Str(input, "name") ?? "";
+                var done = await Task.Run(() => Shell.Apps.Open(app));
+                if (done.StartsWith("Opened")) _items.Add(new CatDid("\uE8A7", done));
+                return done;
+            }
+            case "close_app":
+            {
+                var app = Str(input, "name") ?? "";
+                var done = await Task.Run(() => Shell.Apps.Close(app));
+                if (done.StartsWith("Asked") || done.StartsWith("Closed")) _items.Add(new CatDid("\uE711", done));
+                return done;
+            }
             case "use_app_tool":
             {
                 var tool = Str(input, "tool") ?? "";
@@ -647,6 +735,23 @@ public sealed class CatChat(CatHands hands)
             default:
                 return $"There's no tool called {name}.";
         }
+    }
+
+    static string PcGlyph(string action) => action switch
+    {
+        _ when action.Contains("volume") || action.Contains("mute") || action.Contains("sound") => "\uE767",
+        _ when action.Contains("brightness") => "\uE706",
+        _ when action.Contains("dark_mode") => "\uE793",
+        _ when action.Contains("disturb") => "\uE708",
+        _ => "\uE7F4",
+    };
+
+    static string OpenApps()
+    {
+        var running = Shell.Apps.Windows();
+        var lines = running.Select(r => $"{r.Name}: {r.Title}").ToList();
+        foreach (var r in running) r.Process.Dispose();
+        return lines.Count == 0 ? "No app windows are open." : string.Join("\n", lines);
     }
 
     ScreenContext? _screen;

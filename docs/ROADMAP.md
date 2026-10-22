@@ -71,7 +71,7 @@ later, Whisper offline). "Hey Sky, type…" works too.
 
 In no fixed order yet; we pick as we go.
 
-- **Voice for the PC**: volume, mute, brightness, dark mode, Do Not Disturb, open and close apps,
+- **Voice for the PC** (built, v2.7): volume, mute, brightness, dark mode, Do Not Disturb, open and close apps,
   lock and sleep (asks first), reminders, switching the sound output.
 - **Routines**: "start work mode", "done for the day", and your own phrases ("when I say meeting,
   mute notifications and open Zoom").

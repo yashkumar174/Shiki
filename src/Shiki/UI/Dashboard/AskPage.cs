@@ -157,7 +157,13 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
             row.Children.Add(what);
             steps.Children.Add(row);
         }
-        stack.Children.Add(steps);
+        if (plan.Detail is { } note)
+        {
+            var line = k.Text(note, compact ? 12.5 : 13, P.Muted, wrap: true);
+            line.Margin = new Thickness(0, 4, 0, 12);
+            stack.Children.Add(line);
+        }
+        else stack.Children.Add(steps);
         stack.Children.Add(PlanFooter(plan));
 
         var card = k.Card(stack, compact ? new Thickness(16, 14, 16, 14) : new Thickness(20, 18, 20, 18), 16);
@@ -436,7 +442,7 @@ public sealed class AskView
         head.Children.Add(tools);
         var titles = new StackPanel();
         titles.Children.Add(k.Text($"Ask {CatName}", 30, weight: FontWeights.SemiBold, font: DashKit.Display));
-        var sub = k.Text($"Say what you want done with your files, or ask about anything on screen ({host.Settings.PawHotkey} to point at it). {CatName} shows you the plan and waits for your OK.", 15, P.Muted, wrap: true);
+        var sub = k.Text($"Say what you want done with your files or your PC, or ask about anything on screen ({host.Settings.PawHotkey} to point at it). {CatName} shows you the plan and waits for your OK.", 15, P.Muted, wrap: true);
         sub.Margin = new Thickness(0, 6, 0, 0);
         titles.Children.Add(sub);
         head.Children.Add(titles);

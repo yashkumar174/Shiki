@@ -338,6 +338,11 @@ public partial class App : Application
                 // Dev aid: learn a voice from the first WAV(s) after "learn", then say how alike each other WAV is.
                 _ = VoiceTest(args[1..]);
                 break;
+            case "pc-test":
+                // Dev aid: reads the PC's controls, sets each to what it already is, and checks what
+                // phrases and app names would match (nothing is left changed).
+                PcTest();
+                break;
             case "type-test":
                 // Dev aid: types into a small window of its own and logs what arrived (nothing else is touched).
                 _ = TypeTest();
@@ -714,6 +719,8 @@ public partial class App : Application
     void WatchPc()
     {
         _pc = new PcWatch();
+        // Read the Start menu now, so "open Spotify" is instant later.
+        System.Threading.Tasks.Task.Run(Apps.All);
         _pc.StateChanged += () => _buddy?.SetPcState(_pc.BatteryLow, _pc.Busy);
         _pc.PluggedIn += () => _buddy?.Cheer(Floater.Bolt);
         _pc.Downloaded += _ => _buddy?.Cheer(Floater.Download);
@@ -1182,6 +1189,35 @@ public partial class App : Application
         }
     }
 
+    static void PcTest()
+    {
+        Log.Info($"pc-test status: {PcControl.Status()}");
+        Log.Info("pc-test outputs: " + string.Join(" | ", PcControl.Outputs().Select(o => o.Name + (o.Current ? " *" : ""))));
+        var (percent, muted, _) = PcControl.Volume();
+        Log.Info($"pc-test set volume same: {PcControl.SetVolume(percent)} -> {PcControl.Volume().Percent}");
+        PcControl.Mute(muted);
+        if (PcControl.Brightness() is { } bright) Log.Info($"pc-test set brightness same: {PcControl.SetBrightness(bright)} -> {PcControl.Brightness()}");
+        var dark = PcControl.DarkMode();
+        Log.Info($"pc-test dark mode same: {PcControl.SetDarkMode(dark)}");
+        var quiet = PcControl.DoNotDisturb();
+        Log.Info($"pc-test dnd now: {quiet}");
+        if (quiet == false)
+        {
+            Log.Info($"pc-test dnd on: {PcControl.SetDoNotDisturb(true)} -> {PcControl.DoNotDisturb()}");
+            Log.Info($"pc-test dnd off: {PcControl.SetDoNotDisturb(false)} -> {PcControl.DoNotDisturb()}");
+        }
+        var apps = Apps.All();
+        Log.Info($"pc-test apps: {apps.Count}");
+        foreach (var name in new[] { "chrome", "word", "excel", "notepad", "calculator", "spotify", "whatsapp", "vs code", "settings", "paint", "camera", "teams", "edge", "the invoice", "work mode", "recording" })
+            Log.Info($"pc-test find \"{name}\": {Apps.Find(name)?.Name ?? "-"} / strict {Apps.Find(name, strict: true)?.Name ?? "-"}");
+        foreach (var said in new[] { "mute", "unmute the sound", "volume up", "turn it down", "set the volume to 40", "volume fifty percent", "brightness 70", "make it brighter",
+                     "dark mode", "turn off dark mode", "do not disturb", "turn off do not disturb", "please mute the computer", "open chrome", "merge my pdfs", "volume 400" })
+            Log.Info($"pc-test phrase \"{said}\": {(PcCommands.Match(WakeMatcher.Normalize(said)) != null ? "PC command" : "-")}");
+        var running = Apps.Windows();
+        Log.Info("pc-test windows: " + string.Join(" | ", running.Select(r => $"{r.Name} [{r.Process.ProcessName}]: {r.Title}")));
+        foreach (var r in running) r.Process.Dispose();
+    }
+
     async System.Threading.Tasks.Task TypeTest()
     {
         var box = new System.Windows.Controls.TextBox { FontSize = 16, AcceptsReturn = true };
@@ -1312,37 +1348,59 @@ public partial class App : Application
         ToastHost.Show(toast);
     }
 
-    /// <summary>"Take notes", "stop notes", "mark that": done straight away when said, no need to ask Claude.</summary>
-    bool VoiceCommand(string said)
+    /// <summary>
+    /// "Take notes", "mute", "volume 40", "open Chrome": done straight away when said, no need to
+    /// ask Claude. Returns what to do, or null to let Claude handle it.
+    /// </summary>
+    Action? VoiceCommand(string said)
     {
         var words = WakeMatcher.Normalize(said);
         if (words is "take notes" or "take meeting notes" or "start taking notes" or "start notes" or "start the notes" or "take notes please" or "start meeting notes" or "take some notes")
         {
-            if (_meeting != null) Chat.Say(new CatDid("\uE8F2", "I'm already taking notes."));
-            else
+            return () =>
             {
-                StartNotes();
-                Chat.Say(new CatDid("\uE8F2", $"Taking notes. Say \"Hey {CatName}, stop notes\" when the meeting's over."));
-            }
-            return true;
+                if (_meeting != null) Chat.Say(new CatDid("\uE8F2", "I'm already taking notes."));
+                else
+                {
+                    StartNotes();
+                    Chat.Say(new CatDid("\uE8F2", $"Taking notes. Say \"Hey {CatName}, stop notes\" when the meeting's over."));
+                }
+            };
         }
         if (words is "stop notes" or "stop taking notes" or "stop the notes" or "end notes" or "finish notes" or "stop meeting notes" or "end the meeting notes" or "stop note taking")
         {
-            if (_meeting == null) Chat.Say(new CatDid("\uE8F2", "I wasn't taking notes."));
-            else
+            return () =>
             {
-                StopNotes();
-                Chat.Say(new CatDid("\uE8F2", "Stopped. Writing the notes now; they'll pop up when ready."));
-            }
-            return true;
+                if (_meeting == null) Chat.Say(new CatDid("\uE8F2", "I wasn't taking notes."));
+                else
+                {
+                    StopNotes();
+                    Chat.Say(new CatDid("\uE8F2", "Stopped. Writing the notes now; they'll pop up when ready."));
+                }
+            };
         }
         if (_meeting != null && words is "mark that" or "mark this" or "mark it" or "bookmark that" or "bookmark this" or "remember that" or "note that")
         {
-            _meeting.Mark();
-            Chat.Say(new CatDid("\uE734", "Marked."));
-            return true;
+            return () =>
+            {
+                _meeting.Mark();
+                Chat.Say(new CatDid("\uE734", "Marked."));
+            };
         }
-        return false;
+        // The PC's own controls, said plainly.
+        if (PcCommands.Try(words) is { } done)
+        {
+            AiLog.Write("pc", $"{words}: {done}");
+            return () => Chat.Say(new CatDid("\uE7F4", done));
+        }
+        // "Open Spotify": only when the name clearly is an app (else "open the invoice" goes to Claude).
+        if (System.Text.RegularExpressions.Regex.Match(words, @"^(open|launch|start)( up)? (the )?(?<app>.+?)( app)?$") is { Success: true } open
+            && Apps.Find(open.Groups["app"].Value, strict: true) is { } app)
+        {
+            var opened = Apps.Open(app.Name);
+            return () => Chat.Say(new CatDid("\uE8A7", opened));
+        }
+        return null;
     }
 
     // ---- Task reminders ----
