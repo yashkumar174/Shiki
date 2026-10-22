@@ -34,7 +34,7 @@ public static class Speech
 
     /// <summary>Words Deepgram should expect: the cat's name and the app's vocabulary.</summary>
     public static IEnumerable<string> KeyTerms(string catName) =>
-        [catName, $"Hey {catName}", "PDF", "JPG", "PNG", "WEBP", "MP4", "MP3", "GIF", "Downloads", "zip"];
+        [catName, $"Hey {catName}", "Shiki", "PDF", "JPG", "PNG", "WEBP", "MP4", "MP3", "GIF", "Downloads", "zip"];
 
     public static ISpeechToText ForCommands(Settings settings, Func<string> catName) =>
         settings.VoiceEngine == "wispr" && WisprFlow.Available && WisprFlow.HasKey ? new WisprFlow()

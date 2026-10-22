@@ -41,6 +41,12 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
 
     public event Action? Changed;
 
+    /// <summary>
+    /// Things the app does straight away when said ("take notes", "mark that"), without asking
+    /// Claude; returns true when it handled what was said.
+    /// </summary>
+    public Func<string, bool>? Commands { get; set; }
+
     /// <summary>The conversation ended (quiet, or "thanks"): the bubble can step back.</summary>
     public event Action? ConversationEnded;
 
@@ -231,6 +237,13 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         {
             if (after.Length == 0) { if (listenAfter) Continue(); return; }
             text = after;
+        }
+
+        if (Commands?.Invoke(text) == true)
+        {
+            chat.Say(new YouSaid(text, spoken: true));
+            if (listenAfter) Continue();
+            return;
         }
 
         if (chat.WaitingPlan is { } plan && Answer(text) is { } yes)

@@ -22,7 +22,7 @@ words and suggests the fix. Shares the screen capture and Claude vision of item 
 - Offers the fix as a step-by-step card; anything it would change on the PC asks first.
 - Never reads or sends password fields.
 
-### 3. Meeting buddy
+### 3. Meeting buddy (built, v2.2)
 "Hey Sky, take notes" when a meeting starts; "Hey Sky, stop notes" (or the call ends) and it
 gives you the summary.
 - Records the call's sound (what you hear, through Windows) and your microphone, and writes it

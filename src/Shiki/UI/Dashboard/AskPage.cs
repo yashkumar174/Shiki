@@ -507,7 +507,33 @@ public sealed class AskView
         if (_chat.Busy) _transcript.Children.Add(cards.Thinking());
         else if (_chat.Picture is { } picture)
             _transcript.Children.Add(cards.PictureStrip(picture, question => _ = _chat.Send(question), _chat.ForgetPicture));
+        if (!_chat.Busy && _chat.ContextLabel is { } about) _transcript.Children.Add(AboutChip(about));
         _scroll.Dispatcher.BeginInvoke(() => _scroll.ScrollToEnd(), System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    /// <summary>"Asking about the meeting …": what's attached to the next message, with a way to drop it.</summary>
+    UIElement AboutChip(string about)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        var icon = _k.Icon("\uE723", 13, P.Muted);
+        icon.Margin = new Thickness(0, 0, 8, 0);
+        row.Children.Add(icon);
+        var text = _k.Text($"Asking about {about}", 13.5, P.Text);
+        text.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(text);
+        var close = _k.IconButton("\uE711", _chat.ForgetContext, "Don't attach it", 10, P.Muted, 26);
+        close.Margin = new Thickness(8, 0, 0, 0);
+        row.Children.Add(close);
+        var chip = new Border
+        {
+            Background = DashKit.B(P.Hover),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(12, 4, 6, 4),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(36, 14, 0, 4),
+            Child = row,
+        };
+        return chip;
     }
 
     UIElement Ideas_()

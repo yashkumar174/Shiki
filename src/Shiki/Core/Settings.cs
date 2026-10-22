@@ -55,6 +55,12 @@ public sealed class Settings
     public string PawHotkey { get; set; } = "Ctrl+Alt+P";
     /// <summary>"What's this error?": the cat looks at the window in front and explains it.</summary>
     public string ErrorHotkey { get; set; } = "Ctrl+Alt+E";
+    /// <summary>Meeting notes: start, and pressed again, stop.</summary>
+    public string NotesHotkey { get; set; } = "Ctrl+Alt+N";
+    /// <summary>Also keep a meeting's sound (as M4A, with recordings). Off: only the notes and transcript stay.</summary>
+    public bool KeepMeetingAudio { get; set; }
+    /// <summary>When a call starts (Zoom, Teams, Meet…), offer once to take notes.</summary>
+    public bool OfferNotes { get; set; } = true;
     /// <summary>Speech to text for commands: "whisper" (on this PC), "deepgram", or "wispr" (Wispr Flow, once its API is open).</summary>
     public string VoiceEngine { get; set; } = "whisper";
     /// <summary>Who checks speech for the wake word: "whisper" (on this PC) or "deepgram" (speech bursts only).</summary>

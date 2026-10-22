@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Shiki.Core;
 using Shiki.Core.Ai;
+using Shiki.Core.Meetings;
 using Shiki.Core.Voice;
 using Shiki.Shell;
 using Shiki.UI;
@@ -39,7 +40,7 @@ public partial class App : Application
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
     Hotkeys? _hotkeys;
-    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1, _talkHotkeyId = -1, _pawHotkeyId = -1, _errorHotkeyId = -1;
+    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1, _talkHotkeyId = -1, _pawHotkeyId = -1, _errorHotkeyId = -1, _notesHotkeyId = -1;
     RecordingSession? _recording;
     SnipWindow? _snip;
     PawWindow? _paw;
@@ -327,6 +328,11 @@ public partial class App : Application
                 }
                 else Log.Info("window-shot: no window");
                 break;
+            case "meeting-test" when args.Length == 2:
+                // Dev aid: a stereo WAV (left you, right them) goes through the meeting notes as if it were a call.
+                EnterBuddyMode();
+                _ = MeetingTest(args[1]);
+                break;
             case "paw":
                 // Paw to ask, as the shortcut opens it.
                 EnterBuddyMode();
@@ -361,6 +367,13 @@ public partial class App : Application
                 var teach = new WakeSetupWindow(CatName, _settings.WakeVariants, _settings.WakeWord, (_, _, _) => { });
                 DashboardWindow.SaveElement((FrameworkElement)teach.Content, teach.Width, args[1]);
                 teach.Close();
+                break;
+            case "snapshot-meeting" when args.Length == 3:
+                // Dev aid: one meeting's page, drawn off screen.
+                EnterBuddyMode();
+                if (_dashboard == null) ShowDashboard(DashPage.Meetings, show: false);
+                _dashboard!.SelectMeeting(args[1]);
+                _dashboard.Snapshot(args[2], DashPage.Meetings);
                 break;
             case "snapshot-bubble" when args.Length == 2:
                 // Dev aid: the ask bubble drawn off screen.
@@ -548,6 +561,7 @@ public partial class App : Application
                 : new MenuEntry("\uE720", $"Teach me to answer to \"Hey {CatName}\"…", TeachName),
             new MenuEntry("\uE8B0", $"Paw to ask ({_settings.PawHotkey})", () => StartPaw()),
             new MenuEntry("\uE783", $"What's this error? ({_settings.ErrorHotkey})", ExplainError),
+            new MenuEntry("\uE8F2", _meeting == null ? $"Take meeting notes ({_settings.NotesHotkey})" : "Stop meeting notes", ToggleNotes),
             new MenuEntry("\uE924", $"Snip and convert ({_settings.SnipHotkey})", StartSnip),
             new MenuEntry("\uE714", $"Record the screen ({_settings.RecordHotkey})", StartRecording),
             new MenuEntry("\uE790", $"Pick a colour ({_settings.ColourHotkey})", StartColourPicker),
@@ -699,12 +713,15 @@ public partial class App : Application
                 new ShortcutSetting($"Talk to {CatName}", () => _settings.TalkHotkey, text => ChangeHotkey(text, () => _settings.TalkHotkey, v => _settings.TalkHotkey = v)),
                 new ShortcutSetting("Paw to ask", () => _settings.PawHotkey, text => ChangeHotkey(text, () => _settings.PawHotkey, v => _settings.PawHotkey = v)),
                 new ShortcutSetting("What's this error?", () => _settings.ErrorHotkey, text => ChangeHotkey(text, () => _settings.ErrorHotkey, v => _settings.ErrorHotkey = v)),
+                new ShortcutSetting("Meeting notes", () => _settings.NotesHotkey, text => ChangeHotkey(text, () => _settings.NotesHotkey, v => _settings.NotesHotkey = v)),
             ],
             [
                 new SettingSwitch("Right-click menu in Explorer", "Convert with Shiki, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu),
                 new SettingSwitch("Shift + drag opens the wheel", "Hold Shift while dragging any file.", () => _settings.ShiftDragSummon, ToggleShiftDrag),
                 new SettingSwitch("Glass follows what's behind", "Glass look only. Off shows popups in screen recordings.", () => _settings.LiveGlass, ToggleLiveGlass),
                 new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
+                new SettingSwitch("Offer to take notes when a call starts", "Zoom, Teams, Meet in a browser and other calling apps. Asks once per call.", () => _settings.OfferNotes, () => { _settings.OfferNotes = !_settings.OfferNotes; _settings.Save(); }),
+                new SettingSwitch("Keep meeting recordings", "Also save a meeting's sound (M4A, with your recordings). Off: only the notes and the transcript stay.", () => _settings.KeepMeetingAudio, () => { _settings.KeepMeetingAudio = !_settings.KeepMeetingAudio; _settings.Save(); }),
             ],
             new AiSetting(
                 CatName,
@@ -733,7 +750,7 @@ public partial class App : Application
     {
         var previous = get();
         // Shortcuts can't share keys.
-        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey || text == _settings.TalkHotkey || text == _settings.PawHotkey || text == _settings.ErrorHotkey)) return false;
+        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey || text == _settings.TalkHotkey || text == _settings.PawHotkey || text == _settings.ErrorHotkey || text == _settings.NotesHotkey)) return false;
         set(text);
         if (BindHotkeys(quiet: true))
         {
@@ -791,6 +808,9 @@ public partial class App : Application
         _hotkeys = new Hotkeys();
         BindHotkeys(quiet: false);
         ApplyWake();
+        StartReminders();
+        _calls = new CallWatcher();
+        _calls.Started += OfferNotes;
         // Deepgram's running total, for Settings.
         Deepgram.Sent += seconds => Dispatcher.BeginInvoke(() => { _settings.DeepgramSeconds += seconds; _settings.Save(); });
     }
@@ -806,7 +826,8 @@ public partial class App : Application
         bool talk = Bind(ref _talkHotkeyId, _settings.TalkHotkey, Talk, quiet);
         bool paw = Bind(ref _pawHotkeyId, _settings.PawHotkey, () => StartPaw(), quiet);
         bool error = Bind(ref _errorHotkeyId, _settings.ErrorHotkey, ExplainError, quiet);
-        return snip && colour && convert && record && ask && talk && paw && error;
+        bool notes = Bind(ref _notesHotkeyId, _settings.NotesHotkey, ToggleNotes, quiet);
+        return snip && colour && convert && record && ask && talk && paw && error && notes;
     }
 
     bool Bind(ref int id, string text, Action handler, bool quiet)
@@ -857,6 +878,10 @@ public partial class App : Application
                 Record = StartRecording,
                 Paw = () => StartPaw(),
                 ExplainError = ExplainError,
+                NotesRunning = () => _meeting != null,
+                ToggleNotes = ToggleNotes,
+                AskAboutMeeting = AskAboutMeeting,
+                RewriteNotes = meeting => _ = RewriteNotes(meeting),
                 MakeQr = () => ShowQr(""),
                 Paste = PasteToCat,
                 OpenSettings = ShowSettings,
@@ -896,7 +921,7 @@ public partial class App : Application
         get
         {
             if (_voice != null) return _voice;
-            _voice = new VoiceInput(Chat, _settings, () => CatName);
+            _voice = new VoiceInput(Chat, _settings, () => CatName) { Commands = VoiceCommand };
             // The conversation is over: put the bubble away if you're not using it.
             _voice.ConversationEnded += () => Dispatcher.BeginInvoke(() => { if (_bubble is { IsActive: false } bubble) bubble.Close(); },
                 DispatcherPriority.ApplicationIdle);
@@ -1004,6 +1029,177 @@ public partial class App : Application
         LookAtScreen = () => WindowShots.Capture(WindowShots.TopOtherWindow()),
     });
 
+    // ---- Meeting notes ----
+
+    MeetingSession? _meeting;
+    NotesPill? _pill;
+    CallWatcher? _calls;
+    readonly DispatcherTimer _reminders = new() { Interval = TimeSpan.FromSeconds(30) };
+
+    void ToggleNotes()
+    {
+        if (_meeting == null) StartNotes();
+        else StopNotes();
+    }
+
+    /// <summary>Starts taking notes: the pill appears at the top, and the call is written down as it goes.</summary>
+    void StartNotes(string? app = null)
+    {
+        if (_meeting != null) return;
+        _menu?.CloseAnimated();
+        if (!Microphone.Present())
+        {
+            ToastHost.Show(ToastWindow.Message("No microphone", "Plug one in, or check Windows' sound settings, then try again."));
+            return;
+        }
+        try
+        {
+            _meeting = MeetingSession.Start(_settings, CatName, app);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Could not start meeting notes", ex);
+            ToastHost.Show(ToastWindow.Message("Couldn't start notes", ex.Message));
+            return;
+        }
+        _pill = new NotesPill(_meeting);
+        _pill.MarkRequested += () => _meeting?.Mark();
+        _pill.StopRequested += StopNotes;
+        _pill.Show();
+        _buddy?.Act("purr");
+    }
+
+    /// <summary>Stops, writes the notes, adds your tasks, and says where to find them.</summary>
+    async void StopNotes()
+    {
+        if (_meeting is not { Stopping: false } session) return;
+        try
+        {
+            var meeting = await session.StopAsync(Names.First ?? "", cost => { _settings.AiSpentUsd += cost; _settings.AiRequests++; _settings.Save(); });
+            int mine = meeting.Tasks.Count(t => t.Owner.Equals("me", StringComparison.OrdinalIgnoreCase));
+            var message = meeting.NotesProblem ?? (meeting.Summary is { Length: > 0 }
+                ? $"{meeting.Length}. {(mine == 0 ? "No tasks for you." : mine == 1 ? "1 task added to your list." : $"{mine} tasks added to your list.")}"
+                : "The transcript is saved.");
+            ToastWindow? toast = null;
+            toast = ToastWindow.Message(meeting.NotesProblem == null ? $"Notes ready: {meeting.Title}" : "Meeting saved", message, null,
+                ("Open", () => { toast!.CloseAnimated(); ShowDashboard(); _dashboard!.OpenMeetingPage(meeting.Id); }));
+            ToastHost.Show(toast);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Stopping meeting notes failed", ex);
+            ToastHost.Show(ToastWindow.Message("Notes stopped", "Something went wrong while saving. The log has the details."));
+        }
+        finally
+        {
+            _pill?.Close();
+            _pill = null;
+            _meeting = null;
+        }
+    }
+
+    async System.Threading.Tasks.Task RewriteNotes(Meeting meeting)
+    {
+        try
+        {
+            using var cancel = new System.Threading.CancellationTokenSource(TimeSpan.FromMinutes(3));
+            await MeetingNotes.Write(meeting, Names.First ?? "", cost => { _settings.AiSpentUsd += cost; _settings.AiRequests++; _settings.Save(); }, cancel.Token);
+            foreach (var task in meeting.Tasks.Where(t => t.Owner.Equals("me", StringComparison.OrdinalIgnoreCase)))
+                if (!Todos.All.Any(t => t.MeetingId == meeting.Id && t.Text == task.Text))
+                    Todos.Add(task.Text, task.Due, task.Due is { } due && due.TimeOfDay != TimeSpan.Zero, meeting.Title, meeting.Id);
+        }
+        catch (Exception ex)
+        {
+            meeting.NotesProblem = ex is InvalidOperationException ? ex.Message : $"The notes couldn't be written ({ex.Message}).";
+        }
+        MeetingStore.Save(meeting);
+    }
+
+    /// <summary>Opens the Ask page with the meeting's notes and transcript attached.</summary>
+    void AskAboutMeeting(Meeting meeting)
+    {
+        var text = new System.Text.StringBuilder();
+        text.AppendLine($"Meeting: {meeting.Title}, {meeting.Started:dddd d MMMM yyyy, HH:mm}, {meeting.Length}.");
+        if (meeting.Summary is { Length: > 0 } summary) text.AppendLine($"Summary: {summary}");
+        if (meeting.Decisions.Count > 0) text.AppendLine("Decisions: " + string.Join("; ", meeting.Decisions));
+        if (meeting.Tasks.Count > 0) text.AppendLine("Tasks: " + string.Join("; ", meeting.Tasks.Select(t => $"{t.Text} ({t.Owner}{(t.Due is { } d ? $", by {d:yyyy-MM-dd}" : "")})")));
+        text.AppendLine().AppendLine("Transcript:").Append(meeting.Transcript());
+        Chat.Attach($"the meeting \"{meeting.Title}\" ({meeting.Started:d MMM})", text.ToString());
+        ShowDashboard(DashPage.Ask);
+    }
+
+    /// <summary>A calling app started using the microphone: offer once to take notes.</summary>
+    void OfferNotes(string app)
+    {
+        if (!_settings.OfferNotes || _meeting != null) return;
+        ToastWindow? toast = null;
+        toast = ToastWindow.Message($"A call started in {app}", $"Want {CatName} to take notes? You'll get a summary and your tasks at the end.", null,
+            ("Take notes", () => { toast!.CloseAnimated(); StartNotes(app); }),
+            ("Not this time", () => toast!.CloseAnimated()));
+        ToastHost.Show(toast);
+    }
+
+    /// <summary>"Take notes", "stop notes", "mark that": done straight away when said, no need to ask Claude.</summary>
+    bool VoiceCommand(string said)
+    {
+        var words = WakeMatcher.Normalize(said);
+        if (words is "take notes" or "take meeting notes" or "start taking notes" or "start notes" or "start the notes" or "take notes please" or "start meeting notes" or "take some notes")
+        {
+            if (_meeting != null) Chat.Say(new CatDid("\uE8F2", "I'm already taking notes."));
+            else
+            {
+                StartNotes();
+                Chat.Say(new CatDid("\uE8F2", $"Taking notes. Say \"Hey {CatName}, stop notes\" when the meeting's over."));
+            }
+            return true;
+        }
+        if (words is "stop notes" or "stop taking notes" or "stop the notes" or "end notes" or "finish notes" or "stop meeting notes" or "end the meeting notes" or "stop note taking")
+        {
+            if (_meeting == null) Chat.Say(new CatDid("\uE8F2", "I wasn't taking notes."));
+            else
+            {
+                StopNotes();
+                Chat.Say(new CatDid("\uE8F2", "Stopped. Writing the notes now; they'll pop up when ready."));
+            }
+            return true;
+        }
+        if (_meeting != null && words is "mark that" or "mark this" or "mark it" or "bookmark that" or "bookmark this" or "remember that" or "note that")
+        {
+            _meeting.Mark();
+            Chat.Say(new CatDid("\uE734", "Marked."));
+            return true;
+        }
+        return false;
+    }
+
+    // ---- Task reminders ----
+
+    void StartReminders()
+    {
+        _reminders.Tick += (_, _) => RemindDue();
+        _reminders.Start();
+        RemindDue();
+    }
+
+    /// <summary>A card for each task whose time has come: Done, an hour later, or tomorrow morning.</summary>
+    void RemindDue()
+    {
+        foreach (var todo in Todos.DueNow())
+        {
+            todo.Reminded = DateTime.Now;
+            todo.SnoozedUntil = null;
+            Todos.Update(todo);
+            ToastWindow? toast = null;
+            var from = todo.From is { Length: > 0 } f ? $"From {f}." : "";
+            toast = ToastWindow.Message($"Reminder: {todo.Text}", $"{(todo.Due is { } d && d < DateTime.Today ? $"It was due {todo.DueText()}. " : "")}{from}".Trim(), null,
+                ("Done", () => { todo.Done = true; Todos.Update(todo); toast!.CloseAnimated(); }),
+                ("In an hour", () => { todo.SnoozedUntil = DateTime.Now.AddHours(1); Todos.Update(todo); toast!.CloseAnimated(); }),
+                ("Tomorrow", () => { todo.SnoozedUntil = DateTime.Today.AddDays(1).AddHours(9); Todos.Update(todo); toast!.CloseAnimated(); }));
+            ToastHost.Show(toast);
+            _buddy?.Act("startle");
+        }
+    }
+
     /// <summary>
     /// "What's this error?" in one press: a picture of the window in front is taken right away
     /// (before the bubble opens over it), and the cat explains what went wrong and how to fix it.
@@ -1090,6 +1286,40 @@ public partial class App : Application
         }
         else _bubble.FocusBox();
         if (!string.IsNullOrWhiteSpace(say)) _ = Chat.Send(say);
+    }
+
+    async System.Threading.Tasks.Task MeetingTest(string wav)
+    {
+        try
+        {
+            using var reader = new NAudio.Wave.WaveFileReader(wav);
+            var bytes = new byte[reader.Length];
+            reader.ReadExactly(bytes);
+            var meeting = new Meeting { App = "Test" };
+            IMeetingTranscriber words = Deepgram.HasKey ? new DeepgramMeeting(Deepgram.Key.Read()!, Speech.KeyTerms(CatName)) : new WhisperMeeting();
+            words.Line += line => { lock (meeting) meeting.Add(line); };
+            var watch = Stopwatch.StartNew();
+            // A tenth of a second at a time, at real speed, like the live call.
+            for (int at = 0; at < bytes.Length; at += 6400)
+            {
+                words.Send(bytes[at..Math.Min(bytes.Length, at + 6400)]);
+                var due = (at + 6400) / 64.0 - watch.Elapsed.TotalMilliseconds;
+                if (due > 1) await System.Threading.Tasks.Task.Delay((int)due);
+            }
+            await words.FinishAsync();
+            await words.DisposeAsync();
+            meeting.Seconds = bytes.Length / 64000.0;
+            meeting.Lines.Sort((a, b) => a.At.CompareTo(b.At));
+            Log.Info($"meeting-test: {meeting.Lines.Count} lines with {words.Name}:\n{meeting.Transcript()}");
+            using var cancel = new System.Threading.CancellationTokenSource(TimeSpan.FromMinutes(3));
+            await MeetingNotes.Write(meeting, Names.First ?? "", _ => { }, cancel.Token);
+            MeetingStore.Save(meeting);
+            Log.Info($"meeting-test notes: {meeting.Title} | {meeting.Summary} | tasks: {string.Join("; ", meeting.Tasks.Select(t => $"{t.Text} [{t.Owner}, {t.Due}]"))} | decisions: {string.Join("; ", meeting.Decisions)} | questions: {string.Join("; ", meeting.Questions)}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("meeting-test failed", ex);
+        }
     }
 
     static float[] ReadWav(string wav)
@@ -1225,6 +1455,10 @@ public partial class App : Application
             case "paste_clipboard": PasteToCat(); return true;
             case "open_history": ShowDashboard(DashPage.History); return true;
             case "open_settings": ShowSettings(); return true;
+            case "take_notes": Dispatcher.BeginInvoke(() => StartNotes()); return true;
+            case "stop_notes": Dispatcher.BeginInvoke(StopNotes); return true;
+            case "open_tasks": Dispatcher.BeginInvoke(() => ShowDashboard(DashPage.Tasks)); return true;
+            case "open_meetings": Dispatcher.BeginInvoke(() => ShowDashboard(DashPage.Meetings)); return true;
             default: return false;
         }
     }

@@ -29,6 +29,15 @@ public sealed class DashboardHost
     public Action? Paw { get; init; }
     /// <summary>The cat looks at the window in front and explains its error.</summary>
     public Action? ExplainError { get; init; }
+    /// <summary>Meeting notes: running now, and start or stop them.</summary>
+    public Func<bool>? NotesRunning { get; init; }
+    public Action? ToggleNotes { get; init; }
+    /// <summary>Opens the Ask page with this meeting attached, to ask about it.</summary>
+    public Action<Core.Meetings.Meeting>? AskAboutMeeting { get; init; }
+    /// <summary>Tries writing a meeting's notes again (they failed the first time).</summary>
+    public Action<Core.Meetings.Meeting>? RewriteNotes { get; init; }
+    /// <summary>Shows one meeting (set by the dashboard itself).</summary>
+    public Action<string>? OpenMeeting { get; set; }
     public required Action MakeQr { get; init; }
     public required Action Paste { get; init; }
     public required Action OpenSettings { get; init; }
@@ -51,7 +60,7 @@ public sealed class DashboardHost
     public Action<string>? Play { get; set; }
 }
 
-public enum DashPage { Home, Ask, Tools, History }
+public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks }
 
 /// <summary>
 /// The main window: a sidebar on the left, one big rounded panel on the right, and a title bar
@@ -69,6 +78,7 @@ public sealed class DashboardWindow : Window
     bool _collapsed;
     readonly Grid _root = new();
     string? _historySearch;
+    string? _meetingId;
     Border? _maxButton;
 
     // An editor or settings window living inside the dashboard. It keeps its own logic; only its
@@ -94,6 +104,7 @@ public sealed class DashboardWindow : Window
     {
         _host = host;
         _host.Play = Play;
+        _host.OpenMeeting = id => { _meetingId = id; Show(DashPage.Meetings); };
         Title = "Shiki";
         Width = 1240;
         Height = 820;
@@ -125,10 +136,14 @@ public sealed class DashboardWindow : Window
             if (_maxButton?.Child is TextBlock glyph) glyph.Text = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
         };
         History.Changed += OnHistoryChanged;
+        Todos.Changed += OnListsChanged;
+        Core.Meetings.MeetingStore.Changed += OnListsChanged;
         Names.Found += OnHistoryChanged;
         Closed += (_, _) =>
         {
             History.Changed -= OnHistoryChanged;
+            Todos.Changed -= OnListsChanged;
+            Core.Meetings.MeetingStore.Changed -= OnListsChanged;
             Names.Found -= OnHistoryChanged;
             _settingsPage?.Window.Close();
             _editor?.Window.Close();
@@ -148,6 +163,12 @@ public sealed class DashboardWindow : Window
         KeyDown += (_, e) => { if (_showing != null && !e.Handled) Forward(e, Keyboard.KeyDownEvent); };
         ApplyTheme();
     }
+
+    // Tasks and meetings change from elsewhere (a reminder, notes being written): show it.
+    void OnListsChanged() => Dispatcher.BeginInvoke(() => { if (_page is DashPage.Tasks or DashPage.Meetings && _showing == null && !_onPlayer && !IsTyping()) Rebuild(); });
+
+    /// <summary>Someone's typing in a box on the page (a task, a speaker's name): don't rebuild under them.</summary>
+    static bool IsTyping() => Keyboard.FocusedElement is TextBox;
 
     // Tools and Ask don't show history; rebuilding Ask while a plan runs would only flicker.
     void OnHistoryChanged() => Dispatcher.BeginInvoke(() => { if (_page is not (DashPage.Tools or DashPage.Ask) || _showing != null || _onPlayer) Rebuild(); });
@@ -257,6 +278,16 @@ public sealed class DashboardWindow : Window
     }
 
     // ---- The media player ----
+
+    /// <summary>Dev aid: which meeting the Meetings page shows, without showing the window.</summary>
+    public void SelectMeeting(string? id) => _meetingId = id;
+
+    /// <summary>Shows one meeting's notes.</summary>
+    public void OpenMeetingPage(string id)
+    {
+        _meetingId = id;
+        Show(DashPage.Meetings);
+    }
 
     /// <summary>Opens a video or audio file in the dashboard's player.</summary>
     public void Play(string path)
@@ -463,6 +494,8 @@ public sealed class DashboardWindow : Window
     {
         DashPage.Tools => new ToolsPage(_k, _host).Build(),
         DashPage.History => new HistoryPage(_k, _host, _historySearch, s => _historySearch = s, Rebuild).Build(),
+        DashPage.Meetings => new MeetingsPage(_k, _host, _meetingId, id => { _meetingId = id; Rebuild(); }, Rebuild).Build(),
+        DashPage.Tasks => new TasksPage(_k, _host, Rebuild).Build(),
         _ => new HomePage(_k, _host, () => Show(DashPage.History), () => { _historySearch = ""; Show(DashPage.History); }).Build(),
     };
 
@@ -573,6 +606,8 @@ public sealed class DashboardWindow : Window
         if (_host.Chat != null) top.Children.Add(Nav("\uE8BD", $"Ask {_host.CatName()}", DashPage.Ask));
         top.Children.Add(Nav("\uE90F", "Tools", DashPage.Tools));
         top.Children.Add(Nav("\uE81C", "History", DashPage.History));
+        if (_host.ToggleNotes != null) top.Children.Add(Nav("\uE8F2", "Meetings", DashPage.Meetings));
+        top.Children.Add(Nav("\uE762", Todos.All.Count(t => !t.Done && t.Due is { } d && d.Date <= DateTime.Today) is > 0 and var due ? $"Tasks ({due})" : "Tasks", DashPage.Tasks));
         top.Children.Add(NavItem("\uE713", "Settings", !_onPlayer && _showing != null && _showing == _settingsPage, _host.OpenSettings, null, "Settings"));
         if (!_collapsed && SetupCard() is { } setup) top.Children.Add(setup);
         DockPanel.SetDock(top, Dock.Top);
