@@ -10,17 +10,28 @@ namespace ConvertedBro.Core.Ai;
 /// </summary>
 public static class ClaudeKey
 {
-    const string Target = "ConvertedBro/ClaudeApiKey";
+    static readonly SecretStore Store = new("ConvertedBro/ClaudeApiKey");
+
+    public static bool Exists => Store.Exists;
+    public static string? Hint => Store.Hint;
+    public static string? Read() => Store.Read();
+    public static void Save(string key) => Store.Save(key);
+    public static void Remove() => Store.Remove();
+}
+
+/// <summary>One secret (an API key) in Windows Credential Manager, under its own name.</summary>
+public sealed class SecretStore(string target)
+{
     const int CRED_TYPE_GENERIC = 1, CRED_PERSIST_LOCAL_MACHINE = 2;
 
-    public static bool Exists => Read() != null;
+    public bool Exists => Read() != null;
 
     /// <summary>The last four characters, to show which key is saved without showing it.</summary>
-    public static string? Hint => Read() is { Length: > 8 } key ? key[^4..] : null;
+    public string? Hint => Read() is { Length: > 8 } key ? key[^4..] : null;
 
-    public static string? Read()
+    public string? Read()
     {
-        if (!CredRead(Target, CRED_TYPE_GENERIC, 0, out var pointer)) return null;
+        if (!CredRead(target, CRED_TYPE_GENERIC, 0, out var pointer)) return null;
         try
         {
             var credential = Marshal.PtrToStructure<CREDENTIAL>(pointer);
@@ -35,7 +46,7 @@ public static class ClaudeKey
         }
     }
 
-    public static void Save(string key)
+    public void Save(string key)
     {
         var bytes = Encoding.Unicode.GetBytes(key.Trim());
         var blob = Marshal.AllocHGlobal(bytes.Length);
@@ -45,7 +56,7 @@ public static class ClaudeKey
             var credential = new CREDENTIAL
             {
                 Type = CRED_TYPE_GENERIC,
-                TargetName = Target,
+                TargetName = target,
                 UserName = "Converted Bro",
                 CredentialBlob = blob,
                 CredentialBlobSize = bytes.Length,
@@ -60,7 +71,7 @@ public static class ClaudeKey
         }
     }
 
-    public static void Remove() => CredDelete(Target, CRED_TYPE_GENERIC, 0);
+    public void Remove() => CredDelete(target, CRED_TYPE_GENERIC, 0);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct CREDENTIAL

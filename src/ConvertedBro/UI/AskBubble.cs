@@ -8,6 +8,7 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using ConvertedBro.Core.Ai;
+using ConvertedBro.Core.Voice;
 using ConvertedBro.UI.Dashboard;
 
 namespace ConvertedBro.UI;
@@ -28,14 +29,16 @@ public sealed class AskBubble : Window
     readonly Action _openDashboard;
     readonly StackPanel _items = new();
     readonly ScrollViewer _scroll;
-    readonly TextBox _box;
+    readonly ChatComposer _input;
+    readonly VoiceInput? _voice;
     double _bottom;
     // Where this visit starts in the chat: older turns stay on the Ask page, unless one is unfinished.
     int _first;
 
-    public AskBubble(CatChat chat, DashPalette palette, string catName, ImageSource head, Action<string> open, Action openDashboard)
+    public AskBubble(CatChat chat, VoiceInput? voice, DashPalette palette, string catName, ImageSource head, Action<string> open, Action openDashboard)
     {
         _chat = chat;
+        _voice = voice;
         _k = new DashKit(palette);
         _catName = catName;
         _head = head;
@@ -74,65 +77,13 @@ public sealed class AskBubble : Window
         _scroll = new ScrollViewer { Content = _items, MaxHeight = 380, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
 
         // ---- Box ----
-        _box = new TextBox
-        {
-            FontFamily = DashKit.Sans,
-            FontSize = 14.5,
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            Foreground = DashKit.B(p.Text),
-            CaretBrush = DashKit.B(p.Text),
-            SelectionBrush = DashKit.B(p.Accent),
-            TextWrapping = TextWrapping.Wrap,
-            AcceptsReturn = true,
-            MaxHeight = 96,
-            VerticalContentAlignment = VerticalAlignment.Center,
-        };
-        var hint = _k.Text($"Tell {catName} what to do…", 14.5, p.Faint);
-        hint.IsHitTestVisible = false;
-        hint.VerticalAlignment = VerticalAlignment.Center;
-        _box.TextChanged += (_, _) => hint.Visibility = _box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        _box.PreviewKeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift)
-            {
-                e.Handled = true;
-                Send();
-            }
-        };
-        var field = new Grid { Children = { hint, _box } };
-        var send = new Border
-        {
-            Width = 30,
-            Height = 30,
-            CornerRadius = new CornerRadius(15),
-            Background = DashKit.B(p.Accent),
-            Cursor = Cursors.Hand,
-            ToolTip = "Send (Enter)",
-            VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(10, 0, 0, 0),
-            Child = _k.Icon("\uE724", 13, p.AccentText),
-        };
-        send.MouseLeftButtonUp += (_, e) => { e.Handled = true; Send(); };
-        var row = new DockPanel();
-        DockPanel.SetDock(send, Dock.Right);
-        row.Children.Add(send);
-        row.Children.Add(field);
-        var composer = new Border
-        {
-            Background = DashKit.B(p.Panel),
-            BorderBrush = DashKit.B(p.Line),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(14, 6, 6, 6),
-            Margin = new Thickness(12, 4, 12, 12),
-            Child = row,
-        };
+        _input = new ChatComposer(_k, catName, voice, text => { if (!_chat.Busy) _ = _chat.Send(text); }, compact: true);
+        _input.Root.Margin = new Thickness(12, 4, 12, 12);
 
         var stack = new StackPanel();
         stack.Children.Add(header);
         stack.Children.Add(_scroll);
-        stack.Children.Add(composer);
+        stack.Children.Add(_input.Root);
         Content = new Border
         {
             Margin = new Thickness(Shadow),
@@ -147,19 +98,32 @@ public sealed class AskBubble : Window
         _first = chat.Busy || chat.Items.OfType<PlanItem>().Any(x => x.State is PlanState.Waiting or PlanState.Running)
             ? LastSaid() : chat.Items.Count;
         _chat.Changed += Refresh;
-        Closed += (_, _) => _chat.Changed -= Refresh;
-        PreviewKeyDown += (_, e) => { if (e.Key == Key.Escape) { e.Handled = true; Close(); } };
-        // Clicking elsewhere puts it away, unless the cat is busy or waiting for an answer.
+        Closed += (_, _) =>
+        {
+            _chat.Changed -= Refresh;
+            _input.Detach();
+            if (_voice is { Active: true }) _voice.Cancel();
+        };
+        // Esc stops listening first, then closes.
+        PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Escape) return;
+            e.Handled = true;
+            if (_voice is { Active: true }) _voice.Cancel();
+            else Close();
+        };
+        // Clicking elsewhere puts it away, unless the cat is listening, busy or waiting for an answer.
         Deactivated += (_, _) =>
         {
-            if (!_chat.Busy && !_chat.Items.OfType<PlanItem>().Any(x => x.State is PlanState.Waiting or PlanState.Running)) Close();
+            if (_voice is { Active: true } || _chat.Busy || _chat.Items.OfType<PlanItem>().Any(x => x.State is PlanState.Waiting or PlanState.Running)) return;
+            Close();
         };
         SizeChanged += (_, _) => Top = _bottom - ActualHeight;
         Loaded += (_, _) =>
         {
             Shell.NativeMethods.ForceForeground(new WindowInteropHelper(this).Handle);
             Activate();
-            _box.Focus();
+            _input.Box.Focus();
         };
         Refresh();
     }
@@ -176,15 +140,7 @@ public sealed class AskBubble : Window
     public void FocusBox()
     {
         Activate();
-        _box.Focus();
-    }
-
-    void Send()
-    {
-        var text = _box.Text.Trim();
-        if (text.Length == 0 || _chat.Busy) return;
-        _box.Text = "";
-        _ = _chat.Send(text);
+        _input.Box.Focus();
     }
 
     int LastSaid()

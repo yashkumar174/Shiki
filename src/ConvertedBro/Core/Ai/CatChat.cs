@@ -15,7 +15,12 @@ namespace ConvertedBro.Core.Ai;
 
 public abstract class ChatItem;
 
-public sealed class YouSaid(string text) : ChatItem { public string Text { get; } = text; }
+public sealed class YouSaid(string text, bool spoken = false) : ChatItem
+{
+    public string Text { get; } = text;
+    /// <summary>Said out loud (shown with a microphone).</summary>
+    public bool Spoken { get; } = spoken;
+}
 
 public sealed class CatSaid(string text) : ChatItem { public string Text { get; } = text; }
 
@@ -102,6 +107,16 @@ public sealed class CatChat(CatHands hands)
 
     void Notify() => Changed?.Invoke();
 
+    /// <summary>The plan card waiting for Do it or Not now, if any.</summary>
+    public PlanItem? WaitingPlan => _plan is { State: PlanState.Waiting } plan && _planToolId != null ? plan : null;
+
+    /// <summary>Adds a line to the chat without asking Claude (voice notes, a spoken yes).</summary>
+    public void Say(ChatItem item)
+    {
+        _items.Add(item);
+        Notify();
+    }
+
     /// <summary>Forgets the conversation (the log keeps it).</summary>
     public void Reset()
     {
@@ -128,19 +143,19 @@ public sealed class CatChat(CatHands hands)
     int _generation;
     bool _stopped;
 
-    public async Task Send(string text)
+    public async Task Send(string text, bool spoken = false)
     {
         text = text.Trim();
         if (text.Length == 0 || Busy) return;
         var key = ClaudeKey.Read();
-        _items.Add(new YouSaid(text));
+        _items.Add(new YouSaid(text, spoken));
         if (key == null)
         {
             _items.Add(new ChatProblem("I need a Claude API key before I can understand requests. Add one in Settings, under Ask the cat.", needsKey: true));
             Notify();
             return;
         }
-        AiLog.Write("asked", text);
+        AiLog.Write(spoken ? "said" : "asked", text);
 
         // A long chat gets expensive and slow; start over, keeping the cards on screen.
         if (_messages.Count > MaxMessages && _planToolId == null)
@@ -157,7 +172,7 @@ public sealed class CatChat(CatHands hands)
             content.Add(Result(_planToolId, "The person didn't answer the plan and said something else instead (below). The plan was not run."));
             _planToolId = null;
         }
-        content.Add(new TextBlockParam { Text = text + ScreenNote() });
+        content.Add(new TextBlockParam { Text = text + ScreenNote(spoken) });
         int before = _messages.Count, generation = _generation;
         _pending = [];
         _messages.Add(new UserMessageParam { Content = content });
@@ -501,11 +516,12 @@ public sealed class CatChat(CatHands hands)
     /// <summary>The screen as it was for this message (read once per message: it's a slow COM call).</summary>
     ScreenContext? Screen() => _screen;
 
-    string ScreenNote()
+    string ScreenNote(bool spoken)
     {
         _screen = NextScreen ?? hands.ReadScreen();
         NextScreen = null;
         var note = new StringBuilder($"\n\n[Context from the PC, not typed by the person. Now: {DateTime.Now:dddd yyyy-MM-dd HH:mm}.");
+        if (spoken) note.Append(" The message above was spoken and written down by speech recognition, so words (file names especially) may be misheard; go by what's likely.");
         if (_screen is { } s)
         {
             if (s.FromDesktop) note.Append(" The person was on the desktop.");

@@ -22,10 +22,11 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
 {
     DashPalette P => k.P;
     double Size => compact ? 14 : 15.5;
+    const string MicGlyph = "\uE720";
 
     public UIElement Render(ChatItem item) => item switch
     {
-        YouSaid you => You(you.Text),
+        YouSaid you => You(you.Text, you.Spoken),
         CatSaid cat => Cat(cat.Text),
         CatDid did => Did(did.Glyph, did.Text),
         ChatProblem problem => Problem(problem),
@@ -33,8 +34,21 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         _ => new Border(),
     };
 
-    UIElement You(string text)
+    UIElement You(string text, bool spoken)
     {
+        UIElement content = Selectable(text, Size, P.Text);
+        if (spoken)
+        {
+            // Said out loud: a small mic in front, so misheard words make sense.
+            var mic = k.Icon(MicGlyph, Size - 3, P.Muted);
+            mic.VerticalAlignment = VerticalAlignment.Top;
+            mic.Margin = new Thickness(0, 3, 8, 0);
+            var row = new DockPanel();
+            DockPanel.SetDock(mic, Dock.Left);
+            row.Children.Add(mic);
+            row.Children.Add(content);
+            content = row;
+        }
         var bubble = new Border
         {
             Background = DashKit.B(P.Selected),
@@ -43,7 +57,7 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
             HorizontalAlignment = HorizontalAlignment.Right,
             MaxWidth = compact ? 300 : 560,
             Margin = new Thickness(compact ? 40 : 120, compact ? 8 : 14, 0, 4),
-            Child = Selectable(text, Size, P.Text),
+            Child = content,
         };
         return bubble;
     }
@@ -255,7 +269,7 @@ public sealed class AskView
     readonly CatChat _chat;
     readonly StackPanel _transcript = new();
     readonly ScrollViewer _scroll;
-    readonly TextBox _box;
+    readonly ChatComposer _input;
     readonly TextBlock _cost;
     readonly ContentControl _bottom = new();
     readonly FrameworkElement _composer;
@@ -265,7 +279,7 @@ public sealed class AskView
 
     public FrameworkElement Root { get; }
 
-    public string Draft { get => _box.Text; set => _box.Text = value; }
+    public string Draft { get => _input.Box.Text; set => _input.Box.Text = value; }
 
     static readonly string[] Ideas =
     [
@@ -314,22 +328,8 @@ public sealed class AskView
         grid.Children.Add(_scroll);
 
         // ---- Composer ----
-        _box = new TextBox
-        {
-            FontFamily = DashKit.Sans,
-            FontSize = 15.5,
-            Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0),
-            Foreground = DashKit.B(P.Text),
-            CaretBrush = DashKit.B(P.Text),
-            SelectionBrush = DashKit.B(P.Accent),
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.Wrap,
-            MaxHeight = 140,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalContentAlignment = VerticalAlignment.Center,
-        };
-        _composer = Composer(_box, Send);
+        _input = new ChatComposer(k, CatName, host.Voice, text => { if (!_chat.Busy) _ = _chat.Send(text); }, compact: false);
+        _composer = Composer();
         _bottom.Margin = new Thickness(52, 0, 52, 26);
         _bottom.MaxWidth = 860;
         Grid.SetRow(_bottom, 2);
@@ -341,58 +341,20 @@ public sealed class AskView
     }
 
     /// <summary>Stops listening to the chat (the dashboard made a new view, e.g. after a theme change).</summary>
-    public void Detach() => _chat.Changed -= Refresh;
-
-    public void FocusBox() => Root.Dispatcher.BeginInvoke(() => { if (_box.IsVisible) _box.Focus(); }, System.Windows.Threading.DispatcherPriority.Input);
-
-    void Send()
+    public void Detach()
     {
-        var text = _box.Text.Trim();
-        if (text.Length == 0 || _chat.Busy) return;
-        _box.Text = "";
-        _ = _chat.Send(text);
+        _chat.Changed -= Refresh;
+        _input.Detach();
     }
 
-    FrameworkElement Composer(TextBox box, Action send)
+    public void FocusBox() => Root.Dispatcher.BeginInvoke(() => { if (_input.Box.IsVisible) _input.Box.Focus(); }, System.Windows.Threading.DispatcherPriority.Input);
+
+    FrameworkElement Composer()
     {
-        var hint = _k.Text($"Tell {CatName} what to do…", 15.5, P.Faint);
-        hint.IsHitTestVisible = false;
-        hint.VerticalAlignment = VerticalAlignment.Center;
-        box.TextChanged += (_, _) => hint.Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        box.PreviewKeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift)
-            {
-                e.Handled = true;
-                send();
-            }
-        };
-        var field = new Grid { VerticalAlignment = VerticalAlignment.Center };
-        field.Children.Add(hint);
-        field.Children.Add(box);
-
-        var arrow = new Border
-        {
-            Width = 36,
-            Height = 36,
-            CornerRadius = new CornerRadius(18),
-            Background = DashKit.B(P.Accent),
-            Cursor = Cursors.Hand,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            ToolTip = "Send (Enter)",
-            Child = _k.Icon("\uE724", 15, P.AccentText),
-            Margin = new Thickness(12, 0, 0, 0),
-        };
-        arrow.MouseLeftButtonUp += (_, e) => { e.Handled = true; send(); };
-        var row = new DockPanel();
-        DockPanel.SetDock(arrow, Dock.Right);
-        row.Children.Add(arrow);
-        row.Children.Add(field);
-        var card = _k.Card(row, new Thickness(18, 8, 8, 8), 22);
-
         var stack = new StackPanel();
-        stack.Children.Add(card);
-        var note = _k.Text($"Enter sends, Shift+Enter adds a line. Uses {CatChat.ModelName} with your API key: your words and the names of files involved go to Anthropic, the files themselves don't.", 12, P.Faint, wrap: true);
+        stack.Children.Add(_input.Root);
+        var talk = _host.Voice != null ? $" Press the mic or {_host.Settings.TalkHotkey} to talk; your voice is turned into text on this PC." : "";
+        var note = _k.Text($"Enter sends, Shift+Enter adds a line.{talk} Uses {CatChat.ModelName} with your API key: your words and the names of files involved go to Anthropic, the files themselves don't.", 12, P.Faint, wrap: true);
         note.Margin = new Thickness(18, 8, 18, 0);
         stack.Children.Add(note);
         return stack;
@@ -434,7 +396,7 @@ public sealed class AskView
         var ideas = new WrapPanel { Margin = new Thickness(36, 0, 0, 0) };
         foreach (var idea in Ideas)
         {
-            var chip = _k.Button(idea, () => { _box.Text = idea; _box.CaretIndex = idea.Length; _box.Focus(); }, DashKit.Pill.Quiet, size: 13);
+            var chip = _k.Button(idea, () => { _input.Box.Text = idea; _input.Box.CaretIndex = idea.Length; _input.Box.Focus(); }, DashKit.Pill.Quiet, size: 13);
             chip.Padding = new Thickness(14, 7, 14, 8);
             chip.Margin = new Thickness(0, 0, 8, 8);
             ideas.Children.Add(chip);

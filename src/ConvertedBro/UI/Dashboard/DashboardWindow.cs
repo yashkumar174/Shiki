@@ -35,6 +35,8 @@ public sealed class DashboardHost
     public required Action<string> SetCat { get; init; }
     /// <summary>Talking to the cat (Claude); null hides the Ask page.</summary>
     public Core.Ai.CatChat? Chat { get; init; }
+    /// <summary>Talking to the cat; null when there's no chat.</summary>
+    public Core.Voice.VoiceInput? Voice { get; init; }
     public required Func<string> CatName { get; init; }
     /// <summary>Opens a file the way the app does: videos and music in the player, the rest in their usual app.</summary>
     public required Action<string> OpenFile { get; init; }

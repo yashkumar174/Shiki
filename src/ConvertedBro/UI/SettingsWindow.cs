@@ -20,7 +20,9 @@ public sealed record ShortcutSetting(string Label, Func<string> Get, Func<string
 public sealed record OutputSetting(Func<string?> GetFolder, Action<string?> SetFolder, Func<bool> GetSort, Action<bool> SetSort, Action<string> Open);
 
 /// <summary>Ask the cat: the name it goes by, the on/off switch, what it has cost, and its log. The key itself is handled here.</summary>
-public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle, Func<string> Spent, Action OpenLog);
+public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
+    Func<string> GetVoiceEngine, Action<string> SetVoiceEngine, Func<bool> VoiceAnswers, Action ToggleVoiceAnswers,
+    Func<string> Spent, Action OpenLog);
 
 /// <summary>Shortcuts and the main switches, in one place.</summary>
 public sealed class SettingsWindow : Window
@@ -140,10 +142,76 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(row);
         Show();
 
+        AddVoice(stack, ai);
+
         var spent = UiKit.Body(ai.Spent());
         spent.Margin = new Thickness(0, 14, 0, 8);
         stack.Children.Add(spent);
         stack.Children.Add(UiKit.Button("Open the cat's log", ai.OpenLog));
+    }
+
+    /// <summary>Voice: which engine writes down what you say, and the Wispr Flow key for later.</summary>
+    void AddVoice(StackPanel stack, AiSetting ai)
+    {
+        stack.Children.Add(UiKit.Heading("Voice"));
+        stack.Children.Add(UiKit.Body($"Press the mic or the talk shortcut and speak (English). {ai.CatName} listens until you pause. The microphone is only on while it's listening."));
+
+        var whisper = UiKit.Button("Whisper on this PC", () => { });
+        var wispr = UiKit.Button("Wispr Flow", () => { });
+        var engines = UiKit.Row(whisper, wispr);
+        engines.Margin = new Thickness(0, 10, 0, 4);
+        var note = UiKit.Body("");
+        var keyPart = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+        void Show()
+        {
+            bool useWispr = ai.GetVoiceEngine() == "wispr";
+            UiKit.Select(whisper, !useWispr);
+            UiKit.Select(wispr, useWispr);
+            note.Text = useWispr
+                ? Core.Voice.WisprFlow.Available
+                    ? "What you say goes to Wispr Flow to be written down. The wake word still runs on this PC."
+                    : "Wispr Flow's API isn't open to Converted Bro yet (access has been asked for). Until it is, Whisper on this PC is used. You can save your Wispr key now."
+                : $"Free and private: Whisper turns your voice into text on this PC. It downloads once ({Core.Voice.WhisperLocal.DownloadSize}) the first time you talk.";
+            keyPart.Visibility = useWispr ? Visibility.Visible : Visibility.Collapsed;
+        }
+        whisper.MouseLeftButtonUp += (_, _) => { ai.SetVoiceEngine("whisper"); Show(); };
+        wispr.MouseLeftButtonUp += (_, _) => { ai.SetVoiceEngine("wispr"); Show(); };
+        stack.Children.Add(engines);
+        stack.Children.Add(note);
+
+        var status = UiKit.Body("");
+        var key = new PasswordBox();
+        var field = UiKit.Field(key);
+        field.Width = 300;
+        field.Margin = new Thickness(0, 0, 8, 0);
+        var save = UiKit.Button("Save", () => { });
+        var remove = UiKit.Button("Remove", () => { });
+        var store = Core.Voice.WisprFlow.Key;
+        void ShowKey()
+        {
+            status.Text = store.Hint is { } end ? $"Wispr key saved (ends in {end}), kept in Windows Credential Manager." : "No Wispr key saved.";
+            remove.Visibility = store.Exists ? Visibility.Visible : Visibility.Collapsed;
+        }
+        void SaveKey()
+        {
+            if (key.Password.Trim().Length < 10) return;
+            store.Save(key.Password);
+            key.Clear();
+            ShowKey();
+        }
+        save.MouseLeftButtonUp += (_, _) => SaveKey();
+        remove.MouseLeftButtonUp += (_, _) => { store.Remove(); ShowKey(); };
+        key.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; SaveKey(); } };
+        keyPart.Children.Add(status);
+        var row = UiKit.Row(field, save, remove);
+        row.Margin = new Thickness(0, 6, 0, 0);
+        keyPart.Children.Add(row);
+        stack.Children.Add(keyPart);
+        ShowKey();
+        Show();
+
+        stack.Children.Add(Line("Answer plans by voice", "After a spoken request, listen for \"yes\" or \"no\" when a plan card shows.",
+            Toggle(new SettingSwitch("", "", ai.VoiceAnswers, ai.ToggleVoiceAnswers))));
     }
 
     void SetMode(bool oneFolder)

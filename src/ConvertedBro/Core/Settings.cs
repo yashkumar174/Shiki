@@ -49,6 +49,12 @@ public sealed class Settings
     /// <summary>What asking the cat has cost so far, in US dollars, and how many requests that was.</summary>
     public double AiSpentUsd { get; set; }
     public int AiRequests { get; set; }
+    /// <summary>Global shortcut that opens the ask bubble already listening.</summary>
+    public string TalkHotkey { get; set; } = "Ctrl+Alt+V";
+    /// <summary>Speech to text for commands: "whisper" (on this PC) or "wispr" (Wispr Flow, once its API is open).</summary>
+    public string VoiceEngine { get; set; } = "whisper";
+    /// <summary>After a spoken request, listen for "yes" or "no" when the cat shows a plan.</summary>
+    public bool VoiceAnswers { get; set; } = true;
 
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");
 

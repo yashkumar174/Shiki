@@ -9,6 +9,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ConvertedBro.Core;
 using ConvertedBro.Core.Ai;
+using ConvertedBro.Core.Voice;
 using ConvertedBro.Shell;
 using ConvertedBro.UI;
 using ConvertedBro.UI.Dashboard;
@@ -38,7 +39,7 @@ public partial class App : Application
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
     Hotkeys? _hotkeys;
-    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1;
+    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1, _talkHotkeyId = -1;
     RecordingSession? _recording;
     SnipWindow? _snip;
     ColourPickerWindow? _picker;
@@ -328,7 +329,7 @@ public partial class App : Application
                 // Dev aid: the ask bubble drawn off screen.
                 EnterBuddyMode();
                 var palette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
-                var bubble = new AskBubble(Chat, palette, CatName, CatSprites.Head(Skin), OpenFile, () => { });
+                var bubble = new AskBubble(Chat, Voice, palette, CatName, CatSprites.Head(Skin), OpenFile, () => { });
                 DashboardWindow.SaveElement((FrameworkElement)bubble.Content, bubble.Width, args[1]);
                 bubble.Close();
                 break;
@@ -364,6 +365,11 @@ public partial class App : Application
                 // The ask bubble by the cat, as the shortcut opens it; "ask some words" sends them too.
                 EnterBuddyMode();
                 ShowAskBubble(args.Length > 1 ? string.Join(" ", args[1..]) : null);
+                break;
+            case "say-file" when args.Length == 2:
+                // Dev aid: a recording (WAV) goes through speech-to-text and to the cat, as if spoken.
+                EnterBuddyMode();
+                _ = SayFile(args[1]);
                 break;
             case "ask-quiet" when args.Length > 1:
                 // Dev aid: say something to the cat without opening anything (see it with "snapshot ask").
@@ -632,6 +638,7 @@ public partial class App : Application
                 new ShortcutSetting("Record the screen", () => _settings.RecordHotkey, text => ChangeHotkey(text, () => _settings.RecordHotkey, v => _settings.RecordHotkey = v)),
                 new ShortcutSetting("Pick a colour", () => _settings.ColourHotkey, text => ChangeHotkey(text, () => _settings.ColourHotkey, v => _settings.ColourHotkey = v)),
                 new ShortcutSetting($"Ask {CatName}", () => _settings.AskHotkey, text => ChangeHotkey(text, () => _settings.AskHotkey, v => _settings.AskHotkey = v)),
+                new ShortcutSetting($"Talk to {CatName}", () => _settings.TalkHotkey, text => ChangeHotkey(text, () => _settings.TalkHotkey, v => _settings.TalkHotkey = v)),
             ],
             [
                 new SettingSwitch("Right-click menu in Explorer", "Convert with Bro, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu),
@@ -643,6 +650,10 @@ public partial class App : Application
                 CatName,
                 () => _settings.AiEnabled,
                 () => { _settings.AiEnabled = !_settings.AiEnabled; _settings.Save(); },
+                () => _settings.VoiceEngine,
+                engine => { _settings.VoiceEngine = engine; _settings.Save(); },
+                () => _settings.VoiceAnswers,
+                () => { _settings.VoiceAnswers = !_settings.VoiceAnswers; _settings.Save(); },
                 () => _settings.AiRequests == 0 ? "Nothing spent yet." : $"Spent so far: {AskView.Money(_settings.AiSpentUsd)} over {_settings.AiRequests:N0} requests.",
                 () => Process.Start(new ProcessStartInfo(AiLog.FilePath) { UseShellExecute = true })));
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
@@ -654,7 +665,7 @@ public partial class App : Application
     {
         var previous = get();
         // Shortcuts can't share keys.
-        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey)) return false;
+        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey || text == _settings.TalkHotkey)) return false;
         set(text);
         if (BindHotkeys(quiet: true))
         {
@@ -721,7 +732,8 @@ public partial class App : Application
         bool convert = Bind(ref _convertHotkeyId, _settings.ConvertHotkey, ConvertSelection, quiet);
         bool record = Bind(ref _recordHotkeyId, _settings.RecordHotkey, StartRecording, quiet);
         bool ask = Bind(ref _askHotkeyId, _settings.AskHotkey, () => ShowAskBubble(), quiet);
-        return snip && colour && convert && record && ask;
+        bool talk = Bind(ref _talkHotkeyId, _settings.TalkHotkey, Talk, quiet);
+        return snip && colour && convert && record && ask && talk;
     }
 
     bool Bind(ref int id, string text, Action handler, bool quiet)
@@ -779,6 +791,7 @@ public partial class App : Application
                 StartWithWindows = () => StartupRegistration.Set(true, ExePath),
                 SetCat = SetCat,
                 Chat = Chat,
+                Voice = Voice,
                 CatName = () => CatName,
                 OpenFile = OpenFile,
             });
@@ -798,7 +811,22 @@ public partial class App : Application
     // ---- Ask the cat ----
 
     CatChat? _chat;
+    VoiceInput? _voice;
     AskBubble? _bubble;
+
+    VoiceInput Voice => _voice ??= new VoiceInput(Chat, _settings, () => CatName);
+
+    /// <summary>The talk shortcut: the bubble, already listening. Pressed again, it stops and sends.</summary>
+    void Talk()
+    {
+        if (_voice is { Active: true })
+        {
+            _voice.Finish();
+            return;
+        }
+        ShowAskBubble();
+        if (_bubble != null && !Chat.Busy) _ = Voice.Listen();
+    }
 
     string CatName => string.IsNullOrWhiteSpace(_settings.CatName) ? Skin.Name : _settings.CatName.Trim();
 
@@ -837,7 +865,7 @@ public partial class App : Application
                 ? new ScreenContext(null, ExplorerSelection.FromDesktop(), FromDesktop: true)
                 : Chat.NextScreen ?? (ExplorerSelection.Frontmost() is { } front ? new ScreenContext(front.Folder, front.Selected) : null);
             var palette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
-            _bubble = new AskBubble(Chat, palette, CatName, CatSprites.Head(Skin), OpenFile, () => ShowDashboard(DashPage.Ask));
+            _bubble = new AskBubble(Chat, Voice, palette, CatName, CatSprites.Head(Skin), OpenFile, () => ShowDashboard(DashPage.Ask));
             _bubble.Closed += (_, _) => _bubble = null;
             double scale = NativeMethods.SystemScale;
             var area = SystemParameters.WorkArea;
@@ -851,6 +879,34 @@ public partial class App : Application
         }
         else _bubble.FocusBox();
         if (!string.IsNullOrWhiteSpace(say)) _ = Chat.Send(say);
+    }
+
+    /// <summary>Dev aid for voice without a microphone: transcribe a WAV and use it like speech.</summary>
+    async System.Threading.Tasks.Task SayFile(string wav)
+    {
+        try
+        {
+            float[] samples;
+            using (var reader = new NAudio.Wave.WaveFileReader(wav))
+            {
+                var all16 = NAudio.Wave.WaveExtensionMethods.ToSampleProvider(reader);
+                NAudio.Wave.ISampleProvider source = all16.WaveFormat.Channels == 2 ? new NAudio.Wave.SampleProviders.StereoToMonoSampleProvider(all16) : all16;
+                if (source.WaveFormat.SampleRate != 16000) source = new NAudio.Wave.SampleProviders.WdlResamplingSampleProvider(source, 16000);
+                var all = new List<float>();
+                var buffer = new float[16000];
+                int read;
+                while ((read = source.Read(buffer, 0, buffer.Length)) > 0) all.AddRange(buffer.Take(read));
+                samples = all.ToArray();
+            }
+            var watch = Stopwatch.StartNew();
+            var text = await Speech.Whisper.Transcribe(samples, $"{CatName}. Convert, merge, compress, PDF, JPG, Downloads.", default);
+            Log.Info($"say-file: heard \"{text}\" in {watch.ElapsedMilliseconds} ms ({samples.Length / 16000.0:0.0} s of audio)");
+            await Voice.Use(text, listenForAnswer: false);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("say-file failed", ex);
+        }
     }
 
     /// <summary>Runs one step of a plan the person confirmed: a job, or an editor in the dashboard.</summary>
