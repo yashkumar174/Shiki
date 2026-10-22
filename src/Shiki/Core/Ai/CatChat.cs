@@ -56,8 +56,11 @@ public enum PlanState { Waiting, Running, Done, Failed, Declined, Skipped }
 public sealed class PlanItem(string summary, IReadOnlyList<PlanStep> steps) : ChatItem
 {
     public string Summary { get; } = summary;
-    /// <summary>Instead of steps: one thing to do on the PC (lock, sleep), which says what happened.</summary>
-    public Func<string>? Run { get; init; }
+    /// <summary>Instead of steps: one thing to do (lock, tidy a folder, a backup), which says what happened.</summary>
+    public Func<Task<string>>? Run { get; internal set; }
+    /// <summary>Puts it back (a tidy): an Undo button once it's done.</summary>
+    public Func<string>? Undo { get; internal set; }
+    public bool Undone { get; internal set; }
     /// <summary>A line under the summary when there are no steps to show.</summary>
     public string? Detail { get; init; }
     public IReadOnlyList<PlanStep> Steps { get; } = steps;
@@ -407,7 +410,7 @@ public sealed class CatChat(CatHands hands)
                     }
                     var card = new PlanItem(Shell.PcControl.Describe(power), [])
                     {
-                        Run = () => Shell.PcControl.Do(power),
+                        Run = () => Task.FromResult(Shell.PcControl.Do(power)),
                         Detail = power is Shell.PcControl.Power.Restart or Shell.PcControl.Power.ShutDown
                             ? "Apps with unsaved work will ask to save first."
                             : power == Shell.PcControl.Power.Sleep ? "Press a key or the power button to wake it." : "Sign in again to come back.",
@@ -419,7 +422,22 @@ public sealed class CatChat(CatHands hands)
                     AiLog.Write("plan", card.Summary);
                     continue;
                 }
-                if (use.Name is "propose_plan" or "pc_power")
+                if (use.Name is "tidy_folder" or "backup_folder" or "copy_files" && !waitForPerson)
+                {
+                    var (card, problem) = await ChoreCard(use.Name, input);
+                    if (card == null)
+                    {
+                        results.Add(Result(use.ID, problem!, error: problem!.StartsWith("Nothing") ? false : true));
+                        continue;
+                    }
+                    _plan = card;
+                    _planToolId = use.ID;
+                    _items.Add(card);
+                    waitForPerson = true;
+                    AiLog.Write("plan", $"{card.Summary}: {card.Detail}");
+                    continue;
+                }
+                if (use.Name is "propose_plan" or "pc_power" or "tidy_folder" or "backup_folder" or "copy_files")
                 {
                     results.Add(Result(use.ID, "Only one plan at a time; this one was ignored.", error: true));
                     continue;
@@ -473,7 +491,7 @@ public sealed class CatChat(CatHands hands)
             await Task.Delay(400);
             try
             {
-                plan.Outcome = run();
+                plan.Outcome = await run();
                 plan.State = PlanState.Done;
                 Finish(plan, $"The person pressed Do it. {plan.Outcome}");
             }
@@ -528,6 +546,94 @@ public sealed class CatChat(CatHands hands)
             Finish(plan, $"The person pressed Do it. {report}Then step {plan.Current + 1} failed: {ex.Message}");
         }
         Notify();
+    }
+
+    /// <summary>The person pressed Undo on a done card (a tidy): put things back.</summary>
+    public async Task UndoPlan(PlanItem plan)
+    {
+        if (plan.Undo is not { } undo || plan.Undone || plan.State != PlanState.Done) return;
+        plan.Undone = true;
+        Notify();
+        var outcome = await Task.Run(undo);
+        plan.Outcome = $"Undone. {outcome}";
+        _items.Add(new CatDid("\uE7A7", outcome));
+        // Claude hears about it with the next message.
+        _pending.Add(new TextBlockParam { Text = $"[The person pressed Undo on \"{plan.Summary}\": {outcome}]" });
+        Notify();
+    }
+
+    /// <summary>A card for a file chore (tidy, backup, copy), or why there isn't one.</summary>
+    async Task<(PlanItem? Card, string? Problem)> ChoreCard(string name, JsonElement input)
+    {
+        var explorer = Screen()?.ExplorerFolder;
+        string? Folder(string? where) => where == null ? null : FileFinder.PlacePath(where, explorer) is { } path && Directory.Exists(path) ? path : null;
+        switch (name)
+        {
+            case "tidy_folder":
+            {
+                var where = Str(input, "where") ?? "downloads";
+                if (Folder(where) is not { } folder) return (null, $"\"{where}\" isn't a folder I can find.");
+                var moves = await Task.Run(() => FileChores.PlanTidy(folder));
+                if (moves.Count == 0) return (null, "Nothing to tidy: no loose files of a kind I sort (pictures, videos, music, PDFs, documents, archives, installers).");
+                var card = new PlanItem($"Tidy {PlaceName(where)}: {moves.Count} file{(moves.Count == 1 ? "" : "s")} into folders", [])
+                {
+                    Detail = $"{FileChores.Describe(moves)}. Other files stay put, nothing is deleted, and you can undo it.",
+                };
+                card.Run = async () =>
+                {
+                    var (outcome, undoFile) = await Task.Run(() => FileChores.Tidy(folder, moves));
+                    card.Undo = () => FileChores.Undo(undoFile);
+                    card.Outputs = [folder];
+                    return outcome;
+                };
+                return (card, null);
+            }
+            case "backup_folder":
+            {
+                var where = Str(input, "folder") ?? "documents";
+                if (Folder(where) is not { } folder) return (null, $"\"{where}\" isn't a folder I can find.");
+                var drives = FileChores.BackupDrives(folder);
+                if (drives.Count == 0) return (null, "There's no other drive to back up to. Plug in a USB drive or an external disk first.");
+                var asked = (Str(input, "drive") ?? "").Trim().TrimEnd('\\', ':').ToUpperInvariant();
+                var drive = drives.FirstOrDefault(d => d.Name.TrimEnd('\\', ':').Equals(asked, StringComparison.OrdinalIgnoreCase))
+                    ?? (drives.Count == 1 && asked.Length == 0 ? drives[0] : null);
+                if (drive == null)
+                    return (null, "Which drive? " + string.Join("; ", drives.Select(d => $"{d.Name.TrimEnd('\\')} {(d.VolumeLabel is { Length: > 0 } l ? $"({l}) " : "")}{FileChores.Size(d.AvailableFreeSpace)} free{(d.DriveType == DriveType.Removable ? ", removable" : "")}")));
+                var target = FileChores.BackupTarget(folder, drive.RootDirectory.FullName);
+                var card = new PlanItem($"Back up {PlaceName(where)} to {drive.Name.TrimEnd('\\')}{(drive.VolumeLabel is { Length: > 0 } label ? $" ({label})" : "")}", [])
+                {
+                    Detail = $"Into {target}. Only new and changed files are copied, so the next backup is quick. Nothing is deleted.",
+                };
+                card.Run = async () =>
+                {
+                    var outcome = await Task.Run(() => FileChores.Backup(folder, target, null, CancellationToken.None));
+                    card.Outputs = [target];
+                    return outcome;
+                };
+                return (card, null);
+            }
+            default:
+            {
+                var paths = Strings(input, "paths").Where(p => File.Exists(p) || Directory.Exists(p)).ToList();
+                if (paths.Count == 0) return (null, "None of those exist. Use full paths exactly as find_files gave them.");
+                var to = Str(input, "to") ?? "";
+                var folder = Folder(to) ?? (Path.IsPathFullyQualified(to) && Directory.Exists(Path.GetPathRoot(to)) ? to : null);
+                if (folder == null) return (null, $"\"{to}\" isn't a place I can copy to. Use a place name or a full folder path.");
+                var card = new PlanItem(paths.Count == 1
+                    ? $"Copy {Path.GetFileName(paths[0].TrimEnd('\\'))} to {PlaceName(to)}"
+                    : $"Copy {paths.Count} items to {PlaceName(to)}", [])
+                {
+                    Detail = Directory.Exists(folder) ? "The originals stay where they are; nothing is replaced." : $"Into {folder} (a new folder). The originals stay where they are.",
+                };
+                card.Run = async () =>
+                {
+                    var (outcome, made) = await Task.Run(() => FileChores.Copy(paths, folder));
+                    card.Outputs = made;
+                    return outcome;
+                };
+                return (card, null);
+            }
+        }
     }
 
     public void Decline(PlanItem plan)
@@ -732,6 +838,22 @@ public sealed class CatChat(CatHands hands)
                 var done = await Task.Run(() => Shell.Apps.Close(app));
                 if (done.StartsWith("Asked") || done.StartsWith("Closed")) _items.Add(new CatDid("\uE711", done));
                 return done;
+            }
+            case "disk_space":
+            {
+                using var cancel = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+                var report = await Task.Run(() => FileChores.DiskReport(cancel.Token));
+                _items.Add(new CatDid("\uEDA2", "Checked what's using the disk"));
+                AiLog.Write("disk", report.Split('\n')[0]);
+                return report;
+            }
+            case "undo_last":
+            {
+                if (FileChores.LastUndo() is not { } last) return "There's nothing to undo.";
+                var outcome = await Task.Run(() => FileChores.Undo(last));
+                foreach (var done in _items.OfType<PlanItem>().Where(p => p.Undo != null && !p.Undone)) { done.Undone = true; done.Outcome = $"Undone. {outcome}"; }
+                _items.Add(new CatDid("\uE7A7", outcome));
+                return outcome;
             }
             case "run_routine":
                 return hands.RunRoutine(Str(input, "name") ?? "");

@@ -204,7 +204,13 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
                         openButton.Margin = new Thickness(0, 0, 8, 0);
                         buttons.Children.Add(openButton);
                     }
-                    buttons.Children.Add(k.Button("Show in folder", () => Shell.ExplorerReveal.Show(plan.Outputs), DashKit.Pill.Quiet, "\uE838", 13));
+                    var reveal = k.Button("Show in folder", () => Shell.ExplorerReveal.Show(plan.Outputs), DashKit.Pill.Quiet, "\uE838", 13);
+                    buttons.Children.Add(reveal);
+                    if (plan.Undo != null && !plan.Undone)
+                    {
+                        reveal.Margin = new Thickness(0, 0, 8, 0);
+                        buttons.Children.Add(k.Button("Undo", () => _ = chat.UndoPlan(plan), DashKit.Pill.Quiet, "\uE7A7", 13));
+                    }
                     stack.Children.Add(buttons);
                 }
                 footer.Children.Add(stack);

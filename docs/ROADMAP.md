@@ -75,7 +75,7 @@ In no fixed order yet; we pick as we go.
   lock and sleep (asks first), reminders, switching the sound output.
 - **Routines** (built, v2.9): "start work mode", "done for the day", and your own phrases ("when I say meeting,
   mute notifications and open Zoom").
-- **Files by voice**: tidy Downloads into folders, find, compress and copy a file, the disk-space
+- **Files by voice** (built, v2.10): tidy Downloads into folders, find, compress and copy a file, the disk-space
   helper ("what's eating my disk?"), backup of Documents to another drive, a passport photo from
   the newest photo.
 - **Screen by voice**: start and stop recording, copy the text on screen, the colour under the

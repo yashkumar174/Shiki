@@ -26,7 +26,15 @@ static class CatPrompt
             - Actions marked "opens a window" (signing, page editing, passwords, form photos, scanning, background removal) must be the last step: the window lets the person finish there.
             - Pick the files yourself when the request is clear, and say which in the plan summary. Ask a short question only when it's truly unclear (two different files fit, or no file kind was named and several fit).
             - "Show me", "where is it", "open the folder": show_in_explorer. "Open" or "play" a file: open_file. Snipping, recording the screen, picking a colour, QR codes and pasting the clipboard: use_app_tool.
-            - There's no delete, move or rename yet. Say so plainly if asked. Results are always new files, saved {results}; originals are never changed.
+            - There's no delete or rename yet, and moving is only tidy_folder. Say so plainly if asked. Results are always new files, saved {results}; originals are never changed.
+
+            File chores
+            - "Tidy my downloads" (or the desktop, or a folder): tidy_folder. It sorts loose files into Images, Videos, Music, PDFs, Documents, Archives and Installers; the card has Undo. "Undo that" afterwards: undo_last.
+            - "What's eating my disk?", "why is my C drive full?": disk_space, then say the two or three biggest things in plain words and what they could do (move old videos to another drive, empty the Recycle Bin themselves, Windows' Storage settings for temporary files). Never offer to delete anything yourself; show_in_explorer can show a big file.
+            - "Back up my documents": backup_folder with the folder and the drive letter. If you don't know the drive, call it without one: you get the list, then ask which.
+            - "Copy the invoice to my desktop" (or a USB drive, or a folder): copy_files with the full paths from find_files.
+            - "Make a passport photo from my newest photo": find_files in pictures (and downloads) for the newest image, then propose_plan with the passport-size form photo action.
+            - These show a card; nothing happens before Do it.
             - You can't browse the web, read what's inside files, send messages or work inside other apps yet (you can open and close them). You see the screen only in a picture the person pawed or through look_at_screen.
 
             The PC itself
@@ -75,7 +83,63 @@ static class CatPrompt
         return prompt.ToString();
     }
 
-    public static List<ToolUnion> Tools() => [.. FileTools(), .. ScreenTools(), .. PcTools(), .. RoutineTools()];
+    public static List<ToolUnion> Tools() => [.. FileTools(), .. ScreenTools(), .. PcTools(), .. RoutineTools(), .. ChoreTools()];
+
+    static IEnumerable<ToolUnion> ChoreTools() =>
+    [
+        new Tool
+        {
+            Name = "tidy_folder",
+            Description = "Offer to sort a folder's loose files into subfolders by kind (Images, Videos, Music, PDFs, Documents, Archives, Installers). Shows a card with the counts; runs after Do it; Undo puts everything back.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["where"] = J(new { type = "string", description = "downloads, desktop, documents, pictures, explorer, or a full folder path. Default downloads." }),
+                },
+            },
+        },
+        new Tool
+        {
+            Name = "undo_last",
+            Description = "Undo the last tidy (put the files back where they were).",
+            InputSchema = new() { Properties = new Dictionary<string, JsonElement>() },
+        },
+        new Tool
+        {
+            Name = "disk_space",
+            Description = "What fills the disk: free space on each drive, the size of the usual folders, the Recycle Bin, and the biggest files. Read-only; takes up to 20 seconds.",
+            InputSchema = new() { Properties = new Dictionary<string, JsonElement>() },
+        },
+        new Tool
+        {
+            Name = "backup_folder",
+            Description = "Offer to back a folder up to another drive (into \"Shiki backups\" there), copying only new and changed files. Without a drive, returns the drives to choose from.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["folder"] = J(new { type = "string", description = "documents, pictures, desktop, downloads, videos, music, or a full folder path." }),
+                    ["drive"] = J(new { type = "string", description = "The drive letter, e.g. \"E\". Leave out to get the list." }),
+                },
+                Required = ["folder"],
+            },
+        },
+        new Tool
+        {
+            Name = "copy_files",
+            Description = "Offer to copy files or folders into a place (desktop, documents, a USB drive's folder, any full path). Never replaces anything; the originals stay.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["paths"] = J(new { type = "array", items = new { type = "string" }, description = "Full paths, exactly as find_files gave them." }),
+                    ["to"] = J(new { type = "string", description = "A place name (desktop, documents, downloads…) or a full folder path such as E:\\Invoices." }),
+                },
+                Required = ["paths", "to"],
+            },
+        },
+    ];
 
     static IEnumerable<ToolUnion> RoutineTools() =>
     [
