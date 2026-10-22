@@ -1,0 +1,542 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using ConvertedBro.Core;
+using ConvertedBro.Core.Ai;
+
+namespace ConvertedBro.UI.Dashboard;
+
+/// <summary>
+/// Draws the cat chat's items: what you said, what the cat said, the quiet lines about what it
+/// looked at, and plan cards with Do it and Not now. Used by the Ask page and the bubble.
+/// </summary>
+public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSource catHead, Action<string> open, Action openSettings, bool compact = false)
+{
+    DashPalette P => k.P;
+    double Size => compact ? 14 : 15.5;
+
+    public UIElement Render(ChatItem item) => item switch
+    {
+        YouSaid you => You(you.Text),
+        CatSaid cat => Cat(cat.Text),
+        CatDid did => Did(did.Glyph, did.Text),
+        ChatProblem problem => Problem(problem),
+        PlanItem plan => Plan(plan),
+        _ => new Border(),
+    };
+
+    UIElement You(string text)
+    {
+        var bubble = new Border
+        {
+            Background = DashKit.B(P.Selected),
+            CornerRadius = new CornerRadius(16, 16, 4, 16),
+            Padding = new Thickness(14, 9, 14, 10),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            MaxWidth = compact ? 300 : 560,
+            Margin = new Thickness(compact ? 40 : 120, compact ? 8 : 14, 0, 4),
+            Child = Selectable(text, Size, P.Text),
+        };
+        return bubble;
+    }
+
+    UIElement Cat(string text)
+    {
+        var row = new DockPanel { Margin = new Thickness(0, compact ? 8 : 14, compact ? 0 : 80, 2) };
+        var head = Head(compact ? 20 : 24);
+        head.VerticalAlignment = VerticalAlignment.Top;
+        head.Margin = new Thickness(0, 1, compact ? 10 : 12, 0);
+        DockPanel.SetDock(head, Dock.Left);
+        row.Children.Add(head);
+        row.Children.Add(Selectable(text, Size, P.Text));
+        return row;
+    }
+
+    UIElement Did(string glyph, string text)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(compact ? 30 : 36, 5, 0, 1) };
+        var icon = k.Icon(glyph, 12, P.Faint);
+        icon.Margin = new Thickness(0, 1, 8, 0);
+        row.Children.Add(icon);
+        row.Children.Add(k.Text(text, compact ? 12.5 : 13, P.Faint));
+        return row;
+    }
+
+    UIElement Problem(ChatProblem problem)
+    {
+        var stack = new StackPanel { Margin = new Thickness(compact ? 30 : 36, 10, 0, 2) };
+        stack.Children.Add(k.Text(problem.Text, compact ? 13.5 : 14.5, P.Danger, wrap: true));
+        if (problem.NeedsKey)
+        {
+            var settings = k.Button("Open settings", openSettings, DashKit.Pill.Quiet, size: 13);
+            settings.Padding = new Thickness(14, 6, 14, 7);
+            settings.Margin = new Thickness(0, 10, 0, 0);
+            stack.Children.Add(settings);
+        }
+        return stack;
+    }
+
+    UIElement Plan(PlanItem plan)
+    {
+        var stack = new StackPanel();
+        stack.Children.Add(k.Text(plan.Summary, compact ? 14.5 : 16, weight: FontWeights.SemiBold, wrap: true));
+
+        var steps = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
+        for (int i = 0; i < plan.Steps.Count; i++)
+        {
+            var step = plan.Steps[i];
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, 10) };
+            bool running = plan.State == PlanState.Running && plan.Current == i;
+            bool past = plan.State == PlanState.Done || (plan.State is PlanState.Running or PlanState.Failed && i < plan.Current);
+            var number = new Border
+            {
+                Width = 22,
+                Height = 22,
+                CornerRadius = new CornerRadius(11),
+                Background = DashKit.B(running ? P.Accent : past ? P.Selected : P.Hover),
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 0, 12, 0),
+                Child = past ? k.Icon("\uE73E", 11, P.Text) : new TextBlock
+                {
+                    Text = (i + 1).ToString(),
+                    FontFamily = DashKit.Sans,
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = DashKit.B(running ? P.AccentText : P.Muted),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+            DockPanel.SetDock(number, Dock.Left);
+            row.Children.Add(number);
+            var what = new StackPanel();
+            what.Children.Add(k.Text(step.Action.Label.TrimEnd('…'), compact ? 13.5 : 14.5, weight: FontWeights.SemiBold));
+            var files = step.UsePrevious
+                ? $"What step {i} made"
+                : step.Files.Count <= 3
+                    ? string.Join(", ", step.Files.Select(f => Path.GetFileName(f.TrimEnd('\\'))))
+                    : $"{string.Join(", ", step.Files.Take(2).Select(f => Path.GetFileName(f.TrimEnd('\\'))))} and {step.Files.Count - 2} more";
+            var detail = k.Text(files, compact ? 12.5 : 13, P.Muted, wrap: true);
+            detail.Margin = new Thickness(0, 2, 0, 0);
+            if (!step.UsePrevious) detail.ToolTip = string.Join("\n", step.Files.Take(40));
+            what.Children.Add(detail);
+            row.Children.Add(what);
+            steps.Children.Add(row);
+        }
+        stack.Children.Add(steps);
+        stack.Children.Add(PlanFooter(plan));
+
+        var card = k.Card(stack, compact ? new Thickness(16, 14, 16, 14) : new Thickness(20, 18, 20, 18), 16);
+        card.Margin = new Thickness(compact ? 30 : 36, 10, 0, 4);
+        card.HorizontalAlignment = HorizontalAlignment.Stretch;
+        if (plan.State == PlanState.Waiting) card.BorderBrush = DashKit.B(P.AccentEdge);
+        return card;
+    }
+
+    UIElement PlanFooter(PlanItem plan)
+    {
+        var footer = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
+        switch (plan.State)
+        {
+            case PlanState.Waiting:
+            {
+                var go = k.Button("Do it", () => _ = chat.Confirm(plan), DashKit.Pill.Accent, size: 13.5);
+                go.Margin = new Thickness(0, 0, 8, 0);
+                footer.Children.Add(go);
+                footer.Children.Add(k.Button("Not now", () => chat.Decline(plan), DashKit.Pill.Quiet, size: 13.5));
+                break;
+            }
+            case PlanState.Running:
+                footer.Children.Add(Pulse(k.Text(plan.Steps.Count == 1 ? "Working on it…" : $"Working on step {plan.Current + 1} of {plan.Steps.Count}…", 13.5, P.Muted)));
+                break;
+            case PlanState.Done:
+            {
+                var done = k.Text(plan.Outcome ?? "Done.", 13.5, P.Text, FontWeights.SemiBold, wrap: true);
+                done.Margin = new Thickness(0, 0, 0, plan.Outputs.Count > 0 ? 10 : 0);
+                var stack = new StackPanel();
+                stack.Children.Add(done);
+                if (plan.Outputs.Count > 0)
+                {
+                    var buttons = new WrapPanel();
+                    if (plan.Outputs.Count == 1 && File.Exists(plan.Outputs[0]))
+                    {
+                        var openButton = k.Button("Open", () => open(plan.Outputs[0]), DashKit.Pill.Quiet, "\uE8A7", 13);
+                        openButton.Margin = new Thickness(0, 0, 8, 0);
+                        buttons.Children.Add(openButton);
+                    }
+                    buttons.Children.Add(k.Button("Show in folder", () => Shell.ExplorerReveal.Show(plan.Outputs), DashKit.Pill.Quiet, "\uE838", 13));
+                    stack.Children.Add(buttons);
+                }
+                footer.Children.Add(stack);
+                break;
+            }
+            case PlanState.Failed:
+                footer.Children.Add(k.Text(plan.Outcome ?? "That didn't work.", 13.5, P.Danger, wrap: true));
+                break;
+            case PlanState.Declined:
+                footer.Children.Add(k.Text("Not run.", 13.5, P.Faint));
+                break;
+            case PlanState.Skipped:
+                footer.Children.Add(k.Text("Not run: you moved on.", 13.5, P.Faint));
+                break;
+        }
+        return footer;
+    }
+
+    /// <summary>"Mochi is thinking…", with a Stop link.</summary>
+    public UIElement Thinking()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, compact ? 10 : 16, 0, 2) };
+        var head = Head(compact ? 20 : 24);
+        head.Margin = new Thickness(0, 0, compact ? 10 : 12, 0);
+        row.Children.Add(head);
+        var text = k.Text($"{catName} is thinking…", Size, P.Muted);
+        text.VerticalAlignment = VerticalAlignment.Center;
+        row.Children.Add(Pulse(text));
+        var stop = k.Text("Stop", 13, P.Faint);
+        stop.Cursor = Cursors.Hand;
+        stop.Margin = new Thickness(14, 2, 0, 0);
+        stop.VerticalAlignment = VerticalAlignment.Center;
+        stop.TextDecorations = TextDecorations.Underline;
+        stop.MouseLeftButtonUp += (_, e) => { e.Handled = true; chat.Stop(); };
+        row.Children.Add(stop);
+        return row;
+    }
+
+    public Image Head(double size)
+    {
+        var image = new Image { Source = catHead, Width = size, Height = size };
+        RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
+        return image;
+    }
+
+    /// <summary>A gentle fade in and out while something's in progress (still for reduced motion).</summary>
+    static UIElement Pulse(UIElement element)
+    {
+        if (!SystemParameters.ClientAreaAnimation) return element;
+        var fade = new DoubleAnimation(1, 0.45, TimeSpan.FromMilliseconds(900)) { AutoReverse = true, RepeatBehavior = RepeatBehavior.Forever };
+        element.BeginAnimation(UIElement.OpacityProperty, fade);
+        return element;
+    }
+
+    /// <summary>Text you can select and copy, styled like the rest.</summary>
+    TextBox Selectable(string text, double size, Color colour) => new()
+    {
+        Text = text,
+        IsReadOnly = true,
+        TextWrapping = TextWrapping.Wrap,
+        FontFamily = DashKit.Sans,
+        FontSize = size,
+        Foreground = DashKit.B(colour),
+        Background = Brushes.Transparent,
+        BorderThickness = new Thickness(0),
+        Padding = new Thickness(0),
+        Cursor = Cursors.IBeam,
+        SelectionBrush = DashKit.B(P.Accent),
+    };
+}
+
+/// <summary>
+/// The Ask page: talk to the cat about your files. A chat down the middle, the box to type in
+/// pinned at the bottom. Kept alive between visits so a half-typed message stays put.
+/// </summary>
+public sealed class AskView
+{
+    readonly DashKit _k;
+    readonly DashboardHost _host;
+    readonly CatChat _chat;
+    readonly StackPanel _transcript = new();
+    readonly ScrollViewer _scroll;
+    readonly TextBox _box;
+    readonly TextBlock _cost;
+    readonly ContentControl _bottom = new();
+    readonly FrameworkElement _composer;
+
+    DashPalette P => _k.P;
+    string CatName => _host.CatName();
+
+    public FrameworkElement Root { get; }
+
+    public string Draft { get => _box.Text; set => _box.Text = value; }
+
+    static readonly string[] Ideas =
+    [
+        "Merge the PDFs I downloaded today",
+        "Turn my newest screenshot into a JPG",
+        "Compress the videos on my desktop",
+        "Show me the photos from this week",
+    ];
+
+    public AskView(DashKit k, DashboardHost host, CatChat chat, Style scrollBar)
+    {
+        _k = k;
+        _host = host;
+        _chat = chat;
+
+        var grid = new Grid();
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new RowDefinition());
+        grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        // ---- Header ----
+        var head = new DockPanel { Margin = new Thickness(52, 40, 46, 4) };
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Top };
+        _cost = k.Text("", 13, P.Faint);
+        _cost.VerticalAlignment = VerticalAlignment.Center;
+        _cost.Margin = new Thickness(0, 0, 10, 0);
+        tools.Children.Add(_cost);
+        tools.Children.Add(k.IconButton("\uE710", () => { _chat.Reset(); FocusBox(); }, "New chat", 14, P.Muted));
+        DockPanel.SetDock(tools, Dock.Right);
+        head.Children.Add(tools);
+        var titles = new StackPanel();
+        titles.Children.Add(k.Text($"Ask {CatName}", 30, weight: FontWeights.SemiBold, font: DashKit.Display));
+        var sub = k.Text($"Say what you want done with your files. {CatName} finds them, shows you the plan, and waits for your OK.", 15, P.Muted, wrap: true);
+        sub.Margin = new Thickness(0, 6, 0, 0);
+        titles.Children.Add(sub);
+        head.Children.Add(titles);
+        grid.Children.Add(head);
+
+        // ---- Transcript ----
+        _transcript.Margin = new Thickness(52, 10, 52, 24);
+        _transcript.MaxWidth = 860;
+        _transcript.HorizontalAlignment = HorizontalAlignment.Stretch;
+        _scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _transcript };
+        _scroll.Resources.Add(typeof(ScrollBar), scrollBar);
+        Grid.SetRow(_scroll, 1);
+        grid.Children.Add(_scroll);
+
+        // ---- Composer ----
+        _box = new TextBox
+        {
+            FontFamily = DashKit.Sans,
+            FontSize = 15.5,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Foreground = DashKit.B(P.Text),
+            CaretBrush = DashKit.B(P.Text),
+            SelectionBrush = DashKit.B(P.Accent),
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            MaxHeight = 140,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        _composer = Composer(_box, Send);
+        _bottom.Margin = new Thickness(52, 0, 52, 26);
+        _bottom.MaxWidth = 860;
+        Grid.SetRow(_bottom, 2);
+        grid.Children.Add(_bottom);
+
+        Root = grid;
+        _chat.Changed += Refresh;
+        Refresh();
+    }
+
+    /// <summary>Stops listening to the chat (the dashboard made a new view, e.g. after a theme change).</summary>
+    public void Detach() => _chat.Changed -= Refresh;
+
+    public void FocusBox() => Root.Dispatcher.BeginInvoke(() => { if (_box.IsVisible) _box.Focus(); }, System.Windows.Threading.DispatcherPriority.Input);
+
+    void Send()
+    {
+        var text = _box.Text.Trim();
+        if (text.Length == 0 || _chat.Busy) return;
+        _box.Text = "";
+        _ = _chat.Send(text);
+    }
+
+    FrameworkElement Composer(TextBox box, Action send)
+    {
+        var hint = _k.Text($"Tell {CatName} what to do…", 15.5, P.Faint);
+        hint.IsHitTestVisible = false;
+        hint.VerticalAlignment = VerticalAlignment.Center;
+        box.TextChanged += (_, _) => hint.Visibility = box.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        box.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter && Keyboard.Modifiers != ModifierKeys.Shift)
+            {
+                e.Handled = true;
+                send();
+            }
+        };
+        var field = new Grid { VerticalAlignment = VerticalAlignment.Center };
+        field.Children.Add(hint);
+        field.Children.Add(box);
+
+        var arrow = new Border
+        {
+            Width = 36,
+            Height = 36,
+            CornerRadius = new CornerRadius(18),
+            Background = DashKit.B(P.Accent),
+            Cursor = Cursors.Hand,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            ToolTip = "Send (Enter)",
+            Child = _k.Icon("\uE724", 15, P.AccentText),
+            Margin = new Thickness(12, 0, 0, 0),
+        };
+        arrow.MouseLeftButtonUp += (_, e) => { e.Handled = true; send(); };
+        var row = new DockPanel();
+        DockPanel.SetDock(arrow, Dock.Right);
+        row.Children.Add(arrow);
+        row.Children.Add(field);
+        var card = _k.Card(row, new Thickness(18, 8, 8, 8), 22);
+
+        var stack = new StackPanel();
+        stack.Children.Add(card);
+        var note = _k.Text($"Enter sends, Shift+Enter adds a line. Uses {CatChat.ModelName} with your API key: your words and the names of files involved go to Anthropic, the files themselves don't.", 12, P.Faint, wrap: true);
+        note.Margin = new Thickness(18, 8, 18, 0);
+        stack.Children.Add(note);
+        return stack;
+    }
+
+    void Refresh()
+    {
+        _cost.Text = _chat.Cost > 0 ? $"This chat: {Money(_chat.Cost)}" : "";
+        _transcript.Children.Clear();
+        var cards = new ChatCards(_k, _chat, CatName, CatSprites.Head(CatSprites.Skin(_host.Settings.Cat)), _host.OpenFile, _host.OpenSettings);
+
+        // Switched off, or no key yet: the card that fixes it sits where the chat would start.
+        bool off = !_host.Settings.AiEnabled;
+        bool noKey = !ClaudeKey.Exists;
+        _bottom.Content = off || noKey ? null : _composer;
+        if (off || noKey)
+        {
+            var setup = off ? SwitchedOff() : KeySetup();
+            ((FrameworkElement)setup).Margin = new Thickness(0, 18, 0, 0);
+            _transcript.Children.Add(setup);
+        }
+        else if (_chat.Items.Count == 0) _transcript.Children.Add(Ideas_());
+        foreach (var item in _chat.Items) _transcript.Children.Add(cards.Render(item));
+        if (_chat.Busy) _transcript.Children.Add(cards.Thinking());
+        _scroll.Dispatcher.BeginInvoke(() => _scroll.ScrollToEnd(), System.Windows.Threading.DispatcherPriority.Loaded);
+    }
+
+    UIElement Ideas_()
+    {
+        var stack = new StackPanel { Margin = new Thickness(0, 18, 0, 0) };
+        var cards = new ChatCards(_k, _chat, CatName, CatSprites.Head(CatSprites.Skin(_host.Settings.Cat)), _host.OpenFile, _host.OpenSettings);
+        var hello = new DockPanel { Margin = new Thickness(0, 0, 0, 16) };
+        var head = cards.Head(24);
+        head.Margin = new Thickness(0, 0, 12, 0);
+        DockPanel.SetDock(head, Dock.Left);
+        hello.Children.Add(head);
+        hello.Children.Add(_k.Text($"Hi! Tell me what you need and I'll find the files. Select files in File Explorer first and I can work on \"these\". You can also press {_host.Settings.AskHotkey} anywhere to ask me.", 15.5, wrap: true));
+        stack.Children.Add(hello);
+        var ideas = new WrapPanel { Margin = new Thickness(36, 0, 0, 0) };
+        foreach (var idea in Ideas)
+        {
+            var chip = _k.Button(idea, () => { _box.Text = idea; _box.CaretIndex = idea.Length; _box.Focus(); }, DashKit.Pill.Quiet, size: 13);
+            chip.Padding = new Thickness(14, 7, 14, 8);
+            chip.Margin = new Thickness(0, 0, 8, 8);
+            ideas.Children.Add(chip);
+        }
+        stack.Children.Add(ideas);
+        return stack;
+    }
+
+    UIElement SwitchedOff()
+    {
+        var stack = new StackPanel();
+        stack.Children.Add(_k.Text("Ask the cat is switched off", 16, weight: FontWeights.SemiBold));
+        var sub = _k.Text("Switch it on to talk to your cat. Nothing is sent anywhere while it's off.", 14, P.Muted, wrap: true);
+        sub.Margin = new Thickness(0, 4, 0, 14);
+        stack.Children.Add(sub);
+        stack.Children.Add(_k.Button("Switch on", () => { _host.Settings.AiEnabled = true; _host.SaveSettings(); Refresh(); }, DashKit.Pill.Accent));
+        return _k.Card(stack, new Thickness(24, 20, 24, 22), 20);
+    }
+
+    /// <summary>First visit: where to get a key and a box to paste it in. Checked with Claude before it's saved.</summary>
+    UIElement KeySetup()
+    {
+        var stack = new StackPanel();
+        stack.Children.Add(_k.Text($"{CatName} needs a Claude API key", 17, weight: FontWeights.SemiBold));
+        var sub = new TextBlock { FontFamily = DashKit.Sans, FontSize = 14, Foreground = DashKit.B(P.Muted), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 16) };
+        sub.Inlines.Add("Create one at ");
+        var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run("console.anthropic.com")) { Foreground = DashKit.B(P.Text) };
+        link.Click += (_, _) => Process.Start(new ProcessStartInfo("https://console.anthropic.com/settings/keys") { UseShellExecute = true });
+        sub.Inlines.Add(link);
+        sub.Inlines.Add(" and paste it here. It's kept in Windows Credential Manager, not in a file, and only used to talk to Claude. A typical request costs a small fraction of a cent.");
+        stack.Children.Add(sub);
+
+        var key = new PasswordBox
+        {
+            FontFamily = DashKit.Sans,
+            FontSize = 15,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Foreground = DashKit.B(P.Text),
+            CaretBrush = DashKit.B(P.Text),
+            VerticalContentAlignment = VerticalAlignment.Center,
+        };
+        var hint = _k.Text("sk-ant-…", 15, P.Faint);
+        hint.IsHitTestVisible = false;
+        key.PasswordChanged += (_, _) => hint.Visibility = key.Password.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        var field = new Grid { Children = { hint, key } };
+        var fieldCard = new Border
+        {
+            Background = DashKit.B(P.Panel),
+            BorderBrush = DashKit.B(P.Line),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(12),
+            Padding = new Thickness(14, 9, 14, 9),
+            Child = field,
+        };
+        var status = _k.Text("", 13.5, P.Muted, wrap: true);
+        status.Margin = new Thickness(0, 10, 0, 0);
+        status.Visibility = Visibility.Collapsed;
+        void Say(string text, bool bad)
+        {
+            status.Text = text;
+            status.Foreground = DashKit.B(bad ? P.Danger : P.Muted);
+            status.Visibility = Visibility.Visible;
+        }
+        Border? save = null;
+        async void Save()
+        {
+            var value = key.Password.Trim();
+            if (value.Length < 20) { Say("That doesn't look like a whole key. It starts with sk-ant-.", true); return; }
+            Say("Checking the key with Claude…", false);
+            save!.IsEnabled = false;
+            var problem = await CatChat.TestKey(value);
+            save.IsEnabled = true;
+            if (problem != null)
+            {
+                Say(problem, true);
+                return;
+            }
+            try
+            {
+                ClaudeKey.Save(value);
+            }
+            catch (Exception ex)
+            {
+                Say(ex.Message, true);
+                return;
+            }
+            key.Clear();
+            Refresh();
+            FocusBox();
+        }
+        key.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; Save(); } };
+        save = _k.Button("Save key", Save, DashKit.Pill.Accent);
+        save.Margin = new Thickness(10, 0, 0, 0);
+        var row = new DockPanel();
+        DockPanel.SetDock(save, Dock.Right);
+        row.Children.Add(save);
+        row.Children.Add(fieldCard);
+        stack.Children.Add(row);
+        stack.Children.Add(status);
+        return _k.Card(stack, new Thickness(24, 20, 24, 22), 20);
+    }
+
+    public static string Money(double usd) => usd < 0.01 ? $"${usd:0.0000}" : $"${usd:0.00}";
+}

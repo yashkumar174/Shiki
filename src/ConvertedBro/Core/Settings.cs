@@ -40,6 +40,16 @@ public sealed class Settings
     public System.Collections.Generic.List<string> DismissedTips { get; set; } = [];
     public long BytesSaved { get; set; }
 
+    /// <summary>Ask the cat (Claude): on unless switched off. It also needs an API key, kept in Credential Manager.</summary>
+    public bool AiEnabled { get; set; } = true;
+    /// <summary>Global shortcut that opens the ask bubble by the cat.</summary>
+    public string AskHotkey { get; set; } = "Ctrl+Alt+A";
+    /// <summary>What the person calls their cat; null uses the skin's own name.</summary>
+    public string? CatName { get; set; }
+    /// <summary>What asking the cat has cost so far, in US dollars, and how many requests that was.</summary>
+    public double AiSpentUsd { get; set; }
+    public int AiRequests { get; set; }
+
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");
 
     public static Settings Load()

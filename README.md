@@ -2,7 +2,7 @@
 
 A little pixel cat for Windows that converts files without opening a browser.
 Select a file and press Ctrl+Alt+X, Shift + drag it anywhere and drop it on a format, drop it on the cat, or right-click it in Explorer.
-Everything runs locally: nothing is uploaded anywhere.
+Everything runs locally: nothing is uploaded anywhere. The one exception is *Ask the cat*, which you switch on with your own Claude API key (see below).
 
 Inspired by [Tangerine](https://x.com/th2049) for macOS.
 
@@ -55,6 +55,16 @@ Open it by launching ConvertedBro.exe, clicking the tray icon, or with *Open Con
 - **Settings** is a page too. Peeking at it never closes an open editor. Click the cat at the bottom of the sidebar to switch cats.
 
 *Start with Windows* starts quietly (`--background`): just the cat, no window. `ConvertedBro.exe dashboard [home|tools|history]` opens a page.
+
+## Ask the cat (Claude)
+
+Tell the cat what you want in plain English: *"merge the PDFs I downloaded today"*, *"put these photos in one PDF and shrink it under 1 MB"*, *"show me the videos on my desktop"*. Type on the **Ask** page in the dashboard (it's named after your cat), or press **Ctrl+Alt+A** anywhere for a small bubble above the cat (changeable in Settings). Voice and a "Hey <cat name>" wake word come next.
+
+- **How it works**: Claude Haiku 5.5 reads the request and uses a few tools: find files (Downloads, Desktop, Documents, Pictures, Videos, Music, the results folder, the folder open in File Explorer, or any path; by kind, name words and age), read what's selected in File Explorer or on the desktop ("these"), open File Explorer with files highlighted ("show me"), open or play a file, and start the app's own tools (snip, record, colour picker, QR, paste).
+- **Nothing changes without your OK**: to make files, the cat shows a plan card (one to six steps, built from the same actions as the wheel; a step can work on what the previous one made) with **Do it** and **Not now**. Results are new files as always; nothing is deleted, moved or renamed. Steps that need you (sign, edit pages, passwords, form photos) open their editor in the dashboard as the last step. Ask a follow-up ("now compress it") and the cat remembers what it made.
+- **Your key, your data**: the API key is kept in Windows Credential Manager (Settings → *Ask the cat*, or the Ask page the first time), never in a file or the log. What goes to Anthropic: your words, file and folder names and paths the cat looks at, and what's selected in Explorer. File contents are never sent. File names are treated as data, never as instructions. Switch it off in Settings and nothing is sent at all.
+- **Cost**: a request is usually a tenth of a cent or less (Haiku 5.5 is $0.10 / $0.50 per million tokens in / out, with prompt caching). The Ask page shows what the current chat cost; Settings shows the running total.
+- **Log**: everything the cat was asked, searched, proposed and ran is written in plain words to `%LOCALAPPDATA%\ConvertedBro\cat-log.txt` (*Open the cat's log* in Settings).
 
 ## The cat's moods
 

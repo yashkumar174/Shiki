@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using ConvertedBro.Core;
+using ConvertedBro.Core.Ai;
 using ConvertedBro.Shell;
 using ConvertedBro.UI;
 using ConvertedBro.UI.Dashboard;
@@ -37,7 +38,7 @@ public partial class App : Application
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
     Hotkeys? _hotkeys;
-    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1;
+    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1;
     RecordingSession? _recording;
     SnipWindow? _snip;
     ColourPickerWindow? _picker;
@@ -317,6 +318,20 @@ public partial class App : Application
                 // Dev aid: save what the dashboard shows to a PNG.
                 _dashboard?.Snapshot(args[1]);
                 break;
+            case "snapshot" when args.Length == 3 && Enum.TryParse<DashPage>(args[1], true, out var shot):
+                // Dev aid: a page drawn off screen (the dashboard isn't shown, nothing takes focus).
+                EnterBuddyMode();
+                if (_dashboard == null) ShowDashboard(shot, show: false);
+                _dashboard!.Snapshot(args[2], shot);
+                break;
+            case "snapshot-bubble" when args.Length == 2:
+                // Dev aid: the ask bubble drawn off screen.
+                EnterBuddyMode();
+                var palette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
+                var bubble = new AskBubble(Chat, palette, CatName, CatSprites.Head(Skin), OpenFile, () => { });
+                DashboardWindow.SaveElement((FrameworkElement)bubble.Content, bubble.Width, args[1]);
+                bubble.Close();
+                break;
             case "catmenu":
                 // Dev aid: the cat's menu at the mouse, as a right-click would open it.
                 EnterBuddyMode();
@@ -344,6 +359,25 @@ public partial class App : Application
             case "record":
                 EnterBuddyMode();
                 StartRecording();
+                break;
+            case "ask":
+                // The ask bubble by the cat, as the shortcut opens it; "ask some words" sends them too.
+                EnterBuddyMode();
+                ShowAskBubble(args.Length > 1 ? string.Join(" ", args[1..]) : null);
+                break;
+            case "ask-quiet" when args.Length > 1:
+                // Dev aid: say something to the cat without opening anything (see it with "snapshot ask").
+                EnterBuddyMode();
+                _ = Chat.Send(string.Join(" ", args[1..]));
+                break;
+            case "ask-confirm" when args.Length == 2:
+                // Dev aid: press Do it on the waiting plan, with results going to this folder for once.
+                if (Chat.Items.OfType<PlanItem>().LastOrDefault(x => x.State == PlanState.Waiting) is { } waiting)
+                {
+                    var keep = OutputPaths.Folder;
+                    OutputPaths.Folder = args[1];
+                    _ = Chat.Confirm(waiting).ContinueWith(_ => Dispatcher.BeginInvoke(() => OutputPaths.Folder = keep));
+                }
                 break;
             case "selected":
                 // Same as the convert shortcut: the files selected in the Explorer window in front.
@@ -597,13 +631,20 @@ public partial class App : Application
                 new ShortcutSetting("Snip and convert", () => _settings.SnipHotkey, text => ChangeHotkey(text, () => _settings.SnipHotkey, v => _settings.SnipHotkey = v)),
                 new ShortcutSetting("Record the screen", () => _settings.RecordHotkey, text => ChangeHotkey(text, () => _settings.RecordHotkey, v => _settings.RecordHotkey = v)),
                 new ShortcutSetting("Pick a colour", () => _settings.ColourHotkey, text => ChangeHotkey(text, () => _settings.ColourHotkey, v => _settings.ColourHotkey = v)),
+                new ShortcutSetting($"Ask {CatName}", () => _settings.AskHotkey, text => ChangeHotkey(text, () => _settings.AskHotkey, v => _settings.AskHotkey = v)),
             ],
             [
                 new SettingSwitch("Right-click menu in Explorer", "Convert with Bro, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu),
                 new SettingSwitch("Shift + drag opens the wheel", "Hold Shift while dragging any file.", () => _settings.ShiftDragSummon, ToggleShiftDrag),
                 new SettingSwitch("Glass follows what's behind", "Glass look only. Off shows popups in screen recordings.", () => _settings.LiveGlass, ToggleLiveGlass),
                 new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
-            ]);
+            ],
+            new AiSetting(
+                CatName,
+                () => _settings.AiEnabled,
+                () => { _settings.AiEnabled = !_settings.AiEnabled; _settings.Save(); },
+                () => _settings.AiRequests == 0 ? "Nothing spent yet." : $"Spent so far: {AskView.Money(_settings.AiSpentUsd)} over {_settings.AiRequests:N0} requests.",
+                () => Process.Start(new ProcessStartInfo(AiLog.FilePath) { UseShellExecute = true })));
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         InDashboard(_settingsWindow, isSettings: true);
     }
@@ -613,7 +654,7 @@ public partial class App : Application
     {
         var previous = get();
         // Shortcuts can't share keys.
-        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey)) return false;
+        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey)) return false;
         set(text);
         if (BindHotkeys(quiet: true))
         {
@@ -679,7 +720,8 @@ public partial class App : Application
         bool colour = Bind(ref _colourHotkeyId, _settings.ColourHotkey, StartColourPicker, quiet);
         bool convert = Bind(ref _convertHotkeyId, _settings.ConvertHotkey, ConvertSelection, quiet);
         bool record = Bind(ref _recordHotkeyId, _settings.RecordHotkey, StartRecording, quiet);
-        return snip && colour && convert && record;
+        bool ask = Bind(ref _askHotkeyId, _settings.AskHotkey, () => ShowAskBubble(), quiet);
+        return snip && colour && convert && record && ask;
     }
 
     bool Bind(ref int id, string text, Action handler, bool quiet)
@@ -709,7 +751,7 @@ public partial class App : Application
 
     DashboardWindow? _dashboard;
 
-    public void ShowDashboard(DashPage page = DashPage.Home)
+    public void ShowDashboard(DashPage page = DashPage.Home, bool show = true)
     {
         _menu?.CloseAnimated();
         if (_dashboard == null)
@@ -736,10 +778,13 @@ public partial class App : Application
                 StartsWithWindows = StartupRegistration.IsEnabled,
                 StartWithWindows = () => StartupRegistration.Set(true, ExePath),
                 SetCat = SetCat,
+                Chat = Chat,
+                CatName = () => CatName,
+                OpenFile = OpenFile,
             });
             _dashboard.Closed += (_, _) => _dashboard = null;
         }
-        _dashboard.Show(page);
+        if (show) _dashboard.Show(page);
     }
 
     /// <summary>Opens the dashboard with this editor (or settings) inside it.</summary>
@@ -748,6 +793,118 @@ public partial class App : Application
         _menu?.CloseAnimated();
         if (_dashboard == null) ShowDashboard();
         _dashboard!.ShowWindow(window, isSettings);
+    }
+
+    // ---- Ask the cat ----
+
+    CatChat? _chat;
+    AskBubble? _bubble;
+
+    string CatName => string.IsNullOrWhiteSpace(_settings.CatName) ? Skin.Name : _settings.CatName.Trim();
+
+    CatChat Chat => _chat ??= new CatChat(new CatHands
+    {
+        Start = StartForCat,
+        Reveal = ExplorerReveal.Show,
+        Open = OpenFile,
+        UseTool = UseToolForCat,
+        ReadScreen = () => ExplorerSelection.Frontmost() is { } front ? new ScreenContext(front.Folder, front.Selected) : null,
+        CatName = () => CatName,
+        Spent = cost =>
+        {
+            _settings.AiSpentUsd += cost;
+            _settings.AiRequests++;
+            _settings.Save();
+        },
+    });
+
+    /// <summary>
+    /// The ask shortcut: a bubble above the cat. What's selected is read first, while File Explorer
+    /// (or the desktop) is still in front, so "these" means what you were looking at.
+    /// </summary>
+    void ShowAskBubble(string? say = null)
+    {
+        _menu?.CloseAnimated();
+        if (!_settings.AiEnabled || !ClaudeKey.Exists)
+        {
+            // Setting up happens on the Ask page.
+            ShowDashboard(DashPage.Ask);
+            return;
+        }
+        if (_bubble == null)
+        {
+            Chat.NextScreen = ExplorerSelection.DesktopInFront()
+                ? new ScreenContext(null, ExplorerSelection.FromDesktop(), FromDesktop: true)
+                : Chat.NextScreen ?? (ExplorerSelection.Frontmost() is { } front ? new ScreenContext(front.Folder, front.Selected) : null);
+            var palette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
+            _bubble = new AskBubble(Chat, palette, CatName, CatSprites.Head(Skin), OpenFile, () => ShowDashboard(DashPage.Ask));
+            _bubble.Closed += (_, _) => _bubble = null;
+            double scale = NativeMethods.SystemScale;
+            var area = SystemParameters.WorkArea;
+            var spot = _buddy is { IsVisible: true } cat
+                ? new Point(cat.WheelSpotPx(0).X / scale, cat.WheelSpotPx(0).Y / scale)
+                : new Point(area.Right - 260, area.Bottom - 8);
+            _bubble.Place(spot);
+            _bubble.Show();
+            _buddy?.Notice(true);
+            _bubble.Closed += (_, _) => _buddy?.Notice(false);
+        }
+        else _bubble.FocusBox();
+        if (!string.IsNullOrWhiteSpace(say)) _ = Chat.Send(say);
+    }
+
+    /// <summary>Runs one step of a plan the person confirmed: a job, or an editor in the dashboard.</summary>
+    Job? StartForCat(BroAction action, List<string> files, out bool openedWindow)
+    {
+        openedWindow = false;
+        if (action.Combine) files.Sort(NaturalComparer.Instance);
+        if (action.Editor != null)
+        {
+            var accepted = files.Where(action.Accepts).ToList();
+            if (accepted.Count >= action.MinFiles && action.Editor(accepted) is { } editor)
+            {
+                InDashboard(editor);
+                openedWindow = true;
+                return null;
+            }
+        }
+        return JobRunner.Start(action, files);
+    }
+
+    /// <summary>Videos and music play in the dashboard; everything else opens in its usual app.</summary>
+    void OpenFile(string path)
+    {
+        if (PlayerView.CanPlay(path) && !path.EndsWith(".gif", StringComparison.OrdinalIgnoreCase))
+        {
+            ShowDashboard();
+            _dashboard!.Play(path);
+            return;
+        }
+        try
+        {
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Could not open {path}", ex);
+        }
+    }
+
+    bool UseToolForCat(string tool, string? text)
+    {
+        // Let the bubble get out of the way of whatever comes next.
+        _bubble?.Close();
+        switch (tool)
+        {
+            case "snip": StartSnip(); return true;
+            case "record_screen": StartRecording(); return true;
+            case "pick_colour": StartColourPicker(); return true;
+            case "make_qr": ShowQr(text ?? ""); return true;
+            case "paste_clipboard": PasteToCat(); return true;
+            case "open_history": ShowDashboard(DashPage.History); return true;
+            case "open_settings": ShowSettings(); return true;
+            default: return false;
+        }
     }
 
     // ---- Convert what's selected ----

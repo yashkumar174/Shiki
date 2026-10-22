@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using ConvertedBro.Core.Ai;
 using ConvertedBro.Shell;
 
 namespace ConvertedBro.UI;
@@ -17,6 +18,9 @@ public sealed record ShortcutSetting(string Label, Func<string> Get, Func<string
 
 /// <summary>Where results are saved: a folder (null keeps them next to the original), and whether to sort them.</summary>
 public sealed record OutputSetting(Func<string?> GetFolder, Action<string?> SetFolder, Func<bool> GetSort, Action<bool> SetSort, Action<string> Open);
+
+/// <summary>Ask the cat: the name it goes by, the on/off switch, what it has cost, and its log. The key itself is handled here.</summary>
+public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle, Func<string> Spent, Action OpenLog);
 
 /// <summary>Shortcuts and the main switches, in one place.</summary>
 public sealed class SettingsWindow : Window
@@ -31,7 +35,7 @@ public sealed class SettingsWindow : Window
     readonly TextBlock _folderPath = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     string _lastFolder;
 
-    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches)
+    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null)
     {
         _output = output;
         _lastFolder = output.GetFolder() ?? Core.OutputPaths.DefaultFolder;
@@ -82,12 +86,64 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(UiKit.Heading("Behaviour"));
         foreach (var setting in switches) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
 
+        if (ai != null) AddAi(stack, ai);
+
         var done = UiKit.Button("Done", Close, primary: true);
         done.Margin = new Thickness(0, 22, 0, 0);
         stack.Children.Add(done);
         Content = stack;
 
         PreviewKeyDown += OnKey;
+    }
+
+    void AddAi(StackPanel stack, AiSetting ai)
+    {
+        stack.Children.Add(UiKit.Heading("Ask the cat (uses Claude)"));
+        stack.Children.Add(UiKit.Body($"Tell {ai.CatName} what to do with your files. Your words and the names of the files involved go to Claude Haiku 5.5 with your own API key; the files themselves are never uploaded. Nothing is sent while this is off."));
+        stack.Children.Add(Line($"Ask {ai.CatName}", "On the Ask page and with the shortcut above.", Toggle(new SettingSwitch("", "", ai.IsOn, ai.Toggle))));
+
+        var status = UiKit.Body("");
+        status.Margin = new Thickness(0, 10, 0, 6);
+        var key = new PasswordBox();
+        var field = UiKit.Field(key);
+        field.Width = 300;
+        var save = UiKit.Button("Save", () => { });
+        var remove = UiKit.Button("Remove", () => { });
+        void Show()
+        {
+            status.Text = ClaudeKey.Hint is { } end ? $"API key saved (ends in {end}), kept in Windows Credential Manager." : "No API key yet. Create one at console.anthropic.com, then paste it here.";
+            status.Foreground = Theme.Brush(_p.SubtleText);
+            remove.Visibility = ClaudeKey.Exists ? Visibility.Visible : Visibility.Collapsed;
+        }
+        async void Save()
+        {
+            var value = key.Password.Trim();
+            if (value.Length < 20) return;
+            status.Text = "Checking the key with Claude…";
+            var problem = await CatChat.TestKey(value);
+            if (problem != null)
+            {
+                status.Text = problem;
+                status.Foreground = Theme.Brush(Color.FromRgb(0xE8, 0x5A, 0x3C));
+                return;
+            }
+            ClaudeKey.Save(value);
+            key.Clear();
+            Show();
+        }
+        save.MouseLeftButtonUp += (_, _) => Save();
+        remove.MouseLeftButtonUp += (_, _) => { ClaudeKey.Remove(); Show(); };
+        key.KeyDown += (_, e) => { if (e.Key == Key.Enter) { e.Handled = true; Save(); } };
+        stack.Children.Add(status);
+        var row = UiKit.Row(field, save, remove);
+        field.Margin = new Thickness(0, 0, 8, 0);
+        stack.Children.Add(row);
+        Show();
+
+        var spent = UiKit.Body(ai.Spent());
+        spent.Margin = new Thickness(0, 14, 0, 8);
+        stack.Children.Add(spent);
+        stack.Children.Add(UiKit.Button("Open the cat's log", ai.OpenLog));
     }
 
     void SetMode(bool oneFolder)

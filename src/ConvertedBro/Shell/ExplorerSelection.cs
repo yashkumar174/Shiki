@@ -62,6 +62,64 @@ public static class ExplorerSelection
         }
     }
 
+    /// <summary>
+    /// The File Explorer window nearest the top (it needn't have focus: the dashboard may), with
+    /// the folder of the tab on show and what's selected there. Null when no Explorer is open.
+    /// </summary>
+    public static (string? Folder, List<string> Selected)? Frontmost()
+    {
+        IntPtr explorer = IntPtr.Zero;
+        for (var hwnd = GetTopWindow(IntPtr.Zero); hwnd != IntPtr.Zero; hwnd = GetWindow(hwnd, GW_HWNDNEXT))
+            if (IsWindowVisible(hwnd) && ClassOf(hwnd) is "CabinetWClass" or "ExploreWClass") { explorer = hwnd; break; }
+        if (explorer == IntPtr.Zero) return null;
+
+        try
+        {
+            dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+            try
+            {
+                var activeTab = FindWindowEx(explorer, IntPtr.Zero, "ShellTabWindowClass", null);
+                dynamic? match = null;
+                foreach (dynamic window in shell.Windows())
+                {
+                    try
+                    {
+                        if (new IntPtr((long)window.HWND) != explorer) continue;
+                        if (activeTab == IntPtr.Zero || TabOf(window) == activeTab) { match = window; break; }
+                        match ??= window;
+                    }
+                    catch (Exception ex) when (ex is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
+                    {
+                    }
+                }
+                if (match == null) return null;
+                string? folder = null;
+                try
+                {
+                    string path = match.Document.Folder.Self.Path;
+                    if (!string.IsNullOrEmpty(path) && !path.StartsWith("::")) folder = path;
+                }
+                catch (Exception ex) when (ex is COMException or Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
+                {
+                    // Home, This PC and other virtual places have no folder.
+                }
+                return (folder, Selected(match));
+            }
+            finally
+            {
+                Marshal.FinalReleaseComObject(shell);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Could not read the front Explorer window", ex);
+            return null;
+        }
+    }
+
+    /// <summary>True when the desktop itself is the window in front.</summary>
+    public static bool DesktopInFront() => ClassOf(NativeMethods.GetForegroundWindow()) is "Progman" or "WorkerW";
+
     /// <summary>What's selected on the desktop, whatever window is in front (the dev test uses this).</summary>
     public static List<string> FromDesktop()
     {
@@ -139,6 +197,17 @@ public static class ExplorerSelection
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string className, string? title);
+
+    const uint GW_HWNDNEXT = 2;
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetTopWindow(IntPtr parent);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetWindow(IntPtr hwnd, uint command);
+
+    [DllImport("user32.dll")]
+    static extern bool IsWindowVisible(IntPtr hwnd);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     static extern int GetClassName(IntPtr hwnd, StringBuilder name, int capacity);

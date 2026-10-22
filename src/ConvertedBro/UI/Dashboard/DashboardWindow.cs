@@ -33,11 +33,16 @@ public sealed class DashboardHost
     public required Func<bool> StartsWithWindows { get; init; }
     public required Action StartWithWindows { get; init; }
     public required Action<string> SetCat { get; init; }
+    /// <summary>Talking to the cat (Claude); null hides the Ask page.</summary>
+    public Core.Ai.CatChat? Chat { get; init; }
+    public required Func<string> CatName { get; init; }
+    /// <summary>Opens a file the way the app does: videos and music in the player, the rest in their usual app.</summary>
+    public required Action<string> OpenFile { get; init; }
     /// <summary>Plays a video or audio file in the dashboard (set by the dashboard itself).</summary>
     public Action<string>? Play { get; set; }
 }
 
-public enum DashPage { Home, Tools, History }
+public enum DashPage { Home, Ask, Tools, History }
 
 /// <summary>
 /// The main window: a sidebar on the left, one big rounded panel on the right, and a title bar
@@ -70,6 +75,10 @@ public sealed class DashboardWindow : Window
     // The media player: one at a time, parked (paused) when you look at another page.
     PlayerView? _player;
     bool _onPlayer, _fullscreen;
+
+    // The cat chat page, kept between visits (and across rebuilds) so a half-typed message stays.
+    AskView? _ask;
+    string _askDraft = "";
     WindowState _stateBeforeFullscreen;
 
     public DashboardWindow(DashboardHost host)
@@ -115,6 +124,7 @@ public sealed class DashboardWindow : Window
             _settingsPage?.Window.Close();
             _editor?.Window.Close();
             _player?.Close();
+            _ask?.Detach();
         };
         PreviewKeyDown += (_, e) =>
         {
@@ -130,7 +140,8 @@ public sealed class DashboardWindow : Window
         ApplyTheme();
     }
 
-    void OnHistoryChanged() => Dispatcher.BeginInvoke(() => { if (_page != DashPage.Tools) Rebuild(); });
+    // Tools and Ask don't show history; rebuilding Ask while a plan runs would only flicker.
+    void OnHistoryChanged() => Dispatcher.BeginInvoke(() => { if (_page is not (DashPage.Tools or DashPage.Ask) || _showing != null || _onPlayer) Rebuild(); });
 
     bool DarkWanted => _host.Settings.DashboardDark ?? DashPalette.WindowsIsDark();
 
@@ -139,6 +150,7 @@ public sealed class DashboardWindow : Window
         _p = DarkWanted ? DashPalette.Night : DashPalette.Light;
         Theme.EditorDark = _p.Dark;
         _k = new DashKit(_p);
+        if (_ask != null) { _askDraft = _ask.Draft; _ask.Detach(); _ask = null; }
         Background = DashKit.B(_p.Canvas);
         Rebuild();
     }
@@ -154,7 +166,10 @@ public sealed class DashboardWindow : Window
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         if (!IsVisible) base.Show();
         Activate();
+        if (page == DashPage.Ask) _ask?.FocusBox();
     }
+
+    AskView Ask() => _ask ??= new AskView(_k, _host, _host.Chat!, ThinScrollBar()) { Draft = _askDraft };
 
     void Rebuild()
     {
@@ -210,6 +225,12 @@ public sealed class DashboardWindow : Window
         {
             if (_showing.Frame.Parent is Decorator old) old.Child = null;
             panel.Child = _showing.Frame;
+        }
+        else if (_page == DashPage.Ask && _host.Chat != null)
+        {
+            var ask = Ask().Root;
+            if (ask.Parent is Decorator old) old.Child = null;
+            panel.Child = ask;
         }
         else panel.Child = scroll;
         // Round the content's corners to match the panel (ClipToBounds alone clips square).
@@ -323,6 +344,40 @@ public sealed class DashboardWindow : Window
         }
         Rebuild();
         Bring();
+    }
+
+    /// <summary>Dev aid: a page drawn off screen at the window's size, without showing or focusing anything.</summary>
+    public void Snapshot(string path, DashPage page)
+    {
+        if (IsVisible) { Snapshot(path); return; }
+        _page = page;
+        Rebuild();
+        Content = null;
+        var holder = new Border { Background = Background, Child = _root };
+        SaveElement(holder, Width, path, Height);
+        holder.Child = null;
+        Content = _root;
+    }
+
+    /// <summary>Dev aid: lays out an element that isn't on screen and saves it as a PNG.</summary>
+    public static void SaveElement(FrameworkElement element, double width, string path, double? height = null)
+    {
+        if (element.Parent is Window owner) owner.Content = null;
+        element.Measure(new Size(width, height ?? double.PositiveInfinity));
+        element.Arrange(new Rect(0, 0, width, height ?? element.DesiredSize.Height));
+        element.UpdateLayout();
+        // Lists scroll to the end once laid out; let that happen before drawing.
+        element.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Loaded);
+        element.Measure(new Size(width, height ?? double.PositiveInfinity));
+        element.Arrange(new Rect(0, 0, width, height ?? element.DesiredSize.Height));
+        element.UpdateLayout();
+        double scale = Shell.NativeMethods.SystemScale;
+        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)(width * scale), (int)((height ?? element.DesiredSize.Height) * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
+        bitmap.Render(element);
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+        using var file = System.IO.File.Create(path);
+        encoder.Save(file);
     }
 
     /// <summary>Dev aid: the window as it looks right now, even when it's behind others.</summary>
@@ -503,6 +558,7 @@ public sealed class DashboardWindow : Window
             top.Children.Add(NavItem("\uE70F", name, _showing == editor && !_onPlayer, () => { ParkPlayer(); _showing = editor; Rebuild(); }, null, editor.Window.Title));
         }
         top.Children.Add(Nav("\uE80F", "Home", DashPage.Home));
+        if (_host.Chat != null) top.Children.Add(Nav("\uE8BD", $"Ask {_host.CatName()}", DashPage.Ask));
         top.Children.Add(Nav("\uE90F", "Tools", DashPage.Tools));
         top.Children.Add(Nav("\uE81C", "History", DashPage.History));
         top.Children.Add(NavItem("\uE713", "Settings", !_onPlayer && _showing != null && _showing == _settingsPage, _host.OpenSettings, null, "Settings"));
