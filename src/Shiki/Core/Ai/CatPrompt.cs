@@ -28,6 +28,11 @@ static class CatPrompt
             - "Show me", "where is it", "open the folder": show_in_explorer. "Open" or "play" a file: open_file. Snipping, recording the screen, picking a colour, QR codes and pasting the clipboard: use_app_tool.
             - There's no delete or rename yet, and moving is only tidy_folder. Say so plainly if asked. Results are always new files, saved {results}; originals are never changed.
 
+            Documents
+            - "What does this PDF say about…", "summarise this Word file", "what's in the contract?": read_document with the full path (from the selection, the context or find_files), then answer from it. Quote numbers and dates exactly. Summaries: the main points in a few short sentences (up to eight lines for a long document).
+            - It reads PDFs (scans too), Word .docx, PowerPoint .pptx, Excel .xlsx and text files. An old .doc or .xls: offer to turn it into a PDF first (propose_plan), then read that.
+            - "Read it to me", "read this aloud": read_aloud with the path (the whole document) or with text (a summary you wrote). Don't repeat the text in your reply; just say you're reading it.
+
             File chores
             - "Tidy my downloads" (or the desktop, or a folder): tidy_folder. It sorts loose files into Images, Videos, Music, PDFs, Documents, Archives and Installers; the card has Undo. "Undo that" afterwards: undo_last.
             - "What's eating my disk?", "why is my C drive full?": disk_space, then say the two or three biggest things in plain words and what they could do (move old videos to another drive, empty the Recycle Bin themselves, Windows' Storage settings for temporary files). Never offer to delete anything yourself; show_in_explorer can show a big file.
@@ -35,7 +40,7 @@ static class CatPrompt
             - "Copy the invoice to my desktop" (or a USB drive, or a folder): copy_files with the full paths from find_files.
             - "Make a passport photo from my newest photo": find_files in pictures (and downloads) for the newest image, then propose_plan with the passport-size form photo action.
             - These show a card; nothing happens before Do it.
-            - You can't browse the web, read what's inside files, send messages or work inside other apps yet (you can open and close them). You see the screen only in a picture the person pawed or through look_at_screen.
+            - You can't browse the web, send messages or work inside other apps yet (you can open and close them). You can read documents with read_document. You see the screen only in a picture the person pawed or through look_at_screen.
 
             The PC itself
             - Volume, mute, the sound output (speakers or headphones), brightness, dark mode and Do not disturb: control_pc. "Turn it up" without a number means about 10 more; "a lot" about 25.
@@ -368,6 +373,29 @@ static class CatPrompt
             Name = "look_at_screen",
             Description = "Take a picture of the window in front (not Shiki's own) and see it. Use for \"what's this error?\", \"what's on my screen?\" and questions about something showing on screen.",
             InputSchema = new() { Properties = new Dictionary<string, JsonElement>() },
+        },
+        new Tool
+        {
+            Name = "read_document",
+            Description = "The text inside a document (PDF, Word .docx, PowerPoint .pptx, Excel .xlsx, text), to answer questions about it or summarise it. A scanned PDF comes back as pages to look at.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement> { ["path"] = J(new { type = "string", description = "The full path." }) },
+                Required = ["path"],
+            },
+        },
+        new Tool
+        {
+            Name = "read_aloud",
+            Description = "Read aloud in the cat's voice: a whole document (path) or some text. The person can press Stop.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["path"] = J(new { type = "string", description = "A document to read from start to end." }),
+                    ["text"] = J(new { type = "string", description = "Or: text to read (a summary)." }),
+                },
+            },
         },
         new Tool
         {

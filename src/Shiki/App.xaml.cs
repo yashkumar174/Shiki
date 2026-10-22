@@ -1061,7 +1061,9 @@ public partial class App : Application
         {
             _wake = new WakeListener(() => CatName, () => _settings.WakeVariants,
                 // Hear nothing while the cat is already listening or thinking, while recording, or while being taught.
-                () => _recording != null || (_voice?.Active ?? false) || (_chat?.Busy ?? false) || (_teach?.Listening ?? false) || _dictation != null || (_mouth?.Speaking ?? false),
+                () => _recording != null || (_voice?.Active ?? false) || (_chat?.Busy ?? false) || (_teach?.Listening ?? false) || _dictation != null
+                    // While the cat talks it would hear itself, unless only the owner's voice can wake it.
+                    || ((_mouth?.Speaking ?? false) && !(_settings.VoiceLock && VoicePrint.HasPrint)),
                 () => _settings.VoiceLock && VoicePrint.HasPrint ? VoicePrint.Enough(_settings.VoiceLockLevel) : null);
             _wake.Woke += OnWoke;
             // "Hey Sky, …": show the bubble straight away, before the rest is written down.
@@ -1146,12 +1148,32 @@ public partial class App : Application
         },
         Copy = TrySetClipboard,
         LookAtScreen = () => WindowShots.Capture(WindowShots.TopOtherWindow()),
+        ReadAloud = ReadAloud,
         RunRoutine = name => Routines.Find(name) is { } routine ? RunRoutine(routine, spoken: false) : $"There's no routine called \"{name}\".",
         Replied = (text, spoken) =>
         {
+            // Not over a document being read aloud.
+            if (_mouth?.Reading == true) return;
             if (_settings.TalkBack == "always" || (_settings.TalkBack == "spoken" && spoken)) _ = Mouth.Say(text, _settings.TalkVoice);
         },
     });
+
+    ToastWindow? _readingToast;
+
+    /// <summary>Reads a document (or a summary) aloud, with a Stop button while it does.</summary>
+    void ReadAloud(string title, string text)
+    {
+        _readingToast?.CloseAnimated();
+        ToastWindow? toast = null;
+        toast = _readingToast = ToastWindow.Message($"Reading {title} aloud", $"Say \"Hey {CatName}, stop\" or press Stop.", null,
+            ("Stop", () => { _mouth?.Stop(); toast!.CloseAnimated(); }));
+        ToastHost.Show(toast);
+        Dispatcher.BeginInvoke(async () =>
+        {
+            await Mouth.Say(text, _settings.TalkVoice, full: true);
+            if (_readingToast == toast) { toast.CloseAnimated(); _readingToast = null; }
+        });
+    }
 
     // ---- Routines ----
 
@@ -1508,6 +1530,12 @@ public partial class App : Application
                 _meeting.Mark();
                 Chat.Say(new CatDid("\uE734", "Marked."));
             };
+        }
+        // Hearing the wake word already cut the reading off; these just say so.
+        if (words is "stop" or "stop reading" or "stop talking" or "be quiet" or "quiet" or "shush" or "stop it" or "thats enough" or "enough")
+        {
+            _mouth?.Stop();
+            return () => Chat.Say(new CatDid("\uE71A", "Stopped."));
         }
         if (words is "stop recording" or "stop the recording" or "stop screen recording" or "end recording" or "finish recording" or "stop recording the screen"
             && _recording is { State: RecordingSession.Stage.Recording } recording)

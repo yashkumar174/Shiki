@@ -81,7 +81,7 @@ In no fixed order yet; we pick as we go.
 - **Screen by voice** (built, v2.11): start and stop recording, copy the text on screen, the colour under the
   pointer.
 - **The cat talks back** (built, v2.8): spoken replies (Windows voices or Deepgram), and it never hears itself.
-- **Documents**: ask a PDF a question, summarise a Word file, read aloud.
+- **Documents** (built, v2.12): ask a PDF a question, summarise a Word file, read aloud.
 - **What is this?** for files, **Smart rename** (batch, with undo), **Translate** (documents,
   pictures, screen text).
 - **Live captions and translation** for anything playing on the PC.

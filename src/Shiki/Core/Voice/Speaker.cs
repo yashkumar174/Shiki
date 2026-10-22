@@ -28,6 +28,8 @@ public sealed class Speaker
     TaskCompletionSource? _done;
 
     public bool Speaking { get; private set; }
+    /// <summary>Reading a whole document (not just a reply): replies shouldn't cut in.</summary>
+    public bool Reading { get; private set; }
     public event Action? Changed;
 
     /// <summary>Characters sent to Deepgram so far (for the running cost).</summary>
@@ -86,32 +88,49 @@ public sealed class Speaker
     }
 
     /// <summary>Reads the text aloud with the voice; returns when it's done (or stopped).</summary>
-    public async Task Say(string text, string voice)
+    /// <param name="full">All of it (reading a document), in pieces, rather than a reply's first sentences.</param>
+    public async Task Say(string text, string voice, bool full = false)
     {
         Stop();
-        text = Readable(text);
+        text = Readable(text, full ? int.MaxValue : 320);
         if (text.Length == 0) return;
-        var cancel = _cancel = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        var cancel = _cancel = new CancellationTokenSource(full ? TimeSpan.FromHours(3) : TimeSpan.FromSeconds(60));
         var done = _done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         Speaking = true;
+        Reading = full;
         Changed?.Invoke();
         try
         {
             voice = Pick(voice);
-            byte[] wav;
-            try
+            async Task<byte[]> Render(string piece)
             {
-                wav = voice.StartsWith("dg:") ? await Aura(text, voice[3..], cancel.Token) : await WindowsVoice(text, voice[4..]);
+                if (voice.StartsWith("dg:"))
+                {
+                    try
+                    {
+                        return await Aura(piece, voice[3..], cancel.Token);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // Offline or out of credit: a Windows voice carries on.
+                        Log.Error("Deepgram's voice failed; using a Windows voice", ex);
+                        voice = "win:";
+                    }
+                }
+                return await WindowsVoice(piece, voice[4..]);
             }
-            catch (Exception ex) when (voice.StartsWith("dg:") && ex is not OperationCanceledException)
+            // Deepgram takes up to 2,000 characters at a time; the next piece is made while this one plays.
+            var pieces = Pieces(text, 1500);
+            Log.Info($"Speaking {text.Length} characters in {pieces.Count} piece{(pieces.Count == 1 ? "" : "s")} ({voice})");
+            var next = Render(pieces[0]);
+            for (int i = 0; i < pieces.Count; i++)
             {
-                // Offline or out of credit: a Windows voice still answers.
-                Log.Error("Deepgram's voice failed; using a Windows voice", ex);
-                wav = await WindowsVoice(text, "");
+                var wav = await next;
+                cancel.Token.ThrowIfCancellationRequested();
+                if (i + 1 < pieces.Count) next = Render(pieces[i + 1]);
+                await Play(wav, cancel.Token);
+                cancel.Token.ThrowIfCancellationRequested();
             }
-            cancel.Token.ThrowIfCancellationRequested();
-            Log.Info($"Speaking {text.Length} characters ({voice})");
-            await Play(wav, cancel.Token);
         }
         catch (OperationCanceledException)
         {
@@ -126,6 +145,7 @@ public sealed class Speaker
             if (_cancel == cancel)
             {
                 Speaking = false;
+                Reading = false;
                 _cancel = null;
                 _done = null;
                 _ui.Post(_ => Changed?.Invoke(), null);
@@ -134,23 +154,49 @@ public sealed class Speaker
         }
     }
 
+    /// <summary>The text in pieces of about <paramref name="size"/> characters, split between sentences.</summary>
+    static List<string> Pieces(string text, int size)
+    {
+        var pieces = new List<string>();
+        var piece = new StringBuilder();
+        foreach (var sentence in Regex.Split(text, @"(?<=[.!?])\s+"))
+        {
+            if (piece.Length + sentence.Length > size && piece.Length > 0)
+            {
+                pieces.Add(piece.ToString().Trim());
+                piece.Clear();
+            }
+            // A single very long "sentence" (a table, a list) is cut at a space.
+            var rest = sentence;
+            while (rest.Length > size)
+            {
+                int cut = rest.LastIndexOf(' ', size);
+                if (cut <= 0) cut = size;
+                pieces.Add(rest[..cut].Trim());
+                rest = rest[cut..];
+            }
+            piece.Append(rest).Append(' ');
+        }
+        if (piece.ToString().Trim().Length > 0) pieces.Add(piece.ToString().Trim());
+        return pieces;
+    }
+
     /// <summary>
     /// What reads well aloud: no file paths or long numbered steps. A long reply is cut to its
     /// first sentences; the rest is on screen.
     /// </summary>
-    public static string Readable(string text)
+    public static string Readable(string text, int most = 320)
     {
         text = Regex.Replace(text, @"[A-Za-z]:\\[^\s,;]+", m => Path.GetFileName(m.Value.TrimEnd('.', '\\')));
         text = Regex.Replace(text, @"https?://\S+", "the link");
         text = Regex.Replace(text, @"\s*\n+\s*", " ").Trim();
         text = Regex.Replace(text, @"\s{2,}", " ");
-        const int Most = 320;
-        if (text.Length <= Most) return text;
+        if (text.Length <= most) return text;
         var sentences = Regex.Split(text, @"(?<=[.!?])\s+");
         var said = new StringBuilder();
         foreach (var sentence in sentences)
         {
-            if (said.Length + sentence.Length > Most && said.Length > 0) break;
+            if (said.Length + sentence.Length > most && said.Length > 0) break;
             said.Append(sentence).Append(' ');
         }
         return said.ToString().Trim() + " The rest is on screen.";
