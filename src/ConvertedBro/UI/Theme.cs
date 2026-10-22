@@ -179,6 +179,7 @@ public static class Theme
         FileKind.Video => Color.FromRgb(0x6F, 0x86, 0xFF), // iris
         FileKind.Audio => Color.FromRgb(0x2F, 0xD3, 0xA0), // mint
         FileKind.Pdf => Color.FromRgb(0xFF, 0x5A, 0x6E),   // coral
+        FileKind.Document => Color.FromRgb(0xB0, 0x7C, 0xFF), // lavender
         _ => Brand,
     };
 

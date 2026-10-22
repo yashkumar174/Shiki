@@ -23,6 +23,7 @@ public sealed class ToolsPage(DashKit k, DashboardHost host)
         (FileKind.Image, "Images", "Convert, shrink, cut out backgrounds and make form photos."),
         (FileKind.Video, "Video", "Convert, compress and trim the sound off."),
         (FileKind.Audio, "Audio", "Convert and even out the volume."),
+        (FileKind.Document, "Documents", "Word, Excel and PowerPoint to PDF, with the Office on this PC."),
         (FileKind.Archive, "Archives", "Unpack zip, 7z, rar and tar."),
     ];
 
@@ -37,7 +38,8 @@ public sealed class ToolsPage(DashKit k, DashboardHost host)
         page.Children.Add(Section("Capture and quick tools", "Things that start from your screen or clipboard.", Quick()));
         foreach (var (kind, title, blurb) in Sections)
         {
-            var actions = ActionCatalog.All.Where(a => a.Kind == kind).ToList();
+            // Only what works on this PC (to Word needs Word, say).
+            var actions = ActionCatalog.All.Where(a => a.Kind == kind && (a.Available?.Invoke() ?? true)).ToList();
             if (actions.Count == 0) continue;
             page.Children.Add(Section(title, blurb, Content(actions)));
         }

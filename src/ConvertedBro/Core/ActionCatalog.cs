@@ -34,6 +34,8 @@ public sealed class BroAction
     public bool AnyFile { get; init; }
     /// <summary>Extra check on the whole selection before offering this on the wheel.</summary>
     public Func<IReadOnlyList<string>, bool>? OfferFor { get; init; }
+    /// <summary>Whether this PC can do it at all (Office for documents); hidden everywhere if not.</summary>
+    public Func<bool>? Available { get; init; }
     public required ActionRunner Run { get; init; }
     /// <summary>
     /// Opens a window first (the scanner, a password prompt, the page editor…) instead of starting
@@ -68,6 +70,7 @@ public static class ActionCatalog
         var kind = DominantKind(files);
         return All.Where(a =>
         {
+            if (!(a.Available?.Invoke() ?? true)) return false;
             if (a.AnyFile) return files.Count > 0;
             if (kind == FileKind.Unknown) return false;
             var accepted = files.Where(a.Accepts).ToList();
@@ -77,7 +80,7 @@ public static class ActionCatalog
 
     /// <summary>Actions listed in the Explorer right-click menu for one extension.</summary>
     public static IReadOnlyList<BroAction> ForExtension(string ext) =>
-        All.Where(a => a.MinFiles == 1 && a.AcceptsExtension(ext)).ToList();
+        All.Where(a => a.MinFiles == 1 && a.AcceptsExtension(ext) && (a.Available?.Invoke() ?? true)).ToList();
 
     static List<BroAction> Build()
     {
@@ -398,6 +401,30 @@ public static class ActionCatalog
         });
 
         list.Add(CopyText(FileKind.Pdf, Kind(FileKind.Pdf)));
+
+        // ---- Office documents ----
+        list.Add(new BroAction
+        {
+            Id = "doc-pdf",
+            Label = "to PDF",
+            Short = "PDF",
+            Hint = "Word, Excel or PowerPoint to PDF, using the Office on this PC",
+            Kind = FileKind.Document,
+            AcceptsExtension = Kind(FileKind.Document),
+            Available = () => OfficeTools.Available,
+            Run = (inputs, progress, ct) => Task.Run(() => OfficeTools.OnSta(() => OfficeTools.ToPdf(inputs, progress, ct)), ct),
+        });
+        list.Add(new BroAction
+        {
+            Id = "pdf-word",
+            Label = "to Word",
+            Short = "Word",
+            Hint = "An editable Word document (uses Word on this PC)",
+            Kind = FileKind.Pdf,
+            AcceptsExtension = Kind(FileKind.Pdf),
+            Available = () => OfficeTools.HasWord,
+            Run = (inputs, progress, ct) => Task.Run(() => OfficeTools.OnSta(() => OfficeTools.PdfToWord(inputs, progress, ct)), ct),
+        });
 
         // ---- Archives and any files ----
         list.Add(new BroAction

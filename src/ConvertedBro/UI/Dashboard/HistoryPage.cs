@@ -224,7 +224,7 @@ public sealed class HistoryPage(DashKit k, DashboardHost host, string? search, A
 
         var chips = new WrapPanel { Margin = new Thickness(0, 14, 0, 22) };
         void Refresh() => listHost.Content = List(box.Text);
-        foreach (var (label, kind) in new (string, FileKind?)[] { ("All", null), ("Images", FileKind.Image), ("Video", FileKind.Video), ("Audio", FileKind.Audio), ("PDF", FileKind.Pdf), ("Files", FileKind.Archive) })
+        foreach (var (label, kind) in new (string, FileKind?)[] { ("All", null), ("Images", FileKind.Image), ("Video", FileKind.Video), ("Audio", FileKind.Audio), ("PDF", FileKind.Pdf), ("Documents", FileKind.Document), ("Files", FileKind.Archive) })
         {
             var chip = k.Button(label, () => { }, _filter == kind ? DashKit.Pill.Accent : DashKit.Pill.Quiet, size: 13);
             chip.Padding = new Thickness(14, 6, 14, 7);
