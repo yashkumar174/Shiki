@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 
-namespace ConvertedBro.Core;
+namespace Shiki.Core;
 
 /// <summary>One finished job, as the dashboard lists it.</summary>
 public sealed class HistoryEntry
@@ -78,6 +78,37 @@ public static class History
             Save(list);
         }
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// A folder was renamed: entries pointing inside it now point inside the new one, where the
+    /// file is actually there. Safe to call again; returns how many paths changed.
+    /// </summary>
+    public static int Repoint(string oldFolder, string newFolder)
+    {
+        var from = oldFolder.TrimEnd('\\') + "\\";
+        var to = newFolder.TrimEnd('\\') + "\\";
+        int changed = 0;
+        string Fix(string path)
+        {
+            if (!path.StartsWith(from, StringComparison.OrdinalIgnoreCase)) return path;
+            var moved = to + path[from.Length..];
+            if (!File.Exists(moved) && !Directory.Exists(moved)) return path;
+            changed++;
+            return moved;
+        }
+        lock (Gate)
+        {
+            var list = Load();
+            foreach (var entry in list)
+            {
+                entry.Inputs = entry.Inputs.Select(Fix).ToList();
+                entry.Outputs = entry.Outputs.Select(Fix).ToList();
+            }
+            if (changed > 0) Save(list);
+        }
+        if (changed > 0) Changed?.Invoke();
+        return changed;
     }
 
     /// <summary>Days in a row (ending today, or yesterday if today has nothing yet) with at least one job.</summary>
