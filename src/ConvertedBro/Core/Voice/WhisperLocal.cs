@@ -55,19 +55,23 @@ public sealed class WhisperLocal : ISpeechToText
         File.Move(part, path, overwrite: true);
     }
 
-    public async Task<string> Transcribe(float[] samples, string hint, CancellationToken ct)
+    public Task<string> Transcribe(float[] samples, string hint, CancellationToken ct) => Transcribe(samples, hint, ct, Math.Clamp(Environment.ProcessorCount - 1, 1, 8));
+
+    /// <param name="threads">Fewer for the wake word, which runs in the background.</param>
+    public async Task<string> Transcribe(float[] samples, string hint, CancellationToken ct, int threads)
     {
         await Prepare(null, ct);
         await _gate.WaitAsync(ct);
         try
         {
             _factory ??= WhisperFactory.FromPath(ModelPath);
-            using var processor = _factory.CreateBuilder()
+            var builder = _factory.CreateBuilder()
                 .WithLanguage("en")
-                .WithPrompt(hint)
                 .WithNoContext()
-                .WithThreads(Math.Clamp(Environment.ProcessorCount - 1, 1, 8))
-                .Build();
+                .WithThreads(threads);
+            // No hint for the wake word: a hint with the name in it makes Whisper hear the name everywhere.
+            if (hint.Length > 0) builder = builder.WithPrompt(hint);
+            using var processor = builder.Build();
             var text = new StringBuilder();
             await foreach (var segment in processor.ProcessAsync(samples, ct))
                 text.Append(segment.Text);

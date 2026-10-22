@@ -55,6 +55,10 @@ public sealed class Settings
     public string VoiceEngine { get; set; } = "whisper";
     /// <summary>After a spoken request, listen for "yes" or "no" when the cat shows a plan.</summary>
     public bool VoiceAnswers { get; set; } = true;
+    /// <summary>Listen all the time (on this PC) for "Hey &lt;cat name&gt;".</summary>
+    public bool WakeWord { get; set; }
+    /// <summary>How Whisper wrote "Hey &lt;cat name&gt;" when the person taught it, e.g. "hey lottie".</summary>
+    public System.Collections.Generic.List<string> WakeVariants { get; set; } = [];
 
     static string FilePath => Path.Combine(Log.DataDir, "settings.json");
 

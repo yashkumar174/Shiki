@@ -37,6 +37,9 @@ public sealed class DashboardHost
     public Core.Ai.CatChat? Chat { get; init; }
     /// <summary>Talking to the cat; null when there's no chat.</summary>
     public Core.Voice.VoiceInput? Voice { get; init; }
+    /// <summary>Opens "Teach your cat its name" (the wake word).</summary>
+    public Action? TeachName { get; init; }
+    public Func<bool>? NameTaught { get; init; }
     public required Func<string> CatName { get; init; }
     /// <summary>Opens a file the way the app does: videos and music in the player, the rest in their usual app.</summary>
     public required Action<string> OpenFile { get; init; }
@@ -655,6 +658,9 @@ public sealed class DashboardWindow : Window
             ("Choose where results go", s.ChoseOutputFolder, () => { s.ChoseOutputFolder = true; _host.SaveSettings(); _host.OpenSettings(); Rebuild(); }),
             ("Start with Windows", _host.StartsWithWindows(), () => { _host.StartWithWindows(); Rebuild(); }),
         };
+        // Once the cat can talk (a Claude key is saved): teach it its name for "Hey <name>".
+        if (_host.TeachName != null && _host.NameTaught != null && Core.Ai.ClaudeKey.Exists)
+            steps.Add(($"Teach {_host.CatName()} its name", _host.NameTaught(), _host.TeachName));
         int done = steps.Count(x => x.Done);
         if (done == steps.Count) return null;
 

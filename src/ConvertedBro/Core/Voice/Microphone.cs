@@ -92,16 +92,7 @@ public sealed class Microphone : IDisposable
             if (_finished) return;
             for (int i = 0; i < count; i++)
             {
-                float sum = 0;
-                for (int c = 0; c < _channels; c++)
-                {
-                    int at = (i * _channels + c) * bytesPerSample;
-                    sum += format.Encoding == WaveFormatEncoding.IeeeFloat || (format is WaveFormatExtensible x && x.SubFormat == NAudio.Dmo.AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT)
-                        ? BitConverter.ToSingle(e.Buffer, at)
-                        : bytesPerSample == 2 ? BitConverter.ToInt16(e.Buffer, at) / 32768f
-                        : BitConverter.ToInt32(e.Buffer, at) / 2147483648f;
-                }
-                float sample = sum / _channels;
+                float sample = MonoSample(format, e.Buffer, i);
                 _mono.Add(sample);
                 _frameSum += sample * sample;
                 if (++_frameCount == _frame) EndFrame();
@@ -166,8 +157,25 @@ public sealed class Microphone : IDisposable
         _done.TrySetResult(new Heard(kind, samples));
     }
 
+    /// <summary>Sample i of a captured buffer, its channels averaged, as -1 to 1.</summary>
+    internal static float MonoSample(WaveFormat format, byte[] buffer, int i)
+    {
+        int bytesPerSample = format.BitsPerSample / 8, channels = format.Channels;
+        bool isFloat = format.Encoding == WaveFormatEncoding.IeeeFloat
+            || (format is WaveFormatExtensible x && x.SubFormat == NAudio.Dmo.AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT);
+        float sum = 0;
+        for (int c = 0; c < channels; c++)
+        {
+            int at = (i * channels + c) * bytesPerSample;
+            sum += isFloat ? BitConverter.ToSingle(buffer, at)
+                : bytesPerSample == 2 ? BitConverter.ToInt16(buffer, at) / 32768f
+                : BitConverter.ToInt32(buffer, at) / 2147483648f;
+        }
+        return sum / channels;
+    }
+
     /// <summary>Mono at any rate to 16 kHz (WDL's resampler, which filters properly).</summary>
-    static float[] Resample(float[] mono, int rate)
+    internal static float[] Resample(float[] mono, int rate)
     {
         if (rate == 16000 || mono.Length == 0) return mono;
         var source = new RawSamples(mono, rate);

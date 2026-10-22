@@ -325,6 +325,13 @@ public partial class App : Application
                 if (_dashboard == null) ShowDashboard(shot, show: false);
                 _dashboard!.Snapshot(args[2], shot);
                 break;
+            case "snapshot-teach" when args.Length == 2:
+                // Dev aid: the teach-your-cat page drawn off screen.
+                EnterBuddyMode();
+                var teach = new WakeSetupWindow(CatName, _settings.WakeVariants, _settings.WakeWord, (_, _, _) => { });
+                DashboardWindow.SaveElement((FrameworkElement)teach.Content, teach.Width, args[1]);
+                teach.Close();
+                break;
             case "snapshot-bubble" when args.Length == 2:
                 // Dev aid: the ask bubble drawn off screen.
                 EnterBuddyMode();
@@ -365,6 +372,16 @@ public partial class App : Application
                 // The ask bubble by the cat, as the shortcut opens it; "ask some words" sends them too.
                 EnterBuddyMode();
                 ShowAskBubble(args.Length > 1 ? string.Join(" ", args[1..]) : null);
+                break;
+            case "teach":
+                // Meet your cat: name it and teach it "Hey <name>".
+                EnterBuddyMode();
+                TeachName();
+                break;
+            case "wake-file" when args.Length == 2:
+                // Dev aid: does this recording (WAV) wake the cat? The answer goes to the log.
+                EnterBuddyMode();
+                _ = WakeFile(args[1]);
                 break;
             case "say-file" when args.Length == 2:
                 // Dev aid: a recording (WAV) goes through speech-to-text and to the cat, as if spoken.
@@ -485,6 +502,7 @@ public partial class App : Application
             new MenuEntry("\uE8E5", "Convert files…", PickFiles),
             .. (_settings.OutputFolder is { } results ? [new MenuEntry("\uE838", "Open results folder", () => OpenFolder(results))] : Array.Empty<object?>()),
             new MenuEntry("\uE77F", "Paste from clipboard", PasteToCat),
+            .. (_settings.WakeVariants.Count > 0 ? [new MenuEntry("\uE720", $"Listen for \"Hey {CatName}\"", ToggleWake, () => _settings.WakeWord)] : Array.Empty<object?>()),
             new MenuEntry("\uE924", $"Snip and convert ({_settings.SnipHotkey})", StartSnip),
             new MenuEntry("\uE714", $"Record the screen ({_settings.RecordHotkey})", StartRecording),
             new MenuEntry("\uE790", $"Pick a colour ({_settings.ColourHotkey})", StartColourPicker),
@@ -649,11 +667,14 @@ public partial class App : Application
             new AiSetting(
                 CatName,
                 () => _settings.AiEnabled,
-                () => { _settings.AiEnabled = !_settings.AiEnabled; _settings.Save(); },
+                () => { _settings.AiEnabled = !_settings.AiEnabled; _settings.Save(); ApplyWake(); },
                 () => _settings.VoiceEngine,
                 engine => { _settings.VoiceEngine = engine; _settings.Save(); },
                 () => _settings.VoiceAnswers,
                 () => { _settings.VoiceAnswers = !_settings.VoiceAnswers; _settings.Save(); },
+                () => _settings.WakeWord && _settings.WakeVariants.Count > 0,
+                ToggleWake,
+                TeachName,
                 () => _settings.AiRequests == 0 ? "Nothing spent yet." : $"Spent so far: {AskView.Money(_settings.AiSpentUsd)} over {_settings.AiRequests:N0} requests.",
                 () => Process.Start(new ProcessStartInfo(AiLog.FilePath) { UseShellExecute = true })));
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
@@ -722,6 +743,7 @@ public partial class App : Application
 
         _hotkeys = new Hotkeys();
         BindHotkeys(quiet: false);
+        ApplyWake();
     }
 
     /// <summary>(Re)binds every shortcut from settings. Unless quiet, says which one another app owns.</summary>
@@ -792,6 +814,8 @@ public partial class App : Application
                 SetCat = SetCat,
                 Chat = Chat,
                 Voice = Voice,
+                TeachName = TeachName,
+                NameTaught = () => _settings.WakeVariants.Count > 0,
                 CatName = () => CatName,
                 OpenFile = OpenFile,
             });
@@ -815,6 +839,66 @@ public partial class App : Application
     AskBubble? _bubble;
 
     VoiceInput Voice => _voice ??= new VoiceInput(Chat, _settings, () => CatName);
+
+    // ---- "Hey <cat name>" ----
+
+    WakeListener? _wake;
+    WakeSetupWindow? _teach;
+
+    /// <summary>Starts or stops the always-on listener to match settings (it needs Ask the cat, a key and a taught name).</summary>
+    void ApplyWake()
+    {
+        bool want = _settings.WakeWord && _settings.AiEnabled && _settings.WakeVariants.Count > 0 && ClaudeKey.Exists;
+        if (want && _wake == null)
+        {
+            _wake = new WakeListener(() => CatName, () => _settings.WakeVariants,
+                // Hear nothing while the cat is already listening or thinking, while recording, or while being taught.
+                () => _recording != null || (_voice?.Active ?? false) || (_chat?.Busy ?? false) || (_teach?.Listening ?? false));
+            _wake.Woke += OnWoke;
+            _wake.Start();
+        }
+        else if (!want && _wake != null)
+        {
+            _wake.Dispose();
+            _wake = null;
+        }
+    }
+
+    void ToggleWake()
+    {
+        _settings.WakeWord = !_settings.WakeWord;
+        _settings.Save();
+        if (_settings.WakeWord && _settings.WakeVariants.Count == 0) TeachName();
+        ApplyWake();
+    }
+
+    /// <summary>"Hey Latte": the bubble, listening. "Hey Latte, merge my PDFs": straight to the request.</summary>
+    void OnWoke(string after)
+    {
+        if (_voice is { Active: true } || Chat.Busy) return;
+        ShowAskBubble();
+        if (_bubble == null) return;
+        _buddy?.Act("purr");
+        if (after.Length == 0) _ = Voice.Listen();
+        else _ = Voice.Use(after);
+    }
+
+    /// <summary>Meet your cat: name it and say "Hey &lt;name&gt;" three times.</summary>
+    void TeachName()
+    {
+        _teach?.Close();
+        _teach = new WakeSetupWindow(CatName, _settings.WakeVariants, _settings.WakeWord, (name, learned, listen) =>
+        {
+            _settings.CatName = name;
+            _settings.WakeVariants = learned;
+            _settings.WakeWord = listen;
+            _settings.Save();
+            AiLog.Write("named", $"{name}, wakes to: {string.Join(", ", learned)}");
+            ApplyWake();
+        });
+        _teach.Closed += (_, _) => _teach = null;
+        InDashboard(_teach);
+    }
 
     /// <summary>The talk shortcut: the bubble, already listening. Pressed again, it stops and sends.</summary>
     void Talk()
@@ -881,23 +965,41 @@ public partial class App : Application
         if (!string.IsNullOrWhiteSpace(say)) _ = Chat.Send(say);
     }
 
+    static float[] ReadWav(string wav)
+    {
+        using var reader = new NAudio.Wave.WaveFileReader(wav);
+        var all16 = NAudio.Wave.WaveExtensionMethods.ToSampleProvider(reader);
+        NAudio.Wave.ISampleProvider source = all16.WaveFormat.Channels == 2 ? new NAudio.Wave.SampleProviders.StereoToMonoSampleProvider(all16) : all16;
+        if (source.WaveFormat.SampleRate != 16000) source = new NAudio.Wave.SampleProviders.WdlResamplingSampleProvider(source, 16000);
+        var all = new List<float>();
+        var buffer = new float[16000];
+        int read;
+        while ((read = source.Read(buffer, 0, buffer.Length)) > 0) all.AddRange(buffer.Take(read));
+        return all.ToArray();
+    }
+
+    async System.Threading.Tasks.Task WakeFile(string wav)
+    {
+        string text;
+        try
+        {
+            text = await Speech.Whisper.Transcribe(ReadWav(wav), "", default, threads: 2);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("wake-file failed", ex);
+            return;
+        }
+        var (hit, after) = WakeMatcher.Match(text, CatName, _settings.WakeVariants);
+        Log.Info($"wake-file: heard \"{text}\" -> {(hit ? $"wakes, then \"{after}\"" : "no wake")}");
+    }
+
     /// <summary>Dev aid for voice without a microphone: transcribe a WAV and use it like speech.</summary>
     async System.Threading.Tasks.Task SayFile(string wav)
     {
         try
         {
-            float[] samples;
-            using (var reader = new NAudio.Wave.WaveFileReader(wav))
-            {
-                var all16 = NAudio.Wave.WaveExtensionMethods.ToSampleProvider(reader);
-                NAudio.Wave.ISampleProvider source = all16.WaveFormat.Channels == 2 ? new NAudio.Wave.SampleProviders.StereoToMonoSampleProvider(all16) : all16;
-                if (source.WaveFormat.SampleRate != 16000) source = new NAudio.Wave.SampleProviders.WdlResamplingSampleProvider(source, 16000);
-                var all = new List<float>();
-                var buffer = new float[16000];
-                int read;
-                while ((read = source.Read(buffer, 0, buffer.Length)) > 0) all.AddRange(buffer.Take(read));
-                samples = all.ToArray();
-            }
+            var samples = ReadWav(wav);
             var watch = Stopwatch.StartNew();
             var text = await Speech.Whisper.Transcribe(samples, $"{CatName}. Convert, merge, compress, PDF, JPG, Downloads.", default);
             Log.Info($"say-file: heard \"{text}\" in {watch.ElapsedMilliseconds} ms ({samples.Length / 16000.0:0.0} s of audio)");

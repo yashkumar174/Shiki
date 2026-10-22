@@ -22,6 +22,7 @@ public sealed record OutputSetting(Func<string?> GetFolder, Action<string?> SetF
 /// <summary>Ask the cat: the name it goes by, the on/off switch, what it has cost, and its log. The key itself is handled here.</summary>
 public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
     Func<string> GetVoiceEngine, Action<string> SetVoiceEngine, Func<bool> VoiceAnswers, Action ToggleVoiceAnswers,
+    Func<bool> WakeOn, Action ToggleWake, Action TeachName,
     Func<string> Spent, Action OpenLog);
 
 /// <summary>Shortcuts and the main switches, in one place.</summary>
@@ -212,6 +213,11 @@ public sealed class SettingsWindow : Window
 
         stack.Children.Add(Line("Answer plans by voice", "After a spoken request, listen for \"yes\" or \"no\" when a plan card shows.",
             Toggle(new SettingSwitch("", "", ai.VoiceAnswers, ai.ToggleVoiceAnswers))));
+        stack.Children.Add(Line($"Listen for \"Hey {ai.CatName}\"", "The mic stays on; what it hears stays on this PC and is only checked for the name. Pauses while you record the screen.",
+            Toggle(new SettingSwitch("", "", ai.WakeOn, ai.ToggleWake))));
+        var teach = UiKit.Button("Name your cat and teach it…", ai.TeachName);
+        teach.Margin = new Thickness(0, 4, 0, 0);
+        stack.Children.Add(teach);
     }
 
     void SetMode(bool oneFolder)
