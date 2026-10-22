@@ -4,7 +4,7 @@ What's built is in the README. This file is what comes next, in order. Every fea
 same rules: anything that changes files or the PC asks first (a plan card or a spoken yes), the
 cat never types passwords or pays for anything, and nothing is deleted without asking.
 
-## Next: the wow batch (decided 23 October 2026)
+## The wow batch (decided 23 October 2026, built the same night)
 
 Built in this order unless we decide otherwise.
 
@@ -62,7 +62,7 @@ The cat moves, but never pulls you away from work:
 - Still during full-screen apps, games, videos and presentations, and while you're typing.
 - A Calm setting: Lively, Calm (the default) or Still.
 
-### 7. Dictation anywhere
+### 7. Dictation anywhere (built, v2.6)
 Hold a key and talk; your words are typed wherever the cursor is (WhatsApp, Word, email, the
 browser), with punctuation. Uses the same voice engine as commands (Deepgram now, Wispr Flow
 later, Whisper offline). "Hey Sky, type…" works too.

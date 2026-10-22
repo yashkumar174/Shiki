@@ -40,7 +40,7 @@ public partial class App : Application
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
     Hotkeys? _hotkeys;
-    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1, _talkHotkeyId = -1, _pawHotkeyId = -1, _errorHotkeyId = -1, _notesHotkeyId = -1;
+    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1, _talkHotkeyId = -1, _pawHotkeyId = -1, _errorHotkeyId = -1, _notesHotkeyId = -1, _dictateHotkeyId = -1;
     RecordingSession? _recording;
     SnipWindow? _snip;
     PawWindow? _paw;
@@ -337,6 +337,10 @@ public partial class App : Application
             case "voice-test" when args.Length >= 3:
                 // Dev aid: learn a voice from the first WAV(s) after "learn", then say how alike each other WAV is.
                 _ = VoiceTest(args[1..]);
+                break;
+            case "type-test":
+                // Dev aid: types into a small window of its own and logs what arrived (nothing else is touched).
+                _ = TypeTest();
                 break;
             case "paw":
                 // Paw to ask, as the shortcut opens it.
@@ -778,6 +782,7 @@ public partial class App : Application
                 new ShortcutSetting("Paw to ask", () => _settings.PawHotkey, text => ChangeHotkey(text, () => _settings.PawHotkey, v => _settings.PawHotkey = v)),
                 new ShortcutSetting("What's this error?", () => _settings.ErrorHotkey, text => ChangeHotkey(text, () => _settings.ErrorHotkey, v => _settings.ErrorHotkey = v)),
                 new ShortcutSetting("Meeting notes", () => _settings.NotesHotkey, text => ChangeHotkey(text, () => _settings.NotesHotkey, v => _settings.NotesHotkey = v)),
+                new ShortcutSetting("Dictation (hold, talk, let go)", () => _settings.DictateHotkey, text => ChangeHotkey(text, () => _settings.DictateHotkey, v => _settings.DictateHotkey = v)),
             ],
             [
                 new SettingSwitch("Right-click menu in Explorer", "Convert with Shiki, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu),
@@ -818,7 +823,7 @@ public partial class App : Application
     {
         var previous = get();
         // Shortcuts can't share keys.
-        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey || text == _settings.TalkHotkey || text == _settings.PawHotkey || text == _settings.ErrorHotkey || text == _settings.NotesHotkey)) return false;
+        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey || text == _settings.TalkHotkey || text == _settings.PawHotkey || text == _settings.ErrorHotkey || text == _settings.NotesHotkey || text == _settings.DictateHotkey)) return false;
         set(text);
         if (BindHotkeys(quiet: true))
         {
@@ -896,7 +901,8 @@ public partial class App : Application
         bool paw = Bind(ref _pawHotkeyId, _settings.PawHotkey, () => StartPaw(), quiet);
         bool error = Bind(ref _errorHotkeyId, _settings.ErrorHotkey, ExplainError, quiet);
         bool notes = Bind(ref _notesHotkeyId, _settings.NotesHotkey, ToggleNotes, quiet);
-        return snip && colour && convert && record && ask && talk && paw && error && notes;
+        bool dictate = Bind(ref _dictateHotkeyId, _settings.DictateHotkey, Dictate, quiet);
+        return snip && colour && convert && record && ask && talk && paw && error && notes && dictate;
     }
 
     bool Bind(ref int id, string text, Action handler, bool quiet)
@@ -1017,7 +1023,7 @@ public partial class App : Application
         {
             _wake = new WakeListener(() => CatName, () => _settings.WakeVariants,
                 // Hear nothing while the cat is already listening or thinking, while recording, or while being taught.
-                () => _recording != null || (_voice?.Active ?? false) || (_chat?.Busy ?? false) || (_teach?.Listening ?? false),
+                () => _recording != null || (_voice?.Active ?? false) || (_chat?.Busy ?? false) || (_teach?.Listening ?? false) || _dictation != null,
                 () => _settings.VoiceLock && VoicePrint.HasPrint ? VoicePrint.Enough(_settings.VoiceLockLevel) : null);
             _wake.Woke += OnWoke;
             // "Hey Sky, …": show the bubble straight away, before the rest is written down.
@@ -1103,6 +1109,95 @@ public partial class App : Application
         Copy = TrySetClipboard,
         LookAtScreen = () => WindowShots.Capture(WindowShots.TopOtherWindow()),
     });
+
+    // ---- Dictation ----
+
+    Dictation? _dictation;
+
+    /// <summary>
+    /// Hold the shortcut and talk: when it's let go, the words are typed where the cursor is.
+    /// A quick tap listens until a pause instead (or until it's pressed again).
+    /// </summary>
+    async void Dictate()
+    {
+        if (_dictation != null)
+        {
+            _dictation.Finish();
+            return;
+        }
+        if (!Microphone.Present())
+        {
+            ToastHost.Show(ToastWindow.Message("No microphone", "Plug one in, or check Windows' sound settings, then try again."));
+            return;
+        }
+        var target = NativeMethods.GetForegroundWindow();
+        var dictation = _dictation = new Dictation(_settings, () => CatName);
+        var pill = new DictationPill(dictation);
+        pill.Show();
+
+        // Held or tapped: watch the shortcut's key; let go after a moment means "type it now".
+        var key = Hotkey.Parse(_settings.DictateHotkey) is { } hotkey ? System.Windows.Input.KeyInterop.VirtualKeyFromKey(hotkey.Key) : 0;
+        var pressed = Stopwatch.StartNew();
+        var watch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
+        watch.Tick += (_, _) =>
+        {
+            if (key != 0 && TypeText.Down(key)) return;
+            watch.Stop();
+            if (pressed.ElapsedMilliseconds < 450) dictation.Held = false;
+            else dictation.Finish();
+        };
+        watch.Start();
+
+        string? text;
+        try
+        {
+            text = await dictation.Run();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Dictation failed", ex);
+            text = null;
+        }
+        watch.Stop();
+        _dictation = null;
+        if (text == null)
+        {
+            pill.Done("Didn't catch that");
+            return;
+        }
+        await TypeText.WaitForModifiersUp();
+        // The pill never takes the keyboard; if something else did meanwhile, go back to where you were.
+        if (NativeMethods.GetForegroundWindow() != target && target != IntPtr.Zero) NativeMethods.SetForegroundWindow(target);
+        int words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        if (TypeText.Type(text + " "))
+        {
+            pill.Done(words == 1 ? "Typed 1 word" : $"Typed {words} words");
+            AiLog.Write("dictated", $"{words} words");
+        }
+        else
+        {
+            // An app running as administrator won't take typing from a normal app: the clipboard will do.
+            TrySetClipboard(text);
+            pill.Done("Copied: paste it with Ctrl+V");
+        }
+    }
+
+    async System.Threading.Tasks.Task TypeTest()
+    {
+        var box = new System.Windows.Controls.TextBox { FontSize = 16, AcceptsReturn = true };
+        var window = new Window { Title = "Shiki typing test", Width = 520, Height = 160, Content = box, Topmost = true, WindowStartupLocation = WindowStartupLocation.CenterScreen };
+        window.Show();
+        NativeMethods.ForceForeground(new System.Windows.Interop.WindowInteropHelper(window).Handle);
+        window.Activate();
+        box.Focus();
+        await System.Threading.Tasks.Task.Delay(400);
+        var sent = "Hello from Shiki: ünïcødé, ₹500, 日本語, done.";
+        await TypeText.WaitForModifiersUp();
+        bool ok = TypeText.Type(sent);
+        await System.Threading.Tasks.Task.Delay(500);
+        Log.Info($"type-test: sent ok={ok}, arrived \"{box.Text}\", same={box.Text == sent}");
+        window.Close();
+    }
 
     // ---- Meeting notes ----
 
