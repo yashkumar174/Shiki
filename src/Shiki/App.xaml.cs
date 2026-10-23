@@ -421,6 +421,24 @@ public partial class App : Application
                 EnterBuddyMode();
                 AgentSelfTest();
                 break;
+            case "instant-test" when args.Length >= 2:
+                // Dev aid: an instant answer, silently (what it would say goes to the log).
+                {
+                    var said = string.Join(" ", args[1..]);
+                    var talk = _settings.TalkBack;
+                    _settings.TalkBack = "off";
+                    var watch = Stopwatch.StartNew();
+                    var act = Instant(WakeMatcher.Normalize(Speech.Hindi ? Hinglish.ToCommand(said) : said));
+                    act?.Invoke();
+                    Dispatcher.BeginInvoke(async () =>
+                    {
+                        await System.Threading.Tasks.Task.Delay(2500);
+                        _settings.TalkBack = talk;
+                        var last = Chat.Items.OfType<CatSaid>().LastOrDefault()?.Text;
+                        Log.Info($"instant-test \"{said}\": {(act == null ? "not instant (goes to Claude)" : last)} ({watch.ElapsedMilliseconds} ms incl. 2.5 s wait)");
+                    });
+                }
+                break;
             case "index-test" when args.Length >= 2:
                 // Dev aid: the index's state and how many documents match (counts and the test file only).
                 if (_index is { } idx)
@@ -1338,11 +1356,18 @@ public partial class App : Application
         SendWhatsApp = SendWhatsApp,
         SearchContents = (words, max) => _index is { } index ? (index.Search(words, max), index.Count, index.Indexing) : null,
         RunRoutine = name => Routines.Find(name) is { } routine ? RunRoutine(routine, spoken: false) : $"There's no routine called \"{name}\".",
-        Replied = (text, spoken) =>
+        Replied = (sentence, spoken, first) =>
         {
             // Not over a document being read aloud.
             if (_mouth?.Reading == true) return;
-            if (_settings.TalkBack == "always" || (_settings.TalkBack == "spoken" && spoken)) _ = Mouth.Say(text, _settings.TalkVoice);
+            if (!(_settings.TalkBack == "always" || (_settings.TalkBack == "spoken" && spoken))) return;
+            // A long answer: the first few sentences aloud, the rest on screen.
+            if (first) _spokenChars = 0;
+            if (_spokenChars >= 320) return;
+            _spokenChars += sentence.Length;
+            var say = _spokenChars >= 320 ? sentence + " The rest is on screen." : sentence;
+            if (first) _ = Mouth.Say(say, _settings.TalkVoice);
+            else Mouth.Append(say, _settings.TalkVoice);
         },
     });
 
@@ -1670,6 +1695,114 @@ public partial class App : Application
         Speech.Extra = terms.Where(t => t.Length > 2).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList();
     }
 
+    // ---- Instant answers ----
+
+    static readonly Dictionary<string, string> Sites = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["youtube"] = "https://www.youtube.com", ["gmail"] = "https://mail.google.com", ["google"] = "https://www.google.com",
+        ["instagram"] = "https://www.instagram.com", ["facebook"] = "https://www.facebook.com", ["twitter"] = "https://x.com", ["x"] = "https://x.com",
+        ["linkedin"] = "https://www.linkedin.com", ["netflix"] = "https://www.netflix.com", ["amazon"] = "https://www.amazon.in", ["flipkart"] = "https://www.flipkart.com",
+        ["chatgpt"] = "https://chatgpt.com", ["claude"] = "https://claude.ai", ["whatsapp web"] = "https://web.whatsapp.com", ["google drive"] = "https://drive.google.com",
+        ["drive"] = "https://drive.google.com", ["google maps"] = "https://www.google.com/maps", ["maps"] = "https://www.google.com/maps", ["github"] = "https://github.com",
+        ["reddit"] = "https://www.reddit.com", ["google calendar"] = "https://calendar.google.com", ["calendar"] = "https://calendar.google.com",
+    };
+
+    /// <summary>
+    /// Plain questions and openings answered here in a fraction of a second: the time, the date,
+    /// the battery, today's calendar, new email, a website, a YouTube or Google search.
+    /// Anything else (or anything unclear) goes to Claude as usual.
+    /// </summary>
+    Action? Instant(string words)
+    {
+        static System.Text.RegularExpressions.Match rx(string input, string pattern) => System.Text.RegularExpressions.Regex.Match(input, pattern);
+        words = System.Text.RegularExpressions.Regex.Replace(words, @"^(hey |ok |okay |so |please |can you |could you |tell me )+|( please| now| for me)+$", "");
+        if (words is "what time is it" or "whats the time" or "what is the time" or "time" or "the time" or "kitne baje hain" or "kya time hua" or "time kya hua" or "kya time hai")
+            return () => Tell("\uE823", $"It's {DateTime.Now:h:mm tt}.");
+        if (words is "whats the date" or "what is the date" or "what date is it" or "todays date" or "the date" or "what day is it" or "whats the day today" or "aaj kya date hai" or "aaj kaun sa din hai" or "what is today")
+            return () => Tell("\uE787", $"It's {DateTime.Now:dddd, d MMMM}.");
+        if (rx(words, @"^(battery|how much battery|whats my battery|what is my battery|my battery|battery level|how much charge|battery kitni hai|charge kitna hai)( is left| left| level)?$").Success)
+        {
+            var power = System.Windows.Forms.SystemInformation.PowerStatus;
+            if (power.BatteryChargeStatus == System.Windows.Forms.BatteryChargeStatus.NoSystemBattery) return () => Tell("\uE83F", "This PC runs on mains power: no battery.");
+            var charging = power.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Online;
+            var left = !charging && power.BatteryLifeRemaining > 0 ? $", about {TimeSpan.FromSeconds(power.BatteryLifeRemaining):h\\:mm} left" : "";
+            return () => Tell("\uE83F", $"Battery is at {power.BatteryLifePercent * 100:0}%{(charging ? " and charging" : left)}.");
+        }
+        if (Core.Mail.Gmail.HasCalendar && rx(words, @"^(whats on|what is on|whats my schedule|what is my schedule|my schedule|my calendar|whats on my calendar|what do i have)( for| on)? ?(today|tomorrow)?$|^(aaj|kal) (kya hai|ka schedule)$").Success)
+        {
+            bool tomorrow = words.Contains("tomorrow") || words.StartsWith("kal");
+            return () => _ = TellCalendar(tomorrow);
+        }
+        if (Core.Mail.Gmail.Connected && rx(words, @"^(any new emails?|any new mail|do i have (any )?new (emails?|mail)|new emails?|check my (email|mail|inbox)|any emails today|koi naya (email|mail))$").Success)
+            return () => _ = TellNewMail();
+        // "Open YouTube": a website, when it isn't an app on this PC.
+        var open = rx(words, @"^(open|launch|go to) (?<site>.+?)$");
+        if (open.Success && Sites.TryGetValue(open.Groups["site"].Value, out var url) && Apps.Find(open.Groups["site"].Value, strict: true) == null)
+            return () => { OpenWebsite(new Uri(url)); Tell("\uE774", $"Opening {open.Groups["site"].Value}."); };
+        var youtube = rx(words, @"^(search youtube for|youtube search|search on youtube for|search on youtube|play on youtube) (?<q>.+)$|^(?<q>.+?) on youtube$");
+        if (youtube.Success && !youtube.Groups["q"].Value.StartsWith("open"))
+        {
+            var query = youtube.Groups["q"].Value.Replace("play ", "");
+            return () => { OpenWebsite(new Uri($"https://www.youtube.com/results?search_query={Uri.EscapeDataString(query)}")); Tell("\uE774", $"Searching YouTube for {query}."); };
+        }
+        var google = rx(words, @"^(google|search google for|google search) (?<q>.+)$");
+        if (google.Success)
+        {
+            var query = google.Groups["q"].Value;
+            return () => { OpenWebsite(new Uri($"https://www.google.com/search?q={Uri.EscapeDataString(query)}")); Tell("\uE774", $"Searching Google for {query}."); };
+        }
+        return null;
+    }
+
+    /// <summary>An instant answer: shown in the chat and, when the cat talks back, said aloud.</summary>
+    void Tell(string glyph, string text)
+    {
+        Chat.Say(new CatSaid(text));
+        AiLog.Write("instant", text);
+        if (_settings.TalkBack != "off" && _mouth?.Reading != true) _ = Mouth.Say(text, _settings.TalkVoice);
+    }
+
+    async System.Threading.Tasks.Task TellCalendar(bool tomorrow)
+    {
+        try
+        {
+            var day = tomorrow ? DateTime.Today.AddDays(1) : DateTime.Today;
+            var events = await Core.Mail.Calendar.Between(tomorrow ? day : DateTime.Now.AddMinutes(-30), day.AddDays(1), default);
+            var when = tomorrow ? "tomorrow" : "today";
+            Tell("\uE787", events.Count switch
+            {
+                0 => $"Nothing on your calendar {(tomorrow ? "tomorrow" : "for the rest of today")}.",
+                1 => $"One thing {when}: {Short(events[0])}.",
+                _ => $"{events.Count} things {when}: " + string.Join("; ", events.Take(4).Select(Short)) + (events.Count > 4 ? ", and more." : "."),
+            });
+        }
+        catch (Exception ex)
+        {
+            Tell("\uE787", ex.Message);
+        }
+        static string Short(Core.Mail.CalendarEvent e) => e.AllDay ? e.Title : $"{e.Title} at {e.Start:h:mm tt}";
+    }
+
+    async System.Threading.Tasks.Task TellNewMail()
+    {
+        try
+        {
+            var unread = await Core.Mail.Gmail.Search("in:inbox is:unread newer_than:1d", 10, default);
+            if (unread.Count == 0)
+            {
+                Tell("\uE715", "No new emails today.");
+                return;
+            }
+            string Who(Core.Mail.MailSummary m) => m.From.Split('<')[0].Trim().Trim('"') is { Length: > 0 } name ? name : m.From;
+            Tell("\uE715", unread.Count == 1 ? $"One new email, from {Who(unread[0])}: {unread[0].Subject}."
+                : $"{(unread.Count == 10 ? "10 or more" : unread.Count.ToString())} new emails today. The latest is from {Who(unread[0])}: {unread[0].Subject}.");
+        }
+        catch (Exception ex)
+        {
+            Tell("\uE715", ex.Message);
+        }
+    }
+
     // ---- Routines ----
 
     /// <summary>Runs each step of a routine, showing what happened in the chat; returns a summary for Claude.</summary>
@@ -1728,6 +1861,7 @@ public partial class App : Application
     // ---- The cat's voice ----
 
     Speaker? _mouth;
+    int _spokenChars;
 
     /// <summary>Reads replies aloud; the cat's mouth moves while it does, and the wake word waits.</summary>
     Speaker Mouth
@@ -2168,6 +2302,8 @@ public partial class App : Application
             return () => { StartCaptions(null); Chat.Say(new CatDid("\uE7F0", "Captions on for whatever's playing. Say \"captions off\" to stop.")); };
         if (words is "captions off" or "turn off captions" or "stop captions" or "hide captions" or "subtitles off" or "turn off subtitles" or "stop subtitles")
             return () => { StopCaptions(); Chat.Say(new CatDid("\uE7F0", "Captions off.")); };
+        // Questions and openings answered on this PC in a moment, without Claude.
+        if (Instant(words) is { } instant) return instant;
         // A routine's phrase ("start work mode").
         if (Routines.Match(said) is { } routine)
             return () => RunRoutine(routine, spoken: true);

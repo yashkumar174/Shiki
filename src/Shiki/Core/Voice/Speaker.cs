@@ -26,6 +26,9 @@ public sealed class Speaker
     readonly SynchronizationContext _ui = SynchronizationContext.Current ?? new SynchronizationContext();
     CancellationTokenSource? _cancel;
     TaskCompletionSource? _done;
+    // Sentences that arrived while it was already speaking (a reply still being written).
+    readonly System.Collections.Concurrent.ConcurrentQueue<string> _more = new();
+    string _voice = "";
 
     // One output kept open while a conversation is going (silence between replies), so the sound
     // device is awake and a reply starts the moment its first sound arrives. Closed when idle.
@@ -91,6 +94,7 @@ public sealed class Speaker
     /// <summary>Stops talking now.</summary>
     public void Stop()
     {
+        _more.Clear();
         _cancel?.Cancel();
         lock (_lineLock) _mixer?.RemoveAllMixerInputs();
     }
@@ -143,11 +147,23 @@ public sealed class Speaker
         }
     }
 
+    /// <summary>Speaks this after what's being said now (or straight away if it's quiet).</summary>
+    public void Append(string text, string voice)
+    {
+        if (!Speaking)
+        {
+            _ = Say(text, voice);
+            return;
+        }
+        _more.Enqueue(text);
+    }
+
     /// <summary>Reads the text aloud with the voice; returns when it's done (or stopped).</summary>
     /// <param name="full">All of it (reading a document), in pieces, rather than a reply's first sentences.</param>
     public async Task Say(string text, string voice, bool full = false)
     {
         Stop();
+        _voice = voice;
         text = Readable(text, full ? int.MaxValue : 320);
         if (text.Length == 0) return;
         var cancel = _cancel = new CancellationTokenSource(full ? TimeSpan.FromHours(3) : TimeSpan.FromSeconds(60));
@@ -179,19 +195,24 @@ public sealed class Speaker
                 return Sound.FromWav(await WindowsVoice(piece, voice[4..]));
             }
             // Deepgram takes up to 2,000 characters at a time.
-            var pieces = Pieces(text, 1500);
+            var pieces = new Queue<string>(Pieces(text, 1500));
             var clock = System.Diagnostics.Stopwatch.StartNew();
-            var next = Start(pieces[0]);
-            for (int i = 0; i < pieces.Count; i++)
+            // What plays next: the rest of this text, or sentences that arrived meanwhile.
+            string? Following() => pieces.Count > 0 ? pieces.Dequeue() : _more.TryDequeue(out var more) ? Readable(more, int.MaxValue) : null;
+            Task<Sound>? next = Start(pieces.Dequeue());
+            bool first = true;
+            while (next != null)
             {
                 var sound = await next;
                 cancel.Token.ThrowIfCancellationRequested();
-                if (i == 0) Log.Info($"Speaking {text.Length} characters in {pieces.Count} piece{(pieces.Count == 1 ? "" : "s")} ({voice}), first sound after {clock.ElapsedMilliseconds} ms");
+                if (first) Log.Info($"Speaking {text.Length} characters ({voice}), first sound after {clock.ElapsedMilliseconds} ms");
+                first = false;
                 lock (_lineLock) mixer.AddMixerInput(sound);
-                if (i + 1 < pieces.Count) next = Start(pieces[i + 1]);
+                next = Following() is { Length: > 0 } piece ? Start(piece) : null;
                 using (cancel.Token.Register(() => sound.Done.TrySetResult()))
                     await sound.Done.Task;
                 cancel.Token.ThrowIfCancellationRequested();
+                next ??= Following() is { Length: > 0 } late ? Start(late) : null;
             }
         }
         catch (OperationCanceledException)

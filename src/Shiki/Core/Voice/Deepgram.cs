@@ -153,10 +153,10 @@ public sealed class DeepgramLive : IAsyncDisposable
     {
         var live = new DeepgramLive(sampleRate);
         live._socket.Options.SetRequestHeader("Authorization", "Token " + key);
-        // Endpointing: 1.2 s of silence ends a phrase; UtteranceEnd: 1.6 s without new words. A sentence
-        // that clearly isn't finished ("…and", "…my") gets longer still (see Handle).
+        // Endpointing: 0.8 s of silence ends a phrase; UtteranceEnd: 1.2 s without new words. A sentence
+        // that clearly isn't finished ("…and", "…my") gets 2.5 s more (see Handle).
         var url = "wss://api.deepgram.com/v1/listen?" + Deepgram.Query(terms,
-            $"&encoding=linear16&sample_rate={sampleRate}&channels=1&interim_results=true&endpointing=1200&utterance_end_ms=1600");
+            $"&encoding=linear16&sample_rate={sampleRate}&channels=1&interim_results=true&endpointing=800&utterance_end_ms=1200");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(6));
         await live._socket.ConnectAsync(new Uri(url), timeout.Token);

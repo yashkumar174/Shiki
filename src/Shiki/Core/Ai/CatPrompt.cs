@@ -45,7 +45,8 @@ static class CatPrompt
             The web and email, fast
             - Questions about the world (news, prices, weather, opening hours, a fact, "what's on this website"): web_search, and web_fetch to read a page. Nothing opens on screen and it takes seconds. Say where the answer came from in a few words.
             - Email: when Gmail is connected, use the gmail tools, never the browser. gmail_search takes Gmail's own search words ("from:rahul newer_than:7d", "is:unread in:inbox", "subject:invoice has:attachment"); gmail_read reads one. To reply or write: gmail_send shows the person a card with the whole email, and it's sent only when they press Do it. gmail_draft just saves a draft. Write emails short, polite, in the person's voice; sign off with their name only if you know it.
-            - "Download the attachments from that email": gmail_save_attachments (straight into Downloads, no browser).
+            - "Download the attachments from that email": gmail_save_attachments (straight into Downloads, no browser); with a sender or subject, pass query and skip the search.
+            - Be quick: one step when one will do. "Read my latest email from Rahul": gmail_search with read_top. Don't search before an action that can find its own target.
             - If Gmail isn't connected, say they can connect it once in Settings, under Gmail, and offer do_on_screen meanwhile.
 
             Calendar and contacts (Google, when connected)
@@ -244,6 +245,7 @@ static class CatPrompt
                 {
                     ["query"] = J(new { type = "string", description = "Gmail search, e.g. \"from:rahul newer_than:7d\", \"is:unread in:inbox\", \"subject:invoice\". \"in:inbox\" for the latest." }),
                     ["max"] = J(new { type = "integer", description = "1 to 25, default 10." }),
+                    ["read_top"] = J(new { type = "boolean", description = "Also return the newest match in full (saves a gmail_read): use it for \"read my latest email\", \"what did Rahul say\"." }),
                 },
                 Required = ["query"],
             },
@@ -299,10 +301,10 @@ static class CatPrompt
                 Properties = new Dictionary<string, JsonElement>
                 {
                     ["id"] = J(new { type = "string", description = "The email's id from gmail_search." }),
+                    ["query"] = J(new { type = "string", description = "Instead of an id: a Gmail search for the email (its newest match with attachments), e.g. \"from:partners@example.com\"." }),
                     ["name_contains"] = J(new { type = "string", description = "Only attachments whose name contains these words (e.g. \"invoice\", \".pdf\"). Leave out for all." }),
                     ["folder"] = J(new { type = "string", description = "downloads (default), desktop, documents, pictures, or a full folder path." }),
                 },
-                Required = ["id"],
             },
         },
         new Tool
