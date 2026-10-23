@@ -82,7 +82,7 @@ In no fixed order yet; we pick as we go.
   pointer.
 - **The cat talks back** (built, v2.8): spoken replies (Windows voices or Deepgram), and it never hears itself.
 - **Documents** (built, v2.12): ask a PDF a question, summarise a Word file, read aloud.
-- **What is this?** for files, **Smart rename** (batch, with undo), **Translate** (documents,
+- **What is this?** for files (built, v2.13), **Smart rename** (batch, with undo), **Translate** (documents,
   pictures, screen text).
 - **Live captions and translation** for anything playing on the PC.
 - **Habits**: "you always turn HEIC into JPG, want me to do it automatically?"; **preferences** it

@@ -73,7 +73,48 @@ public static class FileChores
     /// <summary>Moves the files, writing the list down first so Undo can put them back.</summary>
     public static (string Outcome, string UndoFile) Tidy(string folder, List<Move> moves)
     {
-        var undo = UndoFile("tidy");
+        var (moved, skipped, undo) = Apply("tidy", moves);
+        Ai.AiLog.Write("tidied", $"{folder}: {moved} moved, {skipped} left");
+        return ($"Tidied {moved} file{(moved == 1 ? "" : "s")} into folders{(skipped > 0 ? $"; {skipped} were in use and stayed" : "")}.", undo);
+    }
+
+    /// <summary>
+    /// Checks a batch of new names: same folder, a name Windows allows, the same extension (added
+    /// back if left off), and no two files ending up with one name. Returns the moves, or what's wrong.
+    /// </summary>
+    public static (List<Move>? Moves, string? Problem) PlanRenames(IEnumerable<(string Path, string NewName)> wanted)
+    {
+        var moves = new List<Move>();
+        var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (path, newName) in wanted)
+        {
+            if (!File.Exists(path)) return (null, $"{path} doesn't exist. Use full paths exactly as find_files gave them.");
+            var name = newName.Trim().TrimEnd('.');
+            if (name.Length == 0 || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+                return (null, $"\"{newName}\" can't be a file name (it can't contain \\ / : * ? \" < > |).");
+            var ext = Path.GetExtension(path);
+            if (!name.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) name += ext;
+            var to = Path.Combine(Path.GetDirectoryName(path)!, name);
+            if (string.Equals(to, path, StringComparison.Ordinal)) continue;
+            // Another file already has the name (and it isn't this one in other letters): number it.
+            if (!string.Equals(to, path, StringComparison.OrdinalIgnoreCase)) to = Free(to, taken);
+            taken.Add(to);
+            moves.Add(new Move(path, to));
+        }
+        return moves.Count == 0 ? (null, "Those names are the same as now; nothing to rename.") : (moves, null);
+    }
+
+    public static (string Outcome, string UndoFile) Rename(List<Move> moves)
+    {
+        var (moved, skipped, undo) = Apply("rename", moves);
+        Ai.AiLog.Write("renamed", string.Join("; ", moves.Select(m => $"{Path.GetFileName(m.From)} -> {Path.GetFileName(m.To)}")));
+        return ($"Renamed {moved} file{(moved == 1 ? "" : "s")}{(skipped > 0 ? $"; {skipped} were in use and kept their names" : "")}.", undo);
+    }
+
+    /// <summary>Moves (or renames) the files, writing the list down first so Undo can put them back.</summary>
+    static (int Moved, int Skipped, string UndoFile) Apply(string what, List<Move> moves)
+    {
+        var undo = UndoFile(what);
         var made = new List<string>();
         File.WriteAllText(undo, JsonSerializer.Serialize(new UndoList(moves, made)));
         int moved = 0, skipped = 0;
@@ -89,8 +130,8 @@ public static class FileChores
                     Directory.CreateDirectory(into);
                     made.Add(into);
                 }
-                // The name may have been taken since the plan was made.
-                var to = File.Exists(move.To) ? Free(move.To, []) : move.To;
+                // The name may have been taken since the plan was made (not by this file, renamed in other letters).
+                var to = File.Exists(move.To) && !string.Equals(move.From, move.To, StringComparison.OrdinalIgnoreCase) ? Free(move.To, []) : move.To;
                 File.Move(move.From, to);
                 done.Add(move with { To = to });
                 moved++;
@@ -102,8 +143,7 @@ public static class FileChores
             }
         }
         File.WriteAllText(undo, JsonSerializer.Serialize(new UndoList(done, made)));
-        Ai.AiLog.Write("tidied", $"{folder}: {moved} moved, {skipped} left");
-        return ($"Tidied {moved} file{(moved == 1 ? "" : "s")} into folders{(skipped > 0 ? $"; {skipped} were in use and stayed" : "")}.", undo);
+        return (moved, skipped, undo);
     }
 
     /// <summary>Puts moved files back where they were (unless something else is there now).</summary>
@@ -116,7 +156,7 @@ public static class FileChores
         {
             try
             {
-                if (File.Exists(move.To) && !File.Exists(move.From))
+                if (File.Exists(move.To) && (!File.Exists(move.From) || string.Equals(move.From, move.To, StringComparison.OrdinalIgnoreCase)))
                 {
                     File.Move(move.To, move.From);
                     back++;

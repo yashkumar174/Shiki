@@ -26,12 +26,18 @@ static class CatPrompt
             - Actions marked "opens a window" (signing, page editing, passwords, form photos, scanning, background removal) must be the last step: the window lets the person finish there.
             - Pick the files yourself when the request is clear, and say which in the plan summary. Ask a short question only when it's truly unclear (two different files fit, or no file kind was named and several fit).
             - "Show me", "where is it", "open the folder": show_in_explorer. "Open" or "play" a file: open_file. Snipping, recording the screen, picking a colour, QR codes and pasting the clipboard: use_app_tool.
-            - There's no delete or rename yet, and moving is only tidy_folder. Say so plainly if asked. Results are always new files, saved {results}; originals are never changed.
+            - There's no delete; moving is only tidy_folder and renaming only rename_files. Say so plainly if asked. Results are always new files, saved {results}; originals are never changed.
 
             Documents
             - "What does this PDF say about…", "summarise this Word file", "what's in the contract?": read_document with the full path (from the selection, the context or find_files), then answer from it. Quote numbers and dates exactly. Summaries: the main points in a few short sentences (up to eight lines for a long document).
             - It reads PDFs (scans too), Word .docx, PowerPoint .pptx, Excel .xlsx and text files. An old .doc or .xls: offer to turn it into a PDF first (propose_plan), then read that.
             - "Read it to me", "read this aloud": read_aloud with the path (the whole document) or with text (a summary you wrote). Don't repeat the text in your reply; just say you're reading it.
+
+            What is this, renaming and translating
+            - "What is this file?", "is this safe to open?", "where did this come from?": file_info (for a picture you also see it). For a program, say who published it and whether it's signed; an unsigned program from the web deserves a plain warning.
+            - "Rename these photos by date", "give these PDFs proper names": look first (file_info for dates and pictures, read_document for what's inside), then rename_files with clear names: dates as YYYY-MM-DD, a few words, no made-up details. Keep each file's extension. The card has Undo; "undo that" afterwards: undo_last.
+            - "Translate this into Hindi": a document becomes a new Word file with translate_document (the card shows the cost). Text on screen or in a picture: look at it, then give the translation in your reply (copy_to_clipboard if they want to paste it).
+            - "Save that as a document": save_document with a title and the text (a summary, a translation, notes you wrote).
 
             File chores
             - "Tidy my downloads" (or the desktop, or a folder): tidy_folder. It sorts loose files into Images, Videos, Music, PDFs, Documents, Archives and Installers; the card has Undo. "Undo that" afterwards: undo_last.
@@ -382,6 +388,72 @@ static class CatPrompt
             {
                 Properties = new Dictionary<string, JsonElement> { ["path"] = J(new { type = "string", description = "The full path." }) },
                 Required = ["path"],
+            },
+        },
+        new Tool
+        {
+            Name = "file_info",
+            Description = "What a file is: kind, size, dates, where it was downloaded from, and what Windows knows (photo date and camera, video length, song artist, program publisher and signature). For a picture, you also see it.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement> { ["path"] = J(new { type = "string", description = "The full path." }) },
+                Required = ["path"],
+            },
+        },
+        new Tool
+        {
+            Name = "rename_files",
+            Description = "Offer to rename files (each stays in its folder and keeps its extension). Shows a card with the old and new names; runs after Do it; Undo puts the old names back.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["renames"] = J(new
+                    {
+                        type = "array",
+                        minItems = 1,
+                        maxItems = 300,
+                        items = new
+                        {
+                            type = "object",
+                            properties = new Dictionary<string, object>
+                            {
+                                ["path"] = new { type = "string", description = "The full path now." },
+                                ["new_name"] = new { type = "string", description = "The new file name, with or without the extension." },
+                            },
+                            required = new[] { "path", "new_name" },
+                        },
+                    }),
+                },
+                Required = ["renames"],
+            },
+        },
+        new Tool
+        {
+            Name = "translate_document",
+            Description = "Offer to translate a whole document (PDF, Word, PowerPoint, Excel, text) into a language, saved as a new Word file. Shows a card with the cost first.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["path"] = J(new { type = "string" }),
+                    ["language"] = J(new { type = "string", description = "In English, e.g. \"Hindi\", \"Spanish\"." }),
+                },
+                Required = ["path", "language"],
+            },
+        },
+        new Tool
+        {
+            Name = "save_document",
+            Description = "Save text you wrote (a summary, a translation, notes) as a new Word file in the results folder.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["title"] = J(new { type = "string", description = "The file name, without extension." }),
+                    ["text"] = J(new { type = "string" }),
+                },
+                Required = ["title", "text"],
             },
         },
         new Tool
