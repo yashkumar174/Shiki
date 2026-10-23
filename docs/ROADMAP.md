@@ -93,6 +93,20 @@ In no fixed order yet; we pick as we go.
 
 ## Much later
 
-- **Agents** (built, v2.17, one computer-use agent: email through the browser, websites, apps; live test pending Claude credit): email replies (asks before sending), a browser agent, computer use. Never
+- **Agents** (built, v2.17, tested): one computer-use agent for websites and apps; asks before sending. Never
   passwords or payments.
 - **Phone link**: files between phone and PC by voice or QR, after the desktop is polished.
+
+## Also built along the way
+
+- **Hindi and Hinglish** (v2.18): Deepgram multilingual, Whisper multilingual, Hinglish quick commands.
+- **The web and Gmail, fast** (v2.19): Claude web search and fetch; Gmail through Google's API (search, read, draft, send with a card).
+- **What can Sky do?** page (v2.20), Settings in tabs (v2.20.1), a short right-click menu (v2.20.2).
+
+## Open
+
+- **Wispr Flow**: waiting for their API.
+- **Phone link**: files between phone and PC.
+- **Mellow's skin**: needs her colours.
+- **One-click Gmail for other users**: build the Google client into Shiki; Google verification before a public launch.
+- **Sharing Shiki**: automatic updates, code signing, a small website.
