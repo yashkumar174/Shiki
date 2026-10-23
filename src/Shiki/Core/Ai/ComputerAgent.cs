@@ -85,7 +85,8 @@ public sealed class ComputerAgent
         How to work
         - Start with a screenshot. After each group of actions, take a screenshot and check it worked before going on. If something didn't work, try another way (a different element, a keyboard shortcut, scrolling) rather than repeating the same click.
         - To open a website, use open_website with its full address (Gmail is https://mail.google.com) rather than typing into the address bar. To start an app, use open_app.
-        - Email: use the email the person already has open in their browser (Gmail, Outlook on the web). Write the message as asked, in their voice, short and polite.
+        - If the app or site the task needs is already on screen, use it as it is; open something only when it isn't there.
+        - Email: use the email the person already has open (Gmail, Outlook on the web, a mail app). Write the message as asked, in their voice, short and polite.
         - Keep to the task. Don't open other things, change settings, or close the person's windows unless the task needs it.
         - When it's done (or can't be done), call done with one or two plain sentences saying what happened.
 

@@ -390,6 +390,10 @@ public partial class App : Application
                 EnterBuddyMode();
                 AgentSelfTest();
                 break;
+            case "gmail-test":
+                // Dev aid: the newest email's sender and subject (read-only; nothing goes to Claude).
+                _ = GmailTest();
+                break;
             case "agent-sandbox" when args.Length >= 2:
                 // Dev aid: the agent on a pretend mail app drawn off screen (no real clicks or typing); questions are answered yes.
                 EnterBuddyMode();
@@ -1693,6 +1697,20 @@ public partial class App : Application
         _ = pill.Ask(new AgentQuestion("Send this reply to Rahul: \"Yes, Friday at 1 works for me. See you there!\"?", true));
         DashboardWindow.SaveElement((FrameworkElement)pill.Content, 380, Path.Combine(Path.GetTempPath(), "agent-pill.png"));
         pill.Close();
+    }
+
+    static async System.Threading.Tasks.Task GmailTest()
+    {
+        try
+        {
+            var watch = Stopwatch.StartNew();
+            var newest = await Core.Mail.Gmail.Search("in:inbox", 1, default);
+            Log.Info(newest.Count == 0 ? "gmail-test: inbox is empty" : $"gmail-test: {newest[0].Date:ddd d MMM HH:mm} | {newest[0].From} | \"{newest[0].Subject}\" ({watch.ElapsedMilliseconds} ms)");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("gmail-test failed", ex);
+        }
     }
 
     async System.Threading.Tasks.Task AgentSandboxTest(string task)
