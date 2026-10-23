@@ -841,6 +841,7 @@ public sealed class CatChat(CatHands hands)
                 var draft = new Mail.Gmail.Draft(Str(input, "to") ?? "", Str(input, "subject") ?? "", Str(input, "body") ?? "", Str(input, "reply_to_id"), files);
                 if (draft.To.Length == 0 || draft.Body.Trim().Length == 0 && files.Count == 0) return (null, "An email needs a recipient and some words (or files).");
                 var lines = (draft.Subject.Length > 0 ? $"Subject: {draft.Subject}\n" : draft.ReplyToId != null ? "A reply in the same thread\n" : "") + draft.Body.Trim();
+                var person = (Str(input, "name") ?? "").Trim();
                 var card = new PlanItem($"Send an email to {draft.To}", [])
                 {
                     Detail = lines.Trim().Length > 0 ? lines.Trim() : null,
@@ -849,6 +850,12 @@ public sealed class CatChat(CatHands hands)
                 card.Run = async () =>
                 {
                     await Mail.Gmail.Send(draft, CancellationToken.None);
+                    // Sent once, known from now on: next time it isn't asked for.
+                    if (person.Length > 0 && !draft.To.Contains(',') && !Preferences.All.Any(f => f.Contains(draft.To, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        Preferences.Add($"{person}'s email is {draft.To.Trim()}");
+                        AiLog.Write("remembered", $"{person}'s email is {draft.To.Trim()}");
+                    }
                     return $"Sent to {draft.To}.";
                 };
                 return (card, null);

@@ -227,6 +227,39 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     /// </summary>
     public async Task Use(string text, bool listenAfter = true, bool fromFollowUp = false)
     {
+        _using = true;
+        try { await UseText(text, listenAfter, fromFollowUp); }
+        finally { _using = false; }
+    }
+
+    // A spoken turn is being handled (it listens for the card's answer itself, in Continue).
+    bool _using;
+    // The card already listened for, so a card is asked about once.
+    PlanItem? _askedFor;
+
+    /// <summary>
+    /// Whenever a card waits for an OK (however it came: typed, the dashboard, a spoken request),
+    /// the mic opens once the cat has finished talking, so "yes" or "send" answers it, no keys.
+    /// </summary>
+    public void AnswerCardsAloud() => chat.Changed += () =>
+    {
+        if (_using || Active || !settings.VoiceAnswers) return;
+        if (chat.WaitingPlan is not { } plan || plan == _askedFor) return;
+        _askedFor = plan;
+        ListenForAnswer(plan);
+    };
+
+    async void ListenForAnswer(PlanItem plan)
+    {
+        // The card arrives mid-reply: wait for the reply to finish, and to be read aloud.
+        for (int i = 0; i < 150 && chat.Busy; i++) await Task.Delay(200);
+        if (Quiet != null) await Quiet();
+        if (Active || chat.Busy || chat.WaitingPlan != plan || !Microphone.Present()) return;
+        _ = Listen(answering: true);
+    }
+
+    async Task UseText(string text, bool listenAfter, bool fromFollowUp)
+    {
         // Hindi written the Roman way (Hinglish), if that's how the person writes.
         if (Speech.Hindi && settings.HindiScript == "roman") text = Hinglish.ToRoman(text);
         // A conversation is turns of you talking to the cat. A long stretch of words while it waited,
@@ -280,7 +313,11 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         // Listening while the reply is read aloud would hear the cat itself.
         if (Quiet != null) await Quiet();
         if (Active || chat.Busy) return;
-        if (settings.VoiceAnswers && chat.WaitingPlan != null) _ = Listen(answering: true);
+        if (settings.VoiceAnswers && chat.WaitingPlan != null)
+        {
+            _askedFor = chat.WaitingPlan;
+            _ = Listen(answering: true);
+        }
         else if (settings.FollowUpSeconds > 0) _ = Listen(followUp: true);
         else ConversationEnded?.Invoke();
     }

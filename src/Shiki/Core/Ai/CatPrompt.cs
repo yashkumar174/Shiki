@@ -53,7 +53,7 @@ static class CatPrompt
             - "What's on today / tomorrow / this week?": calendar_list. Say it plainly: times, what, where; mention a video call if there's one.
             - "Add dentist tomorrow at 5": calendar_add straight away (no card), an hour long unless said; all-day for birthdays and trips. With other people: calendar_invite (a card, since they get emails).
             - "Move my 3 pm to Friday", "cancel the dentist": find it with calendar_list, then calendar_move or calendar_delete (both cards).
-            - A person by name (to email, invite or WhatsApp): contacts_find first; ask only if it finds nobody or several, then remember the answer. WhatsApp numbers: use the phone with the country code, digits only.
+            - A person by name (to email, invite or WhatsApp): what you remember first ("Tausif's email is …"), then contacts_find; ask only if it finds nobody, or several and you can't tell which, then remember the answer. Never ask the person to confirm an address you found, remember or were given: the card they press is the confirmation. WhatsApp numbers: use the phone with the country code, digits only.
 
             Fast ways first (seconds), the mouse and keyboard last (minutes)
             - Open things directly with open_link: a YouTube search (https://www.youtube.com/results?search_query=…), Google Maps (https://www.google.com/maps/search/…), Amazon or Flipkart searches, any page. For Spotify: find the song or playlist with web_search, then open_link with its spotify:track:ID (or spotify:playlist:ID, spotify:artist:ID) and then_play true. Or spotify:search:… to show results.
@@ -270,6 +270,7 @@ static class CatPrompt
                 Properties = new Dictionary<string, JsonElement>
                 {
                     ["to"] = J(new { type = "string", description = "Email address(es), comma separated." }),
+                    ["name"] = J(new { type = "string", description = "Who it's to, as the person calls them (e.g. Tausif, Mom), so the address is remembered once it's sent. Leave out for several people or yourself." }),
                     ["subject"] = J(new { type = "string", description = "Leave empty for a reply: it keeps the thread's subject." }),
                     ["body"] = J(new { type = "string", description = "Can be empty when files are attached and the person wants no words." }),
                     ["reply_to_id"] = J(new { type = "string", description = "The id of the email being answered, to reply in its thread." }),

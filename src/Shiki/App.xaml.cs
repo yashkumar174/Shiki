@@ -1293,6 +1293,7 @@ public partial class App : Application
         {
             if (_voice != null) return _voice;
             _voice = new VoiceInput(Chat, _settings, () => CatName) { Commands = VoiceCommand, Quiet = () => Mouth.Quiet(), Interrupt = () => _mouth?.Stop() };
+            _voice.AnswerCardsAloud();
             // The conversation is over: put the bubble away if you're not using it.
             // Attentive eyes while you're talking to it.
             _voice.Changed += () =>
