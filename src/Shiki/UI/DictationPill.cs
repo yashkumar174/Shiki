@@ -20,7 +20,7 @@ public sealed class DictationPill : Window
     readonly Dictation _dictation;
     readonly DashKit _k = new(DashPalette.Night);
     readonly TextBlock _text;
-    readonly ScaleTransform _swell = new(1, 1);
+    readonly Waveform _wave;
 
     public DictationPill(Dictation dictation)
     {
@@ -36,15 +36,14 @@ public sealed class DictationPill : Window
         SizeToContent = SizeToContent.WidthAndHeight;
         UseLayoutRounding = true;
 
+        _wave = new Waveform(DashKit.B(p.AccentText), 14, 2.5, 2.5) { Mode = Waveform.Modes.Listening, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         var mic = new Border
         {
             Width = 28,
             Height = 28,
             CornerRadius = new CornerRadius(14),
             Background = DashKit.B(p.Accent),
-            Child = _k.Icon("\uE720", 13, p.AccentText),
-            RenderTransformOrigin = new Point(0.5, 0.5),
-            RenderTransform = _swell,
+            Child = _wave,
             VerticalAlignment = VerticalAlignment.Center,
         };
         _text = _k.Text("", 14, p.Text);
@@ -90,8 +89,8 @@ public sealed class DictationPill : Window
         if (partial.Length > 90) partial = "…" + partial[^89..];
         _text.Text = partial.Length > 0 ? partial : _dictation.Status;
         _text.Foreground = DashKit.B(partial.Length > 0 ? _k.P.Text : _k.P.Muted);
-        double grow = SystemParameters.ClientAreaAnimation ? 1 + Math.Min(_dictation.Level, 1) * 0.3 : 1;
-        _swell.ScaleX = _swell.ScaleY = grow;
+        _wave.Level = _dictation.Level;
+        _wave.Mode = _dictation.Status.StartsWith("Writing") ? Waveform.Modes.Thinking : Waveform.Modes.Listening;
     }
 
     /// <summary>Shows a last word ("Typed", "Didn't catch that") and goes.</summary>

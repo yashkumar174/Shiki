@@ -582,6 +582,15 @@ public partial class App : Application
                 DashboardWindow.SaveElement((FrameworkElement)bubble.Content, bubble.Width, args[1]);
                 bubble.Close();
                 break;
+            case "snapshot-pill" when args.Length is 2 or 3 or 4:
+                // Dev aid: the "Hey Sky" voice pill drawn off screen, with words (and an answer).
+                EnterBuddyMode();
+                var pillPalette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
+                var voicePill = new VoicePill(Chat, Voice, pillPalette, () => { });
+                voicePill.Preview(args.Length > 2 ? args[2] : "Listening…", args.Length > 3 ? args[3] : null, 0.7);
+                DashboardWindow.SaveElement((FrameworkElement)voicePill.Content, voicePill.Width, args[1]);
+                voicePill.Close();
+                break;
             case "catmenu":
                 // Dev aid: the cat's menu at the mouse, as a right-click would open it.
                 EnterBuddyMode();
@@ -1281,7 +1290,7 @@ public partial class App : Application
                 () => _settings.VoiceLock && VoicePrint.HasPrint ? VoicePrint.Enough(_settings.VoiceLockLevel) : null);
             _wake.Woke += OnWoke;
             // "Hey Sky, …": show the bubble straight away, before the rest is written down.
-            _wake.Waking += () => { if (_voice is not { Active: true } && !Chat.Busy) { ShowAskBubble(); _buddy?.Act("purr"); } };
+            _wake.Waking += () => { if (_voice is not { Active: true } && !Chat.Busy) { ShowVoicePill(); _buddy?.Act("purr"); } };
             _wake.Start();
             Speech.Whisper.KeepLoaded = true;
             // Load the model now, so the first "Hey Sky" is as quick as the rest.
@@ -1308,8 +1317,7 @@ public partial class App : Application
     void OnWoke(string after)
     {
         if (_voice is { Active: true } || Chat.Busy) return;
-        if (_bubble == null) ShowAskBubble();
-        if (_bubble == null) return;
+        if (!ShowVoicePill()) return;
         _buddy?.Act("purr");
         if (after.Length == 0) _ = Voice.Listen();
         else _ = Voice.Use(after);
@@ -2477,6 +2485,47 @@ public partial class App : Application
         _paw.Show();
     }
 
+    VoicePill? _voicePill;
+
+    /// <summary>
+    /// "Hey Sky": the small voice pill above the cat (or the chat, if it's already open, or if the
+    /// cat still needs setting up). False when there's nowhere to talk to it.
+    /// </summary>
+    bool ShowVoicePill()
+    {
+        if (_bubble != null) return true;
+        if (!_settings.AiEnabled || !ClaudeKey.Exists)
+        {
+            ShowAskBubble();
+            return _bubble != null;
+        }
+        if (_voicePill != null) return true;
+        Chat.NextScreen = ExplorerSelection.DesktopInFront()
+            ? new ScreenContext(null, ExplorerSelection.FromDesktop(), FromDesktop: true)
+            : Chat.NextScreen ?? (ExplorerSelection.Frontmost() is { } front ? new ScreenContext(front.Folder, front.Selected) : null);
+        var palette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
+        var pill = _voicePill = new VoicePill(Chat, Voice, palette, () => { _voicePill = null; ShowAskBubble(); });
+        pill.Closed += (_, _) =>
+        {
+            if (_voicePill == pill) _voicePill = null;
+            if (_bubble == null) _buddy?.Notice(false);
+        };
+        pill.Place(BubbleSpot(null));
+        pill.Show();
+        _buddy?.Notice(true);
+        return true;
+    }
+
+    /// <summary>Just above the cat (in screen units), or the bottom right when it's hidden.</summary>
+    Point BubbleSpot(Point? at)
+    {
+        double scale = NativeMethods.SystemScale;
+        var area = SystemParameters.WorkArea;
+        return at ?? (_buddy is { IsVisible: true } cat
+            ? new Point(cat.WheelSpotPx(0).X / scale, cat.WheelSpotPx(0).Y / scale)
+            : new Point(area.Right - 260, area.Bottom - 8));
+    }
+
     /// <summary>
     /// The ask shortcut: a bubble above the cat. What's selected is read first, while File Explorer
     /// (or the desktop) is still in front, so "these" means what you were looking at.
@@ -2484,6 +2533,12 @@ public partial class App : Application
     void ShowAskBubble(string? say = null, Point? at = null)
     {
         _menu?.CloseAnimated();
+        // The full chat takes over from the small voice pill.
+        if (_voicePill is { } open)
+        {
+            _voicePill = null;
+            open.Close();
+        }
         if (!_settings.AiEnabled || !ClaudeKey.Exists)
         {
             // Setting up happens on the Ask page.
@@ -2498,12 +2553,7 @@ public partial class App : Application
             var palette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
             _bubble = new AskBubble(Chat, Voice, palette, CatName, CatSprites.Head(Skin), OpenFile, () => ShowDashboard(DashPage.Ask));
             _bubble.Closed += (_, _) => _bubble = null;
-            double scale = NativeMethods.SystemScale;
-            var area = SystemParameters.WorkArea;
-            var spot = at ?? (_buddy is { IsVisible: true } cat
-                ? new Point(cat.WheelSpotPx(0).X / scale, cat.WheelSpotPx(0).Y / scale)
-                : new Point(area.Right - 260, area.Bottom - 8));
-            _bubble.Place(spot);
+            _bubble.Place(BubbleSpot(at));
             _bubble.Show();
             _buddy?.Notice(true);
             _bubble.Closed += (_, _) => _buddy?.Notice(false);

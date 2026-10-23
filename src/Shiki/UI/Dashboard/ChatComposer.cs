@@ -20,7 +20,7 @@ public sealed class ChatComposer
     readonly TextBlock _hint, _status;
     readonly Border _mic, _sendButton;
     readonly TextBlock _micGlyph;
-    readonly ScaleTransform _swell = new(1, 1);
+    readonly Waveform _wave;
     readonly string _placeholder;
 
     DashPalette P => _k.P;
@@ -79,8 +79,7 @@ public sealed class ChatComposer
             if (_voice.Active) _voice.Finish();
             else _ = _voice.Listen();
         });
-        _mic.RenderTransformOrigin = new Point(0.5, 0.5);
-        _mic.RenderTransform = _swell;
+        _wave = new Waveform(DashKit.B(P.AccentText), compact ? 14 : 16, 2.5, 2.5) { HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
         _mic.Margin = new Thickness(10, 0, 0, 0);
         _sendButton.Margin = new Thickness(8, 0, 0, 0);
 
@@ -149,11 +148,14 @@ public sealed class ChatComposer
         bool hot = voice.State is VoiceState.Waiting or VoiceState.Hearing;
         ((SolidColorBrush)_mic.Background).Color = hot ? P.Accent : P.Hover;
         _micGlyph.Foreground = DashKit.B(hot ? P.AccentText : P.Text);
-        _micGlyph.Text = voice.State == VoiceState.Understanding ? "\uE916" : "\uE720";
         _mic.ToolTip = hot ? "Done talking (Enter)" : "Talk (the cat listens until you pause)";
-        // The button swells with your voice; reduced-motion users get a steady colour instead.
-        double grow = hot && SystemParameters.ClientAreaAnimation ? 1 + Math.Min(voice.Level, 1) * 0.35 : 1;
-        _swell.ScaleX = _swell.ScaleY = grow;
+        // While listening (and writing down), a small waveform moves with your voice in place of the mic.
+        bool wave = hot || voice.State == VoiceState.Understanding;
+        _wave.Mode = hot ? Waveform.Modes.Listening : Waveform.Modes.Thinking;
+        _wave.Level = voice.Level;
+        _wave.Colour = DashKit.B(hot ? P.AccentText : P.Text);
+        var child = wave ? (UIElement)_wave : _micGlyph;
+        if (_mic.Child != child) _mic.Child = child;
     }
 
     Border Round(double size, Color fill, UIElement child, string tip, Action click)
