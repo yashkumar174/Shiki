@@ -102,8 +102,8 @@ public sealed class CatHands
     public required Func<string, string> RunRoutine { get; init; }
     /// <summary>Documents found by the words inside them (the private index), or null when it's off.</summary>
     public required Func<string, int, (List<ContentHit> Hits, int Indexed, bool Busy)?> SearchContents { get; init; }
-    /// <summary>Opens WhatsApp (or WhatsApp Web) on the chat with the message ready and sends it; says what happened.</summary>
-    public required Func<string, string, bool, Task<string>> SendWhatsApp { get; init; }
+    /// <summary>Opens WhatsApp (or WhatsApp Web) on the chat with the message (and files) ready and sends it; says what happened.</summary>
+    public required Func<string, string, bool, IReadOnlyList<string>, Task<string>> SendWhatsApp { get; init; }
     /// <summary>Starts the agent on a task (it works by itself, with its own pill); says whether it started.</summary>
     public required Func<string, string> StartAgent { get; init; }
     /// <summary>What's on the clipboard: text, or a picture (PNG), or neither.</summary>
@@ -147,6 +147,9 @@ public sealed class CatChat(CatHands hands)
     public double Cost { get; private set; }
     /// <summary>Screen context captured by the shortcut before the bubble took focus; used by the next message.</summary>
     public ScreenContext? NextScreen { get; set; }
+
+    /// <summary>A note for Claude with the next message only, not shown in the chat (what it's answering).</summary>
+    public string? NextNote { get; set; }
 
     public event Action? Changed;
 
@@ -331,6 +334,11 @@ public sealed class CatChat(CatHands hands)
             said += $"\n\n[Above: what the person picked on their screen with the paw{(pictureWhere is { Length: > 0 } w ? $" (from the window \"{w}\")" : "")}. \"This\" means it.]";
             _picture = null;
             _pictureWhere = null;
+        }
+        if (NextNote is { Length: > 0 } note)
+        {
+            said += $"\n\n[{note}]";
+            NextNote = null;
         }
         content.Add(new TextBlockParam { Text = said + ScreenNote(spoken) });
         int before = _messages.Count, generation = _generation;
@@ -827,10 +835,12 @@ public sealed class CatChat(CatHands hands)
                 var text = (Str(input, "text") ?? "").Trim();
                 var who = Str(input, "name") ?? phone;
                 if (phone.Length < 10) return (null, "WhatsApp needs the number with the country code (91 for India). Ask the person for it once, then remember it.");
-                if (text.Length == 0) return (null, "What should the message say?");
+                var (files, problem) = Attachments(input);
+                if (problem != null) return (null, problem.Replace("Gmail takes up to 25 MB in one email", "that's a lot to send at once"));
+                if (text.Length == 0 && files.Count == 0) return (null, "What should the message say?");
                 bool web = input.TryGetProperty("web", out var w) && w.ValueKind == JsonValueKind.True;
-                var card = new PlanItem($"Send on WhatsApp{(web ? " Web" : "")} to {who}", []) { Detail = text };
-                card.Run = () => hands.SendWhatsApp(phone, text, web);
+                var card = new PlanItem($"Send on WhatsApp{(web ? " Web" : "")} to {who}", []) { Detail = text.Length > 0 ? text : null, Attached = files };
+                card.Run = () => hands.SendWhatsApp(phone, text, web, files);
                 return (card, null);
             }
             case "gmail_send":

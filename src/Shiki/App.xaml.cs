@@ -615,6 +615,28 @@ public partial class App : Application
                     Log.Info($"mime-test: {mime.Length:N0} bytes, {args.Length - 2} file(s)");
                 });
                 break;
+            case "reminder-say-test":
+                // Dev aid: a pretend reminder (not saved), said aloud and listened for, whatever the talk setting.
+                {
+                    EnterBuddyMode();
+                    var pretend = new Todo { Text = "Stretch your back" };
+                    ToastWindow? card = null;
+                    card = ToastWindow.Message($"Reminder: {pretend.Text}", "A test reminder.", null, ("Done", () => card!.CloseAnimated()));
+                    card.KeepFor(TimeSpan.FromMinutes(3));
+                    ToastHost.Show(card);
+                    _buddy?.Act("startle");
+                    SayReminder(pretend, card, evenIfQuiet: true);
+                }
+                break;
+            case "reminder-answer-test":
+                // Dev aid: how answers to a reminder are read (nothing is changed).
+                foreach (var said in new[] { "done", "It's done.", "I did it", "ho gaya", "later", "in 20 minutes", "10 minutes please", "remind me in an hour",
+                    "tomorrow", "remind me tomorrow", "okay", "thanks", "haan haan, theek hai", "okay thank you Sky", "call him on WhatsApp", "send him an email saying I'll call tomorrow", "snooze", "baad mein" })
+                {
+                    var (kind, until) = ReadReminderAnswer(said);
+                    Log.Info($"reminder-answer \"{said}\" -> {kind}{(until is { } u ? $" until {u:ddd HH:mm}" : "")}");
+                }
+                break;
             case "pill-demo":
                 // Dev aid: the "Hey Sky" pill opens (and, with words, they're asked), then grows into the chat.
                 EnterBuddyMode();
@@ -1483,8 +1505,9 @@ public partial class App : Application
     /// WhatsApp opens on the chat with the message typed (its own link, no searching), and once
     /// its window is in front, Enter sends it. If it never comes up, the message waits there.
     /// </summary>
-    async System.Threading.Tasks.Task<string> SendWhatsApp(string phone, string text, bool web)
+    async System.Threading.Tasks.Task<string> SendWhatsApp(string phone, string text, bool web, IReadOnlyList<string> files)
     {
+        if (files.Count > 0) return await SendWhatsAppFiles(phone, text, web, files);
         if (web) return await SendWhatsAppWeb(phone, text);
         var link = $"whatsapp://send?phone={phone}&text={Uri.EscapeDataString(text)}";
         Process.Start(new ProcessStartInfo(link) { UseShellExecute = true })?.Dispose();
@@ -1532,6 +1555,74 @@ public partial class App : Application
             return $"WhatsApp Web is open in {browser} on that chat, and Enter was pressed to send it. If the message is still in the box (the page was slow), press Enter.";
         }
         return $"WhatsApp Web is open in {browser} with the message typed: press Enter to send it.";
+    }
+
+    /// <summary>
+    /// Photos and files on WhatsApp, with no mouse: the files go on the clipboard (as if copied in
+    /// File Explorer), the chat opens, Ctrl+V puts them in WhatsApp's send preview, the text goes in
+    /// as the caption and Enter sends. Every key waits for WhatsApp to be the window in front, so
+    /// nothing lands anywhere else; the clipboard's text is put back afterwards.
+    /// </summary>
+    async System.Threading.Tasks.Task<string> SendWhatsAppFiles(string phone, string text, bool web, IReadOnlyList<string> files)
+    {
+        string? kept = null;
+        try { if (Clipboard.ContainsText()) kept = Clipboard.GetText(); } catch (System.Runtime.InteropServices.ExternalException) { }
+        var list = new System.Collections.Specialized.StringCollection();
+        list.AddRange(files.ToArray());
+        Clipboard.SetFileDropList(list);
+        string what = files.Count == 1 ? Path.GetFileName(files[0]) : $"{files.Count} files";
+        AiLog.Write("whatsapp", $"{(web ? "web, " : "")}to {phone}: {what}{(text.Length > 0 ? $" + {text.Length} characters" : "")}");
+
+        Func<bool> inFront = web ? WhatsAppWebInFront : WhatsAppAppInFront;
+        if (web)
+        {
+            try { Process.Start(new ProcessStartInfo("chrome", $"https://web.whatsapp.com/send?phone={phone}") { UseShellExecute = true })?.Dispose(); }
+            catch (System.ComponentModel.Win32Exception) { Process.Start(new ProcessStartInfo($"https://web.whatsapp.com/send?phone={phone}") { UseShellExecute = true })?.Dispose(); }
+        }
+        else Process.Start(new ProcessStartInfo($"whatsapp://send?phone={phone}") { UseShellExecute = true })?.Dispose();
+
+        string left = $"The chat is open and the {(files.Count == 1 ? "file is" : "files are")} on your clipboard: press Ctrl+V, then Enter.";
+        try
+        {
+            bool up = false;
+            for (int i = 0; i < 60 && !up; i++)
+            {
+                await System.Threading.Tasks.Task.Delay(250);
+                up = inFront();
+            }
+            if (!up) return left;
+            // The chat loads (the web takes longer), then the files go in.
+            await System.Threading.Tasks.Task.Delay(web ? 7000 : 1800);
+            await TypeText.WaitForModifiersUp();
+            if (!inFront()) return left;
+            TypeText.Paste();
+            // The send preview opens with the caption box ready.
+            await System.Threading.Tasks.Task.Delay(1500 + 250 * Math.Min(files.Count, 8));
+            if (!inFront()) return left;
+            if (text.Length > 0 && !TypeText.Type(text)) return left;
+            await System.Threading.Tasks.Task.Delay(300);
+            if (!inFront()) return "The files and caption are ready in WhatsApp: press Enter to send.";
+            TypeText.PressEnter();
+            return $"Sent {what} on WhatsApp{(web ? " Web" : "")}.";
+        }
+        finally
+        {
+            // A little later, so the paste has happened: put back what was copied before.
+            await System.Threading.Tasks.Task.Delay(1500);
+            try { if (kept != null) Clipboard.SetText(kept); } catch (System.Runtime.InteropServices.ExternalException) { }
+        }
+    }
+
+    /// <summary>The WhatsApp app is the window in front.</summary>
+    static bool WhatsAppAppInFront()
+    {
+        NativeMethods.GetWindowThreadProcessId(NativeMethods.GetForegroundWindow(), out var pid);
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            return process.ProcessName.Contains("WhatsApp", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (ArgumentException) { return false; }
     }
 
     /// <summary>A browser window in front whose tab is WhatsApp.</summary>
@@ -2488,11 +2579,94 @@ public partial class App : Application
             var from = todo.From is { Length: > 0 } f ? $"From {f}." : "";
             toast = ToastWindow.Message($"Reminder: {todo.Text}", $"{(todo.Due is { } d && d < DateTime.Today ? $"It was due {todo.DueText()}. " : "")}{from}".Trim(), null,
                 ("Done", () => { todo.Done = true; Todos.Update(todo); toast!.CloseAnimated(); }),
-                ("In an hour", () => { todo.SnoozedUntil = DateTime.Now.AddHours(1); Todos.Update(todo); toast!.CloseAnimated(); }),
-                ("Tomorrow", () => { todo.SnoozedUntil = DateTime.Today.AddDays(1).AddHours(9); Todos.Update(todo); toast!.CloseAnimated(); }));
+                ("10 min", () => Snooze(todo, toast!, DateTime.Now.AddMinutes(10))),
+                ("An hour", () => Snooze(todo, toast!, DateTime.Now.AddHours(1))),
+                ("Tomorrow", () => Snooze(todo, toast!, DateTime.Today.AddDays(1).AddHours(9))));
+            toast.KeepFor(TimeSpan.FromMinutes(3));
             ToastHost.Show(toast);
             _buddy?.Act("startle");
+            SayReminder(todo, toast);
         }
+    }
+
+    /// <summary>
+    /// What an answer to a reminder means: "done", "snooze" (with until when), "ok" (heard, nothing
+    /// to do) or "other" (something to ask the cat about it). Short answers only: a long sentence
+    /// that mentions "tomorrow" is a request, not a snooze.
+    /// </summary>
+    static (string Kind, DateTime? Until) ReadReminderAnswer(string said)
+    {
+        var words = System.Text.RegularExpressions.Regex.Replace(said.ToLowerInvariant(), @"[^a-z0-9' ]", " ").Trim();
+        words = System.Text.RegularExpressions.Regex.Replace(words, @"\s+", " ");
+        bool Is(string pattern) => System.Text.RegularExpressions.Regex.IsMatch(words, pattern);
+        if (Is(@"^(yes |yeah |ok |okay )?(it'?s |i |i've |already )?(done|did it|finished|completed|ho gaya|kar liya|ho gya|ho gaya hai)( it)?( already)?$")) return ("done", null);
+        bool shortAnswer = words.Split(' ').Length <= 6;
+        var minutes = System.Text.RegularExpressions.Regex.Match(words, @"\b(\d+|five|ten|fifteen|twenty|thirty) (min|mins|minute|minutes)\b");
+        if (shortAnswer && minutes.Success)
+            return ("snooze", DateTime.Now.AddMinutes(minutes.Groups[1].Value switch { "five" => 5, "ten" => 10, "fifteen" => 15, "twenty" => 20, "thirty" => 30, var n => int.Parse(n) }));
+        if (shortAnswer && Is(@"\b(an|one|1) hour\b")) return ("snooze", DateTime.Now.AddHours(1));
+        if (shortAnswer && Is(@"^(remind me )?(tomorrow|kal)( morning)?( please)?$")) return ("snooze", DateTime.Today.AddDays(1).AddHours(9));
+        if (Is(@"^(later|snooze|snooze it|remind me later|not now|baad mein|thodi der mein|thodi der baad)( please)?$")) return ("snooze", DateTime.Now.AddMinutes(10));
+        // Only "heard you" words, in any mix ("haan haan, theek hai", "okay thanks").
+        var heardYou = new HashSet<string> { "ok", "okay", "got", "it", "thanks", "thank", "you", "alright", "sure", "yes", "yeah", "yep", "haan", "han", "ha", "theek", "thik", "hai", "accha", "achha", "acha", "cool", "fine", "noted", "right", "sky" };
+        if (words.Length > 0 && words.Split(' ').All(heardYou.Contains)) return ("ok", null);
+        return ("other", null);
+    }
+
+    static void Snooze(Todo todo, ToastWindow toast, DateTime until)
+    {
+        todo.SnoozedUntil = until;
+        Todos.Update(todo);
+        toast.CloseAnimated();
+        AiLog.Write("snoozed", $"{todo.Text} until {until:ddd HH:mm}");
+    }
+
+    /// <summary>
+    /// The cat says the reminder, then listens once: "done", "later", "in 20 minutes",
+    /// "tomorrow", or something to do about it ("call him on WhatsApp"), which goes to the chat.
+    /// </summary>
+    async void SayReminder(Todo todo, ToastWindow toast, bool evenIfQuiet = false)
+    {
+        try
+        {
+            if (_settings.TalkBack == "off" && !evenIfQuiet || _voice is { Active: true } || Chat.Busy) return;
+            await Mouth.Say($"Reminder: {todo.Text}.", _settings.TalkVoice);
+            await Mouth.Quiet();
+            if (_voice is { Active: true } || Chat.Busy || !Microphone.Present()) return;
+            Voice.OneAnswer = said => ReminderAnswer(todo, toast, said);
+            _ = Voice.Listen(answering: true);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Couldn't say the reminder", ex);
+        }
+    }
+
+    /// <summary>What was said back to a reminder: done or a snooze is dealt with here; anything else goes to the chat.</summary>
+    string? ReminderAnswer(Todo todo, ToastWindow toast, string said)
+    {
+        var (kind, until) = ReadReminderAnswer(said);
+        if (kind == "done")
+        {
+            todo.Done = true;
+            Todos.Update(todo);
+            toast.CloseAnimated();
+            AiLog.Write("reminder", $"done: {todo.Text}");
+            _ = Mouth.Say("Ticked off.", _settings.TalkVoice);
+            return null;
+        }
+        if (kind == "snooze" && until is { } at)
+        {
+            Snooze(todo, toast, at);
+            _ = Mouth.Say(at.Date > DateTime.Today ? "I'll remind you tomorrow morning." : $"I'll remind you at {at:h:mm}.", _settings.TalkVoice);
+            return null;
+        }
+        if (kind == "ok") return null;
+        // Something to do about it: the chat takes it, knowing what the reminder was.
+        toast.CloseAnimated();
+        ShowVoicePill();
+        Chat.NextNote = $"This is what the person said back when the reminder \"{todo.Text}\" came up";
+        return said;
     }
 
     /// <summary>

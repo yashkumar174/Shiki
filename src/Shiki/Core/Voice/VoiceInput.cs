@@ -53,6 +53,12 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     /// <summary>Called as listening starts: cuts the cat off if it's still talking.</summary>
     public Action? Interrupt { get; set; }
 
+    /// <summary>
+    /// The answer to something the app just said (a reminder): gets the next thing heard first, once.
+    /// Returns null when it dealt with it, or the words to hand on to the chat.
+    /// </summary>
+    public Func<string, string?>? OneAnswer { get; set; }
+
     /// <summary>The conversation ended (quiet, or "thanks"): the bubble can step back.</summary>
     public event Action? ConversationEnded;
 
@@ -192,6 +198,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             Partial = "";
             if (State != VoiceState.Off) Set(VoiceState.Off);
         }
+        // Nothing heard: an answer that was waited for isn't waited for any more.
+        if (said == null) OneAnswer = null;
         // Only once this listen is fully over: using it may start the next one.
         if (said != null) await Use(said, fromFollowUp: followUp);
         else if (quiet && (followUp || answering)) EndConversation(quietly: true);
@@ -279,6 +287,17 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         {
             if (after.Length == 0) { if (listenAfter) Continue(); return; }
             text = after;
+        }
+
+        if (OneAnswer is { } oneAnswer)
+        {
+            OneAnswer = null;
+            if (oneAnswer(text) is not { } onward)
+            {
+                ConversationEnded?.Invoke();
+                return;
+            }
+            text = onward;
         }
 
         if (Commands?.Invoke(text) is { } command)

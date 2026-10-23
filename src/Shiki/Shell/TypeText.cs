@@ -51,6 +51,13 @@ public static class TypeText
         return true;
     }
 
+    /// <summary>Ctrl+V: pastes what's on the clipboard (files, into a chat).</summary>
+    public static void Paste()
+    {
+        var inputs = new[] { Key(VK_CONTROL, 0, 0), Key(0x56, 0, 0), Key(0x56, 0, KEYEVENTF_KEYUP), Key(VK_CONTROL, 0, KEYEVENTF_KEYUP) };
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+    }
+
     /// <summary>One press of Enter (sending a message that's ready in its box).</summary>
     public static void PressEnter()
     {

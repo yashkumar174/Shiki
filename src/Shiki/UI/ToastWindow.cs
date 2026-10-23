@@ -87,6 +87,9 @@ public sealed class ToastWindow : Window
         return toast;
     }
 
+    /// <summary>Stays up this long instead (a reminder you might not be looking at).</summary>
+    public void KeepFor(TimeSpan time) => StartAutoClose(time);
+
     /// <summary>Changes the status line, e.g. to confirm a button did its job.</summary>
     public void SetMessage(string message) => _status.Text = message;
 
