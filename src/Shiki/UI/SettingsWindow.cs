@@ -34,6 +34,10 @@ public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
 public sealed record RoutineSetting(string CatName, Func<IReadOnlyList<Core.Routine>> All, Action<Core.Routine> Run, Action<string> Remove,
     Func<IReadOnlyList<string>> Remembered, Action<string> Forget, Func<IReadOnlyList<Core.AutoRule>> Automatic, Action<string> StopAutomatic);
 
+/// <summary>Gmail through Google's API: connected or not, the person's own OAuth client, and connecting.</summary>
+public sealed record GmailSetting(Func<string?> Account, Func<bool> HasClient, Action<string, string> SaveClient,
+    Func<System.Threading.Tasks.Task<string>> Connect, Func<System.Threading.Tasks.Task> Disconnect, Action<string> OpenLink);
+
 /// <summary>Shortcuts and the main switches, in one place.</summary>
 public sealed class SettingsWindow : Window
 {
@@ -47,7 +51,7 @@ public sealed class SettingsWindow : Window
     readonly TextBlock _folderPath = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     string _lastFolder;
 
-    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null, RoutineSetting? routines = null)
+    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null, RoutineSetting? routines = null, GmailSetting? gmail = null)
     {
         _output = output;
         _lastFolder = output.GetFolder() ?? Core.OutputPaths.DefaultFolder;
@@ -99,6 +103,7 @@ public sealed class SettingsWindow : Window
         foreach (var setting in switches) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
 
         if (ai != null) AddAi(stack, ai);
+        if (gmail != null) AddGmail(stack, gmail);
         if (routines != null) AddRoutines(stack, routines);
 
         var done = UiKit.Button("Done", Close, primary: true);
@@ -424,6 +429,85 @@ public sealed class SettingsWindow : Window
         _lastFolder = dialog.FolderName;
         _output.SetFolder(_lastFolder);
         ShowMode();
+    }
+
+    void AddGmail(StackPanel stack, GmailSetting gmail)
+    {
+        stack.Children.Add(UiKit.Heading("Gmail"));
+        var part = new StackPanel();
+        stack.Children.Add(part);
+        void Fill()
+        {
+            part.Children.Clear();
+            if (gmail.Account() is { } account)
+            {
+                Border? disconnect = null;
+                disconnect = UiKit.Button("Disconnect", async () =>
+                {
+                    await gmail.Disconnect();
+                    Fill();
+                });
+                part.Children.Add(Line($"Connected: {account}", "Searching, reading and drafting take a moment, with no browser. Sending always shows you the email first.", disconnect));
+                return;
+            }
+            part.Children.Add(UiKit.Body("Connect Gmail and the cat finds, reads and answers your email in a moment, without opening the browser. Google asks you to sign in on its own page; Shiki never sees your password, and you can disconnect any time.", 11.5));
+            var status = UiKit.Body("", 11.5);
+            if (gmail.HasClient())
+            {
+                var connect = UiKit.Button("Connect Gmail…", async () =>
+                {
+                    status.Text = "Finish signing in on Google's page in your browser…";
+                    try
+                    {
+                        var address = await gmail.Connect();
+                        Fill();
+                    }
+                    catch (Exception ex)
+                    {
+                        status.Text = ex.Message;
+                    }
+                }, primary: true);
+                connect.Margin = new Thickness(0, 8, 0, 4);
+                part.Children.Add(connect);
+                part.Children.Add(status);
+                var change = UiKit.Button("Use a different Google client", () => { gmail.SaveClient("", ""); Fill(); });
+                change.Margin = new Thickness(0, 4, 0, 0);
+                part.Children.Add(change);
+                return;
+            }
+            // One time: the person's own OAuth client from Google Cloud.
+            part.Children.Add(UiKit.Body("First, one time (about 10 minutes), make Shiki's key in your Google account:\n"
+                + "1. Open Google Cloud and create a project called Shiki.\n"
+                + "2. APIs & Services, Library: find Gmail API and press Enable.\n"
+                + "3. OAuth consent screen: External, app name Shiki, your email. Add your Gmail under Test users, then press Publish app (otherwise Google signs you out every 7 days; it will say the app isn't verified, which is fine for your own use).\n"
+                + "4. Credentials, Create credentials, OAuth client ID, type Desktop app. Copy the Client ID and Client secret into the boxes below.", 11.5));
+            var open = UiKit.Button("Open Google Cloud", () => gmail.OpenLink("https://console.cloud.google.com/apis/library/gmail.googleapis.com"));
+            open.Margin = new Thickness(0, 8, 0, 8);
+            part.Children.Add(open);
+            var id = new TextBox();
+            var secret = new PasswordBox();
+            var idField = UiKit.Field(id);
+            idField.Margin = new Thickness(0, 0, 0, 6);
+            part.Children.Add(UiKit.Body("Client ID", 11.5));
+            part.Children.Add(idField);
+            part.Children.Add(UiKit.Body("Client secret", 11.5));
+            var secretField = UiKit.Field(secret);
+            secretField.Margin = new Thickness(0, 0, 0, 8);
+            part.Children.Add(secretField);
+            var save = UiKit.Button("Save", () =>
+            {
+                if (!id.Text.Trim().EndsWith(".apps.googleusercontent.com") || secret.Password.Trim().Length < 10)
+                {
+                    status.Text = "That doesn't look like a Desktop app client: the ID ends in .apps.googleusercontent.com.";
+                    return;
+                }
+                gmail.SaveClient(id.Text, secret.Password);
+                Fill();
+            }, primary: true);
+            part.Children.Add(save);
+            part.Children.Add(status);
+        }
+        Fill();
     }
 
     void AddRoutines(StackPanel stack, RoutineSetting routines)

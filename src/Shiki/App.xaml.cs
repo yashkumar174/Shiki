@@ -944,7 +944,25 @@ public partial class App : Application
                 () => _settings.AiRequests == 0 ? "Nothing spent yet." : $"Spent so far: {AskView.Money(_settings.AiSpentUsd)} over {_settings.AiRequests:N0} requests.",
                 () => Process.Start(new ProcessStartInfo(AiLog.FilePath) { UseShellExecute = true })),
             new RoutineSetting(CatName, () => Routines.All, routine => RunRoutine(routine, spoken: false), name => Routines.Remove(name),
-                () => Preferences.All, fact => Preferences.Remove(fact), () => Habits.Rules, Habits.Stop));
+                () => Preferences.All, fact => Preferences.Remove(fact), () => Habits.Rules, Habits.Stop),
+            new GmailSetting(
+                () => Core.Mail.Gmail.Connected ? _settings.GmailAccount ?? "your Gmail" : null,
+                () => Core.Mail.Gmail.HasClient,
+                Core.Mail.Gmail.SaveClient,
+                async () =>
+                {
+                    var address = await Core.Mail.Gmail.Connect(System.Threading.CancellationToken.None);
+                    _settings.GmailAccount = address;
+                    _settings.Save();
+                    return address;
+                },
+                async () =>
+                {
+                    await Core.Mail.Gmail.Disconnect();
+                    _settings.GmailAccount = null;
+                    _settings.Save();
+                },
+                url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose()));
 
     /// <summary>Tries a new shortcut from the settings window; puts the old one back if it's taken.</summary>
     bool ChangeHotkey(string text, Func<string> get, Action<string> set)

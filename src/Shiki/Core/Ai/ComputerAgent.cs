@@ -169,6 +169,8 @@ public sealed class ComputerAgent
                     System = new List<TextBlockParam> { new() { Text = System(width, height) } },
                     Tools = Tools,
                     Messages = _messages,
+                    // Medium effort: quicker steps; screen work is mostly look-and-click.
+                    OutputConfig = new OutputConfig { Effort = Effort.Medium },
                     CacheControl = new CacheControlEphemeral(),
                 }, step.Token);
                 Cost += (response.Usage.InputTokens * InputPrice + (response.Usage.CacheCreationInputTokens ?? 0) * CacheWritePrice
@@ -246,7 +248,7 @@ public sealed class ComputerAgent
                             bool ok = Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http";
                             Set(ok ? $"Opening {uri!.Host}…" : "Opening a website…");
                             results.Add(new ToolResultBlockParam { ToolUseID = use.ID, Content = ok ? _openWebsite(uri!.AbsoluteUri) : "That isn't a web address.", IsError = !ok });
-                            await Task.Delay(2500, _stop.Token);
+                            await Task.Delay(1500, _stop.Token);
                             break;
                         }
                         case "open_app":
@@ -357,7 +359,7 @@ public sealed class ComputerAgent
                 throw new ArgumentException($"There's no computer action called {name}.");
         }
         // Let the screen catch up before the next action.
-        await Task.Delay(350, _stop.Token);
+        await Task.Delay(200, _stop.Token);
         return new ToolResultBlockParam { ToolUseID = id, ToolsetName = "computer", Content = text ?? "OK" };
     }
 

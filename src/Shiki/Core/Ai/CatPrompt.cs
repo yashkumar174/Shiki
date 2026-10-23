@@ -41,8 +41,13 @@ static class CatPrompt
             - "Translate this into Hindi": a document becomes a new Word file with translate_document (the card shows the cost). Text on screen or in a picture: look at it, then give the translation in your reply (copy_to_clipboard if they want to paste it).
             - "Save that as a document": save_document with a title and the text (a summary, a translation, notes you wrote).
 
+            The web and email, fast
+            - Questions about the world (news, prices, weather, opening hours, a fact, "what's on this website"): web_search, and web_fetch to read a page. Nothing opens on screen and it takes seconds. Say where the answer came from in a few words.
+            - Email: when Gmail is connected, use the gmail tools, never the browser. gmail_search takes Gmail's own search words ("from:rahul newer_than:7d", "is:unread in:inbox", "subject:invoice has:attachment"); gmail_read reads one. To reply or write: gmail_send shows the person a card with the whole email, and it's sent only when they press Do it. gmail_draft just saves a draft. Write emails short, polite, in the person's voice; sign off with their name only if you know it.
+            - If Gmail isn't connected, say they can connect it once in Settings, under Gmail, and offer do_on_screen meanwhile.
+
             Doing things on screen
-            - "Reply to Rahul's email saying I'll come", "fill in this form with my details", "find the cheapest flight to Goa on Friday", "add this to my Google Calendar": do_on_screen with the whole task in one clear paragraph: which app or site, what to write (the exact words if they gave them), and when to stop. It takes over the mouse and keyboard and asks the person before sending or submitting anything.
+            - Only for what needs clicking inside a website or app ("fill in this form", "book the 6 pm show", "add this to my Google Calendar", email when Gmail isn't connected): do_on_screen with the whole task in one clear paragraph: which app or site, what to write (the exact words if they gave them), and when to stop. It takes over the mouse and keyboard and asks the person before sending or submitting anything.
             - Use your own tools when they fit (opening apps, files, PC settings); do_on_screen is for work inside apps and websites. Never for passwords, payments or creating accounts.
             - Email goes through the email open in their browser (Gmail or Outlook on the web), as they'd do it themselves.
 
@@ -113,7 +118,88 @@ static class CatPrompt
         return prompt.ToString();
     }
 
-    public static List<ToolUnion> Tools() => [.. FileTools(), .. ScreenTools(), .. PcTools(), .. RoutineTools(), .. ChoreTools()];
+    public static List<ToolUnion> Tools() => [.. FileTools(), .. ScreenTools(), .. PcTools(), .. RoutineTools(), .. ChoreTools(), .. WebTools(), .. MailTools()];
+
+    // Claude's own web search and page reading: answers in seconds, without opening the browser.
+    static IEnumerable<ToolUnion> WebTools() =>
+    [
+        new WebSearchTool20250305 { MaxUses = 5 },
+        new WebFetchTool20250910 { MaxUses = 5, MaxContentTokens = 20000 },
+    ];
+
+    static IEnumerable<ToolUnion> MailTools() =>
+    [
+        new Tool
+        {
+            Name = "gmail_search",
+            Description = "Search the person's Gmail with Gmail's search words. Returns id, date, sender, subject and a snippet of each, newest first.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["query"] = J(new { type = "string", description = "Gmail search, e.g. \"from:rahul newer_than:7d\", \"is:unread in:inbox\", \"subject:invoice\". \"in:inbox\" for the latest." }),
+                    ["max"] = J(new { type = "integer", description = "1 to 25, default 10." }),
+                },
+                Required = ["query"],
+            },
+        },
+        new Tool
+        {
+            Name = "gmail_read",
+            Description = "Read one email (sender, recipients, date, subject, attachments' names, the text).",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement> { ["id"] = J(new { type = "string", description = "The id from gmail_search." }) },
+                Required = ["id"],
+            },
+        },
+        new Tool
+        {
+            Name = "gmail_send",
+            Description = "Offer to send an email (or a reply, with reply_to_id): the person sees the whole email on a card and it's sent only when they press Do it.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["to"] = J(new { type = "string", description = "Email address(es), comma separated." }),
+                    ["subject"] = J(new { type = "string", description = "Leave empty for a reply: it keeps the thread's subject." }),
+                    ["body"] = J(new { type = "string" }),
+                    ["reply_to_id"] = J(new { type = "string", description = "The id of the email being answered, to reply in its thread." }),
+                },
+                Required = ["to", "body"],
+            },
+        },
+        new Tool
+        {
+            Name = "gmail_draft",
+            Description = "Save an email as a draft in Gmail (not sent), same fields as gmail_send.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["to"] = J(new { type = "string" }),
+                    ["subject"] = J(new { type = "string" }),
+                    ["body"] = J(new { type = "string" }),
+                    ["reply_to_id"] = J(new { type = "string" }),
+                },
+                Required = ["to", "body"],
+            },
+        },
+        new Tool
+        {
+            Name = "gmail_mark",
+            Description = "Mark an email as read, or archive it (it stays in All Mail).",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["id"] = J(new { type = "string" }),
+                    ["action"] = J(new { type = "string", @enum = new[] { "read", "archive" } }),
+                },
+                Required = ["id", "action"],
+            },
+        },
+    ];
 
     static IEnumerable<ToolUnion> ChoreTools() =>
     [
