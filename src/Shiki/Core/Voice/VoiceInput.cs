@@ -308,8 +308,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         return Goodbyes.Any(g => phrase == g || phrase.StartsWith(g + " ") && phrase.Split(' ').Length - g.Split(' ').Length <= 1);
     }
 
-    static readonly string[] Yes = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "do it", "go ahead", "go for it", "please do", "confirm", "sounds good", "alright", "all right", "correct", "perfect", "great", "do that"];
-    static readonly string[] YesStarts = ["yes ", "yeah ", "yep ", "yup ", "sure ", "ok ", "okay ", "do it ", "go ahead ", "go for it "];
+    static readonly string[] Yes = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "do it", "go ahead", "go for it", "please do", "confirm", "sounds good", "alright", "all right", "correct", "perfect", "great", "do that", "send", "send it", "send it now", "send that", "go"];
+    static readonly string[] YesStarts = ["yes ", "yeah ", "yep ", "yup ", "sure ", "ok ", "okay ", "do it ", "go ahead ", "go for it ", "send it "];
     static readonly string[] No = ["no", "nope", "nah", "not now", "cancel", "stop", "don't", "dont", "no thanks", "no thank you", "never mind", "nevermind", "not yet"];
 
     /// <summary>

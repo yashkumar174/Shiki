@@ -591,6 +591,21 @@ public partial class App : Application
                 DashboardWindow.SaveElement(pillShot, 420 + 36, args[1]);
                 voicePill.Close();
                 break;
+            case "gmail-draft-test" when args.Length >= 3:
+                // Dev aid: saves a real Gmail draft (to args[1], with the files) and reads it back; nothing is sent.
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    try
+                    {
+                        var draft = new Shiki.Core.Mail.Gmail.Draft(args[1], "Shiki logo photos", "", null, args.Skip(2).ToList());
+                        await Shiki.Core.Mail.Gmail.SaveDraft(draft, System.Threading.CancellationToken.None);
+                        var found = await Shiki.Core.Mail.Gmail.Search("in:drafts subject:\"Shiki logo photos\"", 1, System.Threading.CancellationToken.None);
+                        var mail = await Shiki.Core.Mail.Gmail.Read(found[0].Id, System.Threading.CancellationToken.None);
+                        Log.Info($"gmail-draft-test: draft to {mail.To}, \"{mail.Subject}\", {mail.Attachments.Count} attachment(s): {string.Join(" | ", mail.Attachments)}");
+                    }
+                    catch (Exception e) { Log.Error("gmail-draft-test failed", e); }
+                });
+                break;
             case "mime-test" when args.Length >= 3:
                 // Dev aid: writes the email Shiki would send (to yourself, with these files) to a file; nothing is sent.
                 _ = System.Threading.Tasks.Task.Run(async () =>

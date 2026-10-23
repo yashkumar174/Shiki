@@ -857,6 +857,9 @@ public sealed class CatChat(CatHands hands)
             {
                 var task = (Str(input, "task") ?? "").Trim();
                 if (task.Length == 0) return (null, "Say what to do.");
+                // With Google connected, email and the calendar never go through the browser.
+                if (Mail.Gmail.Connected && System.Text.RegularExpressions.Regex.IsMatch(task, @"\bgmail\b|mail\.google\.com|calendar\.google\.com|google calendar", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                    return (null, "Gmail and Google Calendar are connected: don't use the screen for them. Email (with files): gmail_send, passing full paths in files (find_files first). A draft: gmail_draft. Calendar: the calendar tools.");
                 // The card says what it'll do in a line; the full instructions wait behind "Show the steps".
                 var summary = (Str(input, "summary") ?? "").Trim().TrimEnd('.');
                 if (summary.Length == 0) summary = task.Length <= 90 ? task.TrimEnd('.') : task[..task[..90].LastIndexOf(' ')].TrimEnd(',', '.') + "…";
