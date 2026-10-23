@@ -36,6 +36,8 @@ public sealed class PcWatch : IDisposable
     public event Action? StateChanged;
     public event Action? PluggedIn;
     public event Action<string>? Downloaded;
+    /// <summary>Any finished download, however small (Downloaded is only for the ones worth a cheer).</summary>
+    public event Action<string>? FileArrived;
     public event Action? CameBack;
 
     public PcWatch()
@@ -119,7 +121,9 @@ public sealed class PcWatch : IDisposable
             try
             {
                 var info = new FileInfo(path);
-                if (info.Exists && info.Length > 50 * 1024) Downloaded?.Invoke(path);
+                if (!info.Exists || info.Length == 0) return;
+                FileArrived?.Invoke(path);
+                if (info.Length > 50 * 1024) Downloaded?.Invoke(path);
             }
             catch (IOException)
             {

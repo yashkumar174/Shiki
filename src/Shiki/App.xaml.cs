@@ -257,6 +257,7 @@ public partial class App : Application
             if (milestone) _buddy?.Party();
             else _buddy?.Celebrate();
             CheckLevel();
+            OfferHabit();
         });
 
         if (args.Length == 0 || args[0] == "--background")
@@ -347,6 +348,23 @@ public partial class App : Application
                 foreach (var said in new[] { "start work mode", "please start work mode", "done for the day", "I'm done for today", "work", "merge my pdfs", "meeting" })
                     Log.Info($"routine-test \"{said}\": {Routines.Match(said)?.Name ?? "-"}");
                 foreach (var r in Routines.All) Log.Info($"routine-test saved: {r.Name} [{string.Join(" / ", r.Phrases)}] {string.Join(", ", r.Steps.Select(Routines.Describe))}");
+                break;
+            case "habit-test":
+                // Dev aid: what habit would be offered now, and the rules (nothing changes).
+                Log.Info($"habit-test spot: {(Habits.Spot() is { } hs ? $"{hs.Extension} {hs.Action.Id} x{hs.Times}" : "-")}");
+                foreach (var rule in Habits.Rules) Log.Info($"habit-test rule: {Habits.Describe(rule)}");
+                {
+                    // Made-up history: HEIC to JPG three times from Downloads, PNG to WEBP twice, compress (not a format change) three times.
+                    var dl = @"C:\Users\Test\Downloads";
+                    HistoryEntry Fake(int hoursAgo, string id, params string[] names) =>
+                        new() { Time = DateTime.Now.AddHours(-hoursAgo), ActionId = id, Inputs = names.Select(n => Path.Combine(dl, n)).ToList() };
+                    var fake = new[]
+                    {
+                        Fake(1, "image-jpg", "a.heic", "b.heic"), Fake(30, "image-jpg", "c.heic"), Fake(80, "image-jpg", "d.HEIC"),
+                        Fake(2, "image-webp", "x.png"), Fake(5, "image-webp", "y.png"), Fake(3, "image-compress", "p.jpg"), Fake(4, "image-compress", "q.jpg"), Fake(6, "image-compress", "r.jpg"),
+                    };
+                    Log.Info($"habit-test fake spot: {(Habits.Spot(fake, dl) is { } fs ? $"{fs.Extension} {fs.Action.Id} x{fs.Times}" : "-")}");
+                }
                 break;
             case "pc-test":
                 // Dev aid: reads the PC's controls, sets each to what it already is, and checks what
@@ -741,6 +759,7 @@ public partial class App : Application
         _pc.StateChanged += () => _buddy?.SetPcState(_pc.BatteryLow, _pc.Busy);
         _pc.PluggedIn += () => _buddy?.Cheer(Floater.Bolt);
         _pc.Downloaded += _ => _buddy?.Cheer(Floater.Download);
+        _pc.FileArrived += AutoConvert;
         _pc.CameBack += () => _buddy?.WelcomeBack();
         _buddy?.SetPcState(_pc.BatteryLow, _pc.Busy);
         _levelCheck.Tick += (_, _) => CheckLevel();
@@ -853,7 +872,8 @@ public partial class App : Application
                 () => _settings.DeepgramSpokenChars < 1 ? "" : $"Read aloud so far: {_settings.DeepgramSpokenChars:N0} characters (about ${_settings.DeepgramSpokenChars / 1000.0 * 0.03:0.00}).",
                 () => _settings.AiRequests == 0 ? "Nothing spent yet." : $"Spent so far: {AskView.Money(_settings.AiSpentUsd)} over {_settings.AiRequests:N0} requests.",
                 () => Process.Start(new ProcessStartInfo(AiLog.FilePath) { UseShellExecute = true })),
-            new RoutineSetting(CatName, () => Routines.All, routine => RunRoutine(routine, spoken: false), name => Routines.Remove(name)));
+            new RoutineSetting(CatName, () => Routines.All, routine => RunRoutine(routine, spoken: false), name => Routines.Remove(name),
+                () => Preferences.All, fact => Preferences.Remove(fact), () => Habits.Rules, Habits.Stop));
 
     /// <summary>Tries a new shortcut from the settings window; puts the old one back if it's taken.</summary>
     bool ChangeHotkey(string text, Func<string> get, Action<string> set)
@@ -1149,6 +1169,7 @@ public partial class App : Application
         Copy = TrySetClipboard,
         LookAtScreen = () => WindowShots.Capture(WindowShots.TopOtherWindow()),
         ReadAloud = ReadAloud,
+        ReadClipboard = ReadClipboardForCat,
         RunRoutine = name => Routines.Find(name) is { } routine ? RunRoutine(routine, spoken: false) : $"There's no routine called \"{name}\".",
         Replied = (text, spoken) =>
         {
@@ -1173,6 +1194,56 @@ public partial class App : Application
             await Mouth.Say(text, _settings.TalkVoice, full: true);
             if (_readingToast == toast) { toast.CloseAnimated(); _readingToast = null; }
         });
+    }
+
+    // ---- Habits ----
+
+    readonly HashSet<string> _habitsOffered = [];
+
+    /// <summary>After a job: if the same conversion keeps being done to downloads, offer to do it by itself.</summary>
+    void OfferHabit()
+    {
+        if (Habits.Spot() is not { } spot) return;
+        var (ext, action, times) = spot;
+        // Once per run of the app; a "not now" (closing the card) asks again another day.
+        if (!_habitsOffered.Add($"{ext}|{action.Id}")) return;
+        ToastWindow? toast = null;
+        toast = ToastWindow.Message($"Turn every new {ext} download {action.Label.TrimEnd('…')}?",
+            $"You've done it {times} times lately. {CatName} can do it by itself as each one lands in Downloads (the original stays). Stop it any time in Settings.", null,
+            ("Yes, always", () => { Habits.Accept(ext, action); toast!.CloseAnimated(); }),
+            ("No thanks", () => { Habits.Decline(ext, action); toast!.CloseAnimated(); }));
+        ToastHost.Show(toast);
+    }
+
+    /// <summary>A new download a rule covers: convert it by itself (results never set a rule off again: other kind).</summary>
+    void AutoConvert(string file)
+    {
+        if (Habits.For(file) is not { } action) return;
+        // A result of ours that landed in Downloads isn't a download.
+        if (History.Entries.Take(50).Any(e => e.Outputs.Contains(file, StringComparer.OrdinalIgnoreCase))) return;
+        AiLog.Write("auto", $"{action.Id} on {file}");
+        JobRunner.Start(action, [file]);
+    }
+
+    (string? Text, byte[]? Png) ReadClipboardForCat()
+    {
+        try
+        {
+            if (Clipboard.ContainsText()) return (Clipboard.GetText(), null);
+            if (Clipboard.ContainsImage() && Clipboard.GetImage() is { } image)
+            {
+                var encoder = new PngBitmapEncoder();
+                encoder.Frames.Add(BitmapFrame.Create(image));
+                using var memory = new MemoryStream();
+                encoder.Save(memory);
+                return (null, memory.ToArray());
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Could not read the clipboard", ex);
+        }
+        return (null, null);
     }
 
     // ---- Routines ----

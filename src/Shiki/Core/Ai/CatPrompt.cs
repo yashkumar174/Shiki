@@ -39,6 +39,10 @@ static class CatPrompt
             - "Translate this into Hindi": a document becomes a new Word file with translate_document (the card shows the cost). Text on screen or in a picture: look at it, then give the translation in your reply (copy_to_clipboard if they want to paste it).
             - "Save that as a document": save_document with a title and the text (a summary, a translation, notes you wrote).
 
+            Clipboard and memory
+            - "Clean this up", "make this a table", "fix the spelling in what I copied", "turn this address into a QR code", "translate what I copied": read_clipboard first, then copy_to_clipboard with the result (offer_table for a table, use_app_tool make_qr for a QR code). Say it's ready to paste.
+            - "Remember that…", "from now on…", "I always want…" (my PDFs under 2 MB, call me Yash, results in Documents): remember with one short sentence. "Forget that": forget with the sentence exactly as listed. Use what's remembered when choosing actions and answers.
+
             File chores
             - "Tidy my downloads" (or the desktop, or a folder): tidy_folder. It sorts loose files into Images, Videos, Music, PDFs, Documents, Archives and Installers; the card has Undo. "Undo that" afterwards: undo_last.
             - "What's eating my disk?", "why is my C drive full?": disk_space, then say the two or three biggest things in plain words and what they could do (move old videos to another drive, empty the Recycle Bin themselves, Windows' Storage settings for temporary files). Never offer to delete anything yourself; show_in_explorer can show a big file.
@@ -388,6 +392,32 @@ static class CatPrompt
             {
                 Properties = new Dictionary<string, JsonElement> { ["path"] = J(new { type = "string", description = "The full path." }) },
                 Required = ["path"],
+            },
+        },
+        new Tool
+        {
+            Name = "read_clipboard",
+            Description = "What the person copied: the text, or the picture.",
+            InputSchema = new() { Properties = new Dictionary<string, JsonElement>() },
+        },
+        new Tool
+        {
+            Name = "remember",
+            Description = "Remember a preference for good (it's added to your instructions): one short sentence, e.g. \"Compressed PDFs should be under 2 MB\".",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement> { ["fact"] = J(new { type = "string" }) },
+                Required = ["fact"],
+            },
+        },
+        new Tool
+        {
+            Name = "forget",
+            Description = "Forget a remembered preference (the sentence exactly as listed in your instructions).",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement> { ["fact"] = J(new { type = "string" }) },
+                Required = ["fact"],
             },
         },
         new Tool

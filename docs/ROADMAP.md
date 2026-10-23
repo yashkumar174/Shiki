@@ -85,9 +85,9 @@ In no fixed order yet; we pick as we go.
 - **What is this?** for files (built, v2.13), **Smart rename** (batch, with undo), **Translate** (documents,
   pictures, screen text).
 - **Live captions and translation** for anything playing on the PC.
-- **Habits**: "you always turn HEIC into JPG, want me to do it automatically?"; **preferences** it
+- **Habits** (built, v2.14): "you always turn HEIC into JPG, want me to do it automatically?"; **preferences** it
   remembers ("my PDFs under 2 MB").
-- **Clipboard magic**: "clean this up", "make this a table", "turn this address into a QR code".
+- **Clipboard magic** (built, v2.14): "clean this up", "make this a table", "turn this address into a QR code".
 - Earlier ideas: local suggestions, a privacy guard, data extraction, personality quips.
 - **Wispr Flow** for commands once their API is open to us.
 

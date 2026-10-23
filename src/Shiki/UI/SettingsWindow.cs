@@ -30,7 +30,8 @@ public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
     Func<string> Spent, Action OpenLog);
 
 /// <summary>The routines: run one now, or remove it. New ones are made by telling the cat.</summary>
-public sealed record RoutineSetting(string CatName, Func<IReadOnlyList<Core.Routine>> All, Action<Core.Routine> Run, Action<string> Remove);
+public sealed record RoutineSetting(string CatName, Func<IReadOnlyList<Core.Routine>> All, Action<Core.Routine> Run, Action<string> Remove,
+    Func<IReadOnlyList<string>> Remembered, Action<string> Forget, Func<IReadOnlyList<Core.AutoRule>> Automatic, Action<string> StopAutomatic);
 
 /// <summary>Shortcuts and the main switches, in one place.</summary>
 public sealed class SettingsWindow : Window
@@ -417,6 +418,22 @@ public sealed class SettingsWindow : Window
         }
         Fill();
         stack.Children.Add(list);
+
+        // What it remembers, and what it does by itself.
+        stack.Children.Add(UiKit.Heading($"What {routines.CatName} remembers"));
+        stack.Children.Add(UiKit.Body($"Tell {routines.CatName} \"remember that my PDFs should be under 2 MB\" and it keeps it in mind. When you keep converting the same kind of download the same way, it offers to do it by itself.", 11.5));
+        var memory = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
+        void FillMemory()
+        {
+            memory.Children.Clear();
+            foreach (var fact in routines.Remembered())
+                memory.Children.Add(Line(fact, "Remembered", UiKit.Button("Forget", () => { routines.Forget(fact); FillMemory(); })));
+            foreach (var rule in routines.Automatic())
+                memory.Children.Add(Line(Core.Habits.Describe(rule), $"Done by itself since {rule.Since:d MMM}", UiKit.Button("Stop", () => { routines.StopAutomatic(rule.Extension); FillMemory(); })));
+            if (memory.Children.Count == 0) memory.Children.Add(UiKit.Body("Nothing yet.", 12));
+        }
+        FillMemory();
+        stack.Children.Add(memory);
     }
 
     Grid Line(string label, string hint, UIElement control)
