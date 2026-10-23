@@ -587,9 +587,18 @@ public partial class App : Application
                 EnterBuddyMode();
                 var pillPalette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
                 var voicePill = new VoicePill(Chat, Voice, pillPalette, () => { });
-                voicePill.Preview(args.Length > 2 ? args[2] : "Listening…", args.Length > 3 ? args[3] : null, 0.7);
-                DashboardWindow.SaveElement((FrameworkElement)voicePill.Content, voicePill.Width, args[1]);
+                var pillShot = voicePill.Preview(args.Length > 2 ? args[2] : "Listening…", args.Length > 3 ? args[3] : null, 0.7);
+                DashboardWindow.SaveElement(pillShot, 420 + 36, args[1]);
                 voicePill.Close();
+                break;
+            case "pill-demo":
+                // Dev aid: the "Hey Sky" pill opens (and, with words, they're asked), then grows into the chat.
+                EnterBuddyMode();
+                ShowVoicePill();
+                if (args.Length > 1) _ = Chat.Send(args[1]);
+                var grow = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(1.6) };
+                grow.Tick += (_, _) => { grow.Stop(); if (_voicePill is { } demo) GrowIntoBubble(demo); };
+                grow.Start();
                 break;
             case "catmenu":
                 // Dev aid: the cat's menu at the mouse, as a right-click would open it.
@@ -2504,7 +2513,8 @@ public partial class App : Application
             ? new ScreenContext(null, ExplorerSelection.FromDesktop(), FromDesktop: true)
             : Chat.NextScreen ?? (ExplorerSelection.Frontmost() is { } front ? new ScreenContext(front.Folder, front.Selected) : null);
         var palette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
-        var pill = _voicePill = new VoicePill(Chat, Voice, palette, () => { _voicePill = null; ShowAskBubble(); });
+        VoicePill? pill = null;
+        pill = _voicePill = new VoicePill(Chat, Voice, palette, () => GrowIntoBubble(pill!));
         pill.Closed += (_, _) =>
         {
             if (_voicePill == pill) _voicePill = null;
@@ -2514,6 +2524,22 @@ public partial class App : Application
         pill.Show();
         _buddy?.Notice(true);
         return true;
+    }
+
+    /// <summary>
+    /// The pill needs more room: the chat opens see-through with the whole voice conversation, the
+    /// pill springs into its shape, then the chat fades in over it.
+    /// </summary>
+    void GrowIntoBubble(VoicePill pill)
+    {
+        if (_voicePill == pill) _voicePill = null;
+        ShowAskBubble(from: pill.Start, hidden: _bubble == null);
+        if (_bubble is { } bubble)
+        {
+            bubble.UpdateLayout();
+            pill.MorphInto(bubble.CardRect, AskBubble.Radius, bubble.Reveal);
+        }
+        else pill.Close();
     }
 
     /// <summary>Just above the cat (in screen units), or the bottom right when it's hidden.</summary>
@@ -2530,7 +2556,7 @@ public partial class App : Application
     /// The ask shortcut: a bubble above the cat. What's selected is read first, while File Explorer
     /// (or the desktop) is still in front, so "these" means what you were looking at.
     /// </summary>
-    void ShowAskBubble(string? say = null, Point? at = null)
+    void ShowAskBubble(string? say = null, Point? at = null, int? from = null, bool hidden = false)
     {
         _menu?.CloseAnimated();
         // The full chat takes over from the small voice pill.
@@ -2551,8 +2577,9 @@ public partial class App : Application
                 ? new ScreenContext(null, ExplorerSelection.FromDesktop(), FromDesktop: true)
                 : Chat.NextScreen ?? (ExplorerSelection.Frontmost() is { } front ? new ScreenContext(front.Folder, front.Selected) : null);
             var palette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
-            _bubble = new AskBubble(Chat, Voice, palette, CatName, CatSprites.Head(Skin), OpenFile, () => ShowDashboard(DashPage.Ask));
+            _bubble = new AskBubble(Chat, Voice, palette, CatName, CatSprites.Head(Skin), OpenFile, () => ShowDashboard(DashPage.Ask), from);
             _bubble.Closed += (_, _) => _bubble = null;
+            if (hidden) _bubble.Opacity = 0;
             _bubble.Place(BubbleSpot(at));
             _bubble.Show();
             _buddy?.Notice(true);

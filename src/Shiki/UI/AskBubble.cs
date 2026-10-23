@@ -6,6 +6,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Effects;
 using Shiki.Core.Ai;
 using Shiki.Core.Voice;
@@ -19,7 +20,14 @@ namespace Shiki.UI;
 /// </summary>
 public sealed class AskBubble : Window
 {
-    const double CardWidth = 560, Shadow = 18;
+    public const double CardWidth = 560;
+    const double Shadow = 18;
+
+    /// <summary>Its list is at most this tall (more on a taller screen).</summary>
+    static double ListHeight => Math.Clamp(SystemParameters.WorkArea.Height * 0.55, 380, 640);
+
+    /// <summary>The tallest the card gets: the header, the longest list, and the box.</summary>
+    public static double TallestCard => ListHeight + 170;
 
     readonly CatChat _chat;
     readonly DashKit _k;
@@ -34,8 +42,12 @@ public sealed class AskBubble : Window
     double _bottom;
     // Where this visit starts in the chat: older turns stay on the Ask page, unless one is unfinished.
     int _first;
+    // Taking over from the voice pill: the whole of that conversation, not just its last turn.
+    readonly bool _whole;
 
-    public AskBubble(CatChat chat, VoiceInput? voice, DashPalette palette, string catName, ImageSource head, Action<string> open, Action openDashboard)
+    public const double Radius = 20;
+
+    public AskBubble(CatChat chat, VoiceInput? voice, DashPalette palette, string catName, ImageSource head, Action<string> open, Action openDashboard, int? from = null)
     {
         _chat = chat;
         _voice = voice;
@@ -75,7 +87,7 @@ public sealed class AskBubble : Window
         // ---- This turn ----
         _items.Margin = new Thickness(16, 0, 16, 6);
         // Taller on a taller screen, so a long answer reads without much scrolling.
-        _scroll = new ScrollViewer { Content = _items, MaxHeight = Math.Clamp(SystemParameters.WorkArea.Height * 0.55, 380, 640), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        _scroll = new ScrollViewer { Content = _items, MaxHeight = ListHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
 
         // ---- Box ----
         _input = new ChatComposer(_k, catName, voice, text => { if (!_chat.Busy) _ = _chat.Send(text); }, compact: true);
@@ -91,13 +103,14 @@ public sealed class AskBubble : Window
             Background = DashKit.B(p.Card),
             BorderBrush = DashKit.B(p.Line),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(20),
+            CornerRadius = new CornerRadius(Radius),
             Child = stack,
             Effect = new DropShadowEffect { BlurRadius = 24, ShadowDepth = 4, Direction = 270, Opacity = p.Dark ? 0.5 : 0.18 },
         };
 
-        _first = chat.Busy || chat.Items.OfType<PlanItem>().Any(x => x.State is PlanState.Waiting or PlanState.Running)
-            ? LastSaid() : chat.Items.Count;
+        _whole = from != null;
+        _first = from ?? (chat.Busy || chat.Items.OfType<PlanItem>().Any(x => x.State is PlanState.Waiting or PlanState.Running)
+            ? LastSaid() : chat.Items.Count);
         _chat.Changed += Refresh;
         Closed += (_, _) =>
         {
@@ -142,6 +155,17 @@ public sealed class AskBubble : Window
         Top = _bottom - (ActualHeight > 0 ? ActualHeight : 160);
     }
 
+    /// <summary>Where the card is on screen (DIPs), for the voice pill to grow into.</summary>
+    public Rect CardRect => new(Left + Shadow, Top + Shadow, ActualWidth - Shadow * 2, ActualHeight - Shadow * 2);
+
+    /// <summary>Fades in (it was shown see-through, while the voice pill grew into its shape).</summary>
+    public void Reveal()
+    {
+        if (Opacity >= 1) return;
+        BeginAnimation(OpacityProperty, new DoubleAnimation(Opacity, 1, TimeSpan.FromMilliseconds(SystemParameters.ClientAreaAnimation ? 150 : 0)) { FillBehavior = FillBehavior.Stop });
+        Opacity = 1;
+    }
+
     public void FocusBox()
     {
         Activate();
@@ -159,10 +183,10 @@ public sealed class AskBubble : Window
     {
         _items.Children.Clear();
         var cards = new ChatCards(_k, _chat, _catName, _head, _open, () => { _openDashboard(); Close(); }, compact: true);
-        // Just this turn: from the last thing the person said.
+        // Just this turn: from the last thing the person said (or the whole talk, after the voice pill).
         var items = _chat.Items;
         if (_first > items.Count) _first = 0;
-        int start = Math.Max(_first, LastSaid());
+        int start = _whole ? _first : Math.Max(_first, LastSaid());
         for (int i = start; i < items.Count; i++) _items.Children.Add(cards.Render(items[i]));
         if (_chat.Busy) _items.Children.Add(cards.Thinking());
         else if (_chat.Picture is { } picture)

@@ -80,7 +80,7 @@ public sealed class Waveform : Canvas
             double target = Mode switch
             {
                 // The voice, shaped per bar, plus a gentle breathing so a pause still looks alive.
-                Modes.Listening => min + room * Math.Clamp(Math.Pow(_level, 0.7) * Share[i] * 1.15 + (motion ? 0.10 + 0.07 * Math.Sin(_clock * 3.1 + i * 1.3) : 0.25), 0, 1),
+                Modes.Listening => min + room * Math.Clamp(Math.Pow(_level, 0.7) * Share[i] * 1.15 + (motion ? 0.17 + 0.09 * Math.Sin(_clock * 3.1 + i * 1.3) : 0.3), 0, 1),
                 // A soft wave travelling across while the answer is on its way.
                 Modes.Thinking => min + room * (motion ? 0.18 + 0.32 * Math.Max(0, Math.Sin(_clock * 5.2 - i * 0.9)) : 0.35),
                 _ => min,
@@ -96,7 +96,7 @@ public sealed class Waveform : Canvas
     public void Snap()
     {
         _clock = 0.4;
-        for (int i = 0; i < 4; i++) _height[i] = _barWidth + (_tall - _barWidth) * Math.Clamp(Math.Pow(_level, 0.7) * Share[i] * 1.15 + 0.10 + 0.07 * Math.Sin(_clock * 3.1 + i * 1.3), 0, 1);
+        for (int i = 0; i < 4; i++) _height[i] = _barWidth + (_tall - _barWidth) * Math.Clamp(Math.Pow(_level, 0.7) * Share[i] * 1.15 + 0.17 + 0.09 * Math.Sin(_clock * 3.1 + i * 1.3), 0, 1);
         Place();
     }
 
