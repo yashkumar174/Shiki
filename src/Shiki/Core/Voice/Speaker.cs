@@ -270,6 +270,15 @@ public sealed class Speaker
     /// </summary>
     public static string Readable(string text, int most = 320)
     {
+        // The answer's formatting marks aren't read out: **bold**, `code`, [links](…), bullets, headings.
+        text = Regex.Replace(text, @"\*\*(.+?)\*\*", "$1");
+        text = Regex.Replace(text, @"`([^`]+)`", "$1");
+        text = Regex.Replace(text, @"\[([^\]]+)\]\(https?://[^)\s]+\)", "$1");
+        text = Regex.Replace(text, @"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])", "$1");
+        text = Regex.Replace(text, @"(?m)^\s*#{1,4}\s+", "");
+        text = Regex.Replace(text, @"(?m)^\s*[-*•]\s+", "");
+        // A list item without a full stop still gets a pause.
+        text = Regex.Replace(text, @"(?m)([^.!?:\s])\s*$", "$1.");
         text = Regex.Replace(text, @"[A-Za-z]:\\[^\s,;]+", m => Path.GetFileName(m.Value.TrimEnd('.', '\\')));
         text = Regex.Replace(text, @"https?://\S+", "the link");
         text = Regex.Replace(text, @"\s*\n+\s*", " ").Trim();

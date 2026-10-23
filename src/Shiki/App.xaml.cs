@@ -448,6 +448,18 @@ public partial class App : Application
                 }
                 else Log.Info("index-test: no index");
                 break;
+            case "calendar-day" when args.Length == 2 && DateTime.TryParse(args[1], out var calendarDay):
+                // Dev aid: one day's events with their ids and places (read-only).
+                _ = Dispatcher.InvokeAsync(async () =>
+                {
+                    foreach (var e in await Core.Mail.Calendar.Between(calendarDay, calendarDay.AddDays(1), default))
+                        Log.Info($"calendar-day: {e.Id} | {Core.Mail.Calendar.Describe(e)} | at {e.Location}");
+                });
+                break;
+            case "calendar-remove" when args.Length == 2:
+                // Dev aid: removes one event by id (for cleaning up a test).
+                _ = Dispatcher.InvokeAsync(async () => { await Core.Mail.Calendar.Delete(args[1], default); Log.Info($"calendar-remove: {args[1]}"); });
+                break;
             case "google-test":
                 // Dev aid: today's calendar and a contacts search (read-only; nothing goes to Claude).
                 _ = GoogleTest(args.Length > 1 ? args[1] : "a");

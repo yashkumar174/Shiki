@@ -67,7 +67,7 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
             CornerRadius = new CornerRadius(16, 16, 4, 16),
             Padding = new Thickness(14, 9, 14, 10),
             HorizontalAlignment = HorizontalAlignment.Right,
-            MaxWidth = compact ? 300 : 560,
+            MaxWidth = compact ? 420 : 560,
             Margin = new Thickness(compact ? 40 : 120, compact ? 8 : 14, 0, 4),
             Child = content,
         };
@@ -82,17 +82,21 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         head.Margin = new Thickness(0, 1, compact ? 10 : 12, 0);
         DockPanel.SetDock(head, Dock.Left);
         row.Children.Add(head);
-        row.Children.Add(Selectable(text, Size, P.Text));
+        // Paragraphs, lists and bold, the way the answer was written.
+        row.Children.Add(ChatText.View(text, Size, P.Text, P.Muted, P.Accent, P.Hover));
         return row;
     }
 
     UIElement Did(string glyph, string text)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(compact ? 30 : 36, 5, 0, 1) };
+        var row = new DockPanel { Margin = new Thickness(compact ? 30 : 36, 5, 0, 1) };
         var icon = k.Icon(glyph, 12, P.Faint);
-        icon.Margin = new Thickness(0, 1, 8, 0);
+        icon.Margin = new Thickness(0, 2, 8, 0);
+        icon.VerticalAlignment = VerticalAlignment.Top;
+        DockPanel.SetDock(icon, Dock.Left);
         row.Children.Add(icon);
-        row.Children.Add(k.Text(text, compact ? 12.5 : 13, P.Faint));
+        // Wraps rather than running off the edge ("Added to your calendar: Mon 26 Oct, 07:45–08:45: Dentist…").
+        row.Children.Add(k.Text(text, compact ? 12.5 : 13, P.Faint, wrap: true));
         return row;
     }
 
@@ -490,7 +494,7 @@ public sealed class AskView
         var stack = new StackPanel();
         stack.Children.Add(_input.Root);
         var talk = _host.Voice != null ? $" Press the mic or {_host.Settings.TalkHotkey} to talk; your voice is turned into text on this PC." : "";
-        var note = _k.Text($"Enter sends, Shift+Enter adds a line.{talk} Uses {CatChat.ModelName} with your API key: your words, the names of files involved and anything you show it on screen go to Anthropic; your files themselves don't.", 12, P.Faint, wrap: true);
+        var note = _k.Text($"Enter sends, Shift+Enter adds a line.{talk} Uses {CatChat.ModelName} with your API key: only what a request needs goes to Anthropic: your words, file names, and a document, email or picture when you ask about it (card numbers and passwords hidden first).", 12, P.Faint, wrap: true);
         note.Margin = new Thickness(18, 8, 18, 0);
         stack.Children.Add(note);
         return stack;

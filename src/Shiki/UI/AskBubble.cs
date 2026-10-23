@@ -19,7 +19,7 @@ namespace Shiki.UI;
 /// </summary>
 public sealed class AskBubble : Window
 {
-    const double CardWidth = 440, Shadow = 18;
+    const double CardWidth = 560, Shadow = 18;
 
     readonly CatChat _chat;
     readonly DashKit _k;
@@ -74,7 +74,8 @@ public sealed class AskBubble : Window
 
         // ---- This turn ----
         _items.Margin = new Thickness(16, 0, 16, 6);
-        _scroll = new ScrollViewer { Content = _items, MaxHeight = 380, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        // Taller on a taller screen, so a long answer reads without much scrolling.
+        _scroll = new ScrollViewer { Content = _items, MaxHeight = Math.Clamp(SystemParameters.WorkArea.Height * 0.55, 380, 640), VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
 
         // ---- Box ----
         _input = new ChatComposer(_k, catName, voice, text => { if (!_chat.Busy) _ = _chat.Send(text); }, compact: true);

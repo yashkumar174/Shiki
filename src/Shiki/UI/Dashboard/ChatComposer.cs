@@ -54,8 +54,10 @@ public sealed class ChatComposer
         _hint = k.Text(_placeholder, size, P.Faint);
         _hint.IsHitTestVisible = false;
         _hint.VerticalAlignment = VerticalAlignment.Center;
-        _status = k.Text("", size, P.Muted);
+        _status = k.Text("", size, P.Muted, wrap: true);
         _status.VerticalAlignment = VerticalAlignment.Center;
+        // What's being heard wraps above the buttons instead of running under them.
+        _status.MaxHeight = compact ? 96 : 140;
         _status.Visibility = Visibility.Collapsed;
         Box.TextChanged += (_, _) => ShowHint();
         Box.PreviewKeyDown += (_, e) =>

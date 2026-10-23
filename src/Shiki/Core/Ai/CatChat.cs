@@ -408,8 +408,13 @@ public sealed class CatChat(CatHands hands)
                         _items.Add(shown[^1]!);
                     }
                     if (shown[^1] is { } item) item.Text = writing.ToString().Trim();
-                    // Whole sentences go to the voice as they're finished.
+                    // Whole sentences (and list lines) go to the voice as they're finished.
                     sentence.Append(piece.Text);
+                    for (int nl; (nl = sentence.ToString().IndexOf('\n')) >= 0;)
+                    {
+                        SaySentence(sentence.ToString(0, nl));
+                        sentence.Remove(0, nl + 1);
+                    }
                     var done = System.Text.RegularExpressions.Regex.Match(sentence.ToString(), @"^(.*?[.!?])(\s+|$)(.*)$", System.Text.RegularExpressions.RegexOptions.Singleline);
                     while (done.Success && done.Groups[2].Length > 0)
                     {
