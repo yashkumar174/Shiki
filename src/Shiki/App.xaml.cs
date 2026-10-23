@@ -258,6 +258,7 @@ public partial class App : Application
             else _buddy?.Celebrate();
             CheckLevel();
             OfferHabit();
+            SavedQuip(job);
         });
 
         if (args.Length == 0 || args[0] == "--background")
@@ -353,6 +354,36 @@ public partial class App : Application
                 // Dev aid: captions on (translated into args[2] if given), a WAV played through the speakers, then off.
                 EnterBuddyMode();
                 _ = CaptionsTest(args[1], args.Length > 2 ? args[2] : null);
+                break;
+            case "quip" when args.Length >= 2:
+                // Dev aid: a quip now (skips the 20-minute wait) and its picture.
+                EnterBuddyMode();
+                _lastQuip = DateTime.MinValue;
+                Quip(string.Join(" ", args[1..]));
+                break;
+            case "quip-shot" when args.Length >= 3:
+                // Dev aid: a quip bubble drawn off screen.
+                var bubbleShot = new QuipBubble(string.Join(" ", args[2..]), new Rect(0, 400, 100, 100));
+                DashboardWindow.SaveElement((FrameworkElement)bubbleShot.Content, 320, args[1]);
+                bubbleShot.Close();
+                break;
+            case "guard-test":
+                // Dev aid: the privacy guard on made-up text (nothing is sent).
+                foreach (var sample in new[]
+                {
+                    "Card 4111 1111 1111 1111 exp 12/29, and order 1234 5678 9012 3456 (not a card).",
+                    "Aadhaar 2341 2341 2346 and phone 9876543210; PAN ABCPE1234F.",
+                    "Wifi password: hunter2!  my pin is 4455 and the PIN: 9911",
+                    "key sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123 and invoice INV-2231 for Rs 28,990 dated 2026-09-03",
+                })
+                {
+                    var (clean, hidden) = Core.Ai.PrivacyGuard.Clean(sample);
+                    Log.Info($"guard-test: {clean}  [{Core.Ai.PrivacyGuard.Describe(hidden)}]");
+                }
+                break;
+            case "suggest-test":
+                // Dev aid: what would be suggested for some made-up downloads (nothing runs).
+                foreach (var f in Directory.GetFiles(args.Length > 1 ? args[1] : ".")) Log.Info($"suggest-test {Path.GetFileName(f)}: {(Suggestions.ForDownload(f) is { } sg ? $"{sg.Action.Id} ({sg.Why})" : "-")}");
                 break;
             case "habit-test":
                 // Dev aid: what habit would be offered now, and the rules (nothing changes).
@@ -759,13 +790,15 @@ public partial class App : Application
     void WatchPc()
     {
         _pc = new PcWatch();
+        Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard;
         // Read the Start menu now, so "open Spotify" is instant later.
         System.Threading.Tasks.Task.Run(Apps.All);
         _pc.StateChanged += () => _buddy?.SetPcState(_pc.BatteryLow, _pc.Busy);
         _pc.PluggedIn += () => _buddy?.Cheer(Floater.Bolt);
         _pc.Downloaded += _ => _buddy?.Cheer(Floater.Download);
         _pc.FileArrived += AutoConvert;
-        _pc.CameBack += () => _buddy?.WelcomeBack();
+        _pc.CameBack += () => { _buddy?.WelcomeBack(); ComeBackQuip(); };
+        _pc.Downloaded += SuggestFor;
         _buddy?.SetPcState(_pc.BatteryLow, _pc.Busy);
         _levelCheck.Tick += (_, _) => CheckLevel();
         _levelCheck.Start();
@@ -843,6 +876,9 @@ public partial class App : Application
                 new SettingSwitch("Glass follows what's behind", "Glass look only. Off shows popups in screen recordings.", () => _settings.LiveGlass, ToggleLiveGlass),
                 new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
                 new SettingSwitch("Offer to take notes when a call starts", "Zoom, Teams, Meet in a browser and other calling apps. Asks once per call.", () => _settings.OfferNotes, () => { _settings.OfferNotes = !_settings.OfferNotes; _settings.Save(); }),
+                new SettingSwitch("Privacy guard", "Card numbers, Aadhaar and PAN numbers, passwords and keys in documents or copied text are hidden on this PC before anything goes to Claude.", () => _settings.PrivacyGuard, () => { _settings.PrivacyGuard = !_settings.PrivacyGuard; Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard; _settings.Save(); }),
+                new SettingSwitch("Suggest what to do with downloads", "A HEIC photo, a huge video, an archive: one tap to fix it. Worked out on this PC.", () => _settings.SuggestDownloads, () => { _settings.SuggestDownloads = !_settings.SuggestDownloads; _settings.Save(); }),
+                new SettingSwitch($"{CatName} says a word now and then", "Welcome back, what a job saved, your tasks for today. Never over full-screen apps.", () => _settings.Quips, () => { _settings.Quips = !_settings.Quips; _settings.Save(); }),
                 new SettingSwitch("Keep meeting recordings", "Also save a meeting's sound (M4A, with your recordings). Off: only the notes and the transcript stay.", () => _settings.KeepMeetingAudio, () => { _settings.KeepMeetingAudio = !_settings.KeepMeetingAudio; _settings.Save(); }),
             ],
             new AiSetting(
@@ -1233,6 +1269,80 @@ public partial class App : Application
         _captions = null;
         _captionsWindow?.Close();
         _captionsWindow = null;
+    }
+
+    // ---- Suggestions and quips ----
+
+    /// <summary>A new download that's probably wanted another way: one tap to do it.</summary>
+    void SuggestFor(string file)
+    {
+        if (!_settings.SuggestDownloads || _buddy?.FullScreenNow == true || Suggestions.ForDownload(file) is not { } suggestion) return;
+        var (action, why) = suggestion;
+        ToastWindow? toast = null;
+        var label = action.Label.TrimEnd('…');
+        toast = ToastWindow.Message($"New download: {Path.GetFileName(file)}", why, null,
+            (char.ToUpperInvariant(label[0]) + label[1..], () => { toast!.CloseAnimated(); JobRunner.Start(action, [file]); }),
+            ("Not now", () => toast!.CloseAnimated()));
+        ToastHost.Show(toast);
+        AiLog.Write("suggested", $"{action.Id} for {file}");
+    }
+
+    DateTime _lastQuip = DateTime.MinValue;
+    DateTime _lateNightQuip = DateTime.MinValue;
+    QuipBubble? _quip;
+    readonly Random _quipRandom = new();
+
+    /// <summary>A short line in a bubble above the cat; rare (one every 20 minutes at most).</summary>
+    void Quip(string text)
+    {
+        if (!_settings.Quips || _buddy is not { IsVisible: true } cat || cat.FullScreenNow) return;
+        if (DateTime.Now - _lastQuip < TimeSpan.FromMinutes(20)) return;
+        _lastQuip = DateTime.Now;
+        _quip?.Close();
+        _quip = new QuipBubble(text, new Rect(cat.Left, cat.Top, cat.ActualWidth, cat.ActualHeight));
+        _quip.Show();
+        AiLog.Write("quip", text);
+    }
+
+    static readonly string[] Welcomes =
+    [
+        "Welcome back. I kept your files warm.",
+        "Oh, you're back. I was definitely not asleep.",
+        "Back! Nothing got lost while you were away.",
+        "Hi again. Need anything? Just say my name.",
+    ];
+
+    /// <summary>Coming back to the PC: tasks for today, a word at night, or (now and then) a hello.</summary>
+    void ComeBackQuip()
+    {
+        var now = DateTime.Now;
+        var today = Todos.All.Where(t => !t.Done && t.Due is { } d && d.Date <= now.Date).ToList();
+        if (now.Hour < 5 && _lateNightQuip.Date != now.Date)
+        {
+            _lateNightQuip = now;
+            Quip($"It's {now:h:mm} in the morning. I'll keep watch; get some sleep soon.");
+        }
+        else if (today.Count > 0)
+            Quip(today.Count == 1 ? $"Welcome back. One thing for today: {today[0].Text}." : $"Welcome back. {today.Count} things for today, first: {today[0].Text}.");
+        else if (now.DayOfWeek == DayOfWeek.Friday && now.Hour >= 16)
+            Quip("Friday afternoon. Nearly there.");
+        else if (_quipRandom.Next(3) == 0)
+            Quip(Welcomes[_quipRandom.Next(Welcomes.Length)]);
+    }
+
+    /// <summary>A job that made things much smaller: say how much it saved.</summary>
+    void SavedQuip(Job job)
+    {
+        try
+        {
+            long before = job.Inputs.Where(File.Exists).Sum(f => new FileInfo(f).Length);
+            long after = job.Outputs.Where(File.Exists).Sum(f => new FileInfo(f).Length);
+            if (job.Outputs.Count > 0 && before - after > 5L * 1024 * 1024)
+                Quip($"That saved {FileChores.Size(before - after)}. Light as a feather.");
+        }
+        catch (IOException)
+        {
+        }
     }
 
     // ---- Habits ----

@@ -191,10 +191,11 @@ public static class Apps
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
 
     /// <summary>Asks each window of the app to close, like its X button. Never forces it.</summary>
-    public static string Close(string name)
+    /// <param name="justCheck">Only say what would close: "OK " and its name, or why nothing would.</param>
+    public static string Close(string name, bool justCheck = false)
     {
         if (Nicknames.TryGetValue(name.Trim(), out var real)) name = real;
-        if (name == "File Explorer") return CloseExplorer();
+        if (name == "File Explorer") return justCheck ? "OK File Explorer" : CloseExplorer();
         var running = Windows();
         try
         {
@@ -211,9 +212,10 @@ public static class Apps
                 return $"Nothing called \"{name}\" is open. Open now: {string.Join(", ", running.Select(r => r.Name).Distinct().Take(15))}.";
             // The taskbar and desktop live in Explorer too.
             matches.RemoveAll(m => m.Process.ProcessName.Equals("explorer", StringComparison.OrdinalIgnoreCase));
-            if (matches.Count == 0) return CloseExplorer();
-            foreach (var match in matches) match.Process.CloseMainWindow();
+            if (matches.Count == 0) return justCheck ? "OK File Explorer" : CloseExplorer();
             var label = matches[0].Name;
+            if (justCheck) return $"OK {label}{(matches.Count > 1 ? $" ({matches.Count} windows)" : "")}";
+            foreach (var match in matches) match.Process.CloseMainWindow();
             AiLog.Write("closed app", label);
             return matches.Count == 1 ? $"Asked {label} to close" : $"Asked {matches.Count} windows of {label} to close";
         }

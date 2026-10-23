@@ -28,7 +28,7 @@ public static class Translator
         var key = ClaudeKey.Read() ?? throw new InvalidOperationException("No Claude key.");
         var contents = Documents.Read(path, 400_000);
         if (contents.ScannedPdf != null) throw new InvalidOperationException("it's a scan with no text in it; ask me what it says instead");
-        var pieces = Split(contents.Text);
+        var pieces = Split(PrivacyGuard.Clean(contents.Text).Text);
         var client = new AnthropicClient { ApiKey = key };
         var done = new List<string>();
         for (int i = 0; i < pieces.Count; i++)

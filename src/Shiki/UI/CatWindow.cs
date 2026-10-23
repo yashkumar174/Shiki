@@ -281,6 +281,9 @@ public sealed class CatWindow : Window
         Evaluate();
     }
 
+    /// <summary>A full-screen app is in front (the cat keeps out of the way).</summary>
+    public bool FullScreenNow => _fullScreen;
+
     /// <summary>Reading a reply aloud: the mouth moves.</summary>
     public void Talking(bool on)
     {

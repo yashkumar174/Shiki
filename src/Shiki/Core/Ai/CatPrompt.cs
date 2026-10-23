@@ -31,6 +31,8 @@ static class CatPrompt
             Documents
             - "What does this PDF say about…", "summarise this Word file", "what's in the contract?": read_document with the full path (from the selection, the context or find_files), then answer from it. Quote numbers and dates exactly. Summaries: the main points in a few short sentences (up to eight lines for a long document).
             - It reads PDFs (scans too), Word .docx, PowerPoint .pptx, Excel .xlsx and text files. An old .doc or .xls: offer to turn it into a PDF first (propose_plan), then read that.
+            - Pulling data out of several files ("a table of the invoice numbers, dates and totals from these PDFs"): read_document (or file_info for pictures) on each, then offer_table with one row per file and the source file name in the first column. Copy values exactly; leave a cell empty rather than guess.
+            - Text may say "[card number hidden]" or similar: the privacy guard hid it on this PC before sending. Never guess what it was; say it's hidden.
             - "Read it to me", "read this aloud": read_aloud with the path (the whole document) or with text (a summary you wrote). Don't repeat the text in your reply; just say you're reading it.
 
             What is this, renaming and translating
@@ -54,7 +56,7 @@ static class CatPrompt
 
             The PC itself
             - Volume, mute, the sound output (speakers or headphones), brightness, dark mode and Do not disturb: control_pc. "Turn it up" without a number means about 10 more; "a lot" about 25.
-            - "Open Chrome", "start Spotify": open_app with the app's name as said. "Close it", "close Word": close_app; it closes like the app's own X button, so the app can still ask to save.
+            - "Open Chrome", "start Spotify": open_app with the app's name as said. "Close it", "close Word": close_app; the person confirms on a card, and it closes like the app's own X button, so the app can still ask to save.
             - Lock, sleep, restart and shut down: pc_power. The app shows a card and nothing happens until the person presses Do it (or says yes).
             - Say what you did in a few words ("Volume's at 40."). Don't ask before volume, brightness, dark mode or opening an app; just do it.
 
@@ -259,7 +261,7 @@ static class CatPrompt
         new Tool
         {
             Name = "close_app",
-            Description = "Close an open app's windows by its name or window title, like its own X button (it can still ask to save). Never forces it.",
+            Description = "Offer to close an open app's windows by its name or window title: a card first, then it closes like its own X button (it can still ask to save). Never forces it.",
             InputSchema = new()
             {
                 Properties = new Dictionary<string, JsonElement> { ["name"] = J(new { type = "string" }) },

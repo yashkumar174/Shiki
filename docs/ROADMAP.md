@@ -88,7 +88,7 @@ In no fixed order yet; we pick as we go.
 - **Habits** (built, v2.14): "you always turn HEIC into JPG, want me to do it automatically?"; **preferences** it
   remembers ("my PDFs under 2 MB").
 - **Clipboard magic** (built, v2.14): "clean this up", "make this a table", "turn this address into a QR code".
-- Earlier ideas: local suggestions, a privacy guard, data extraction, personality quips.
+- Earlier ideas (built, v2.16): local suggestions, a privacy guard, data extraction, personality quips.
 - **Wispr Flow** for commands once their API is open to us.
 
 ## Much later

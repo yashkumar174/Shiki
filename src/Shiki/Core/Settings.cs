@@ -63,6 +63,12 @@ public sealed class Settings
     public bool KeepMeetingAudio { get; set; }
     /// <summary>When a call starts (Zoom, Teams, Meet…), offer once to take notes.</summary>
     public bool OfferNotes { get; set; } = true;
+    /// <summary>A new download that's probably wanted another way (HEIC, a huge video, an archive): suggest it.</summary>
+    public bool SuggestDownloads { get; set; } = true;
+    /// <summary>The cat says a short line now and then (welcome back, what a job saved).</summary>
+    public bool Quips { get; set; } = true;
+    /// <summary>Hide card numbers, Aadhaar, PAN, passwords and keys in text before it goes to Claude.</summary>
+    public bool PrivacyGuard { get; set; } = true;
     /// <summary>What the cat wears (an unlocked accessory id), or null.</summary>
     public string? Accessory { get; set; }
     /// <summary>The level the cat had reached last time, to notice a new one.</summary>
