@@ -385,6 +385,16 @@ public partial class App : Application
                 // Dev aid: what would be suggested for some made-up downloads (nothing runs).
                 foreach (var f in Directory.GetFiles(args.Length > 1 ? args[1] : ".")) Log.Info($"suggest-test {Path.GetFileName(f)}: {(Suggestions.ForDownload(f) is { } sg ? $"{sg.Action.Id} ({sg.Why})" : "-")}");
                 break;
+            case "agent-selftest":
+                // Dev aid: the agent's hands without Claude: screen size and capture, key names, the sandbox's clicks and typing, the pill's look.
+                EnterBuddyMode();
+                AgentSelfTest();
+                break;
+            case "agent-sandbox" when args.Length >= 2:
+                // Dev aid: the agent on a pretend mail app drawn off screen (no real clicks or typing); questions are answered yes.
+                EnterBuddyMode();
+                _ = AgentSandboxTest(string.Join(" ", args[1..]));
+                break;
             case "habit-test":
                 // Dev aid: what habit would be offered now, and the rules (nothing changes).
                 Log.Info($"habit-test spot: {(Habits.Spot() is { } hs ? $"{hs.Extension} {hs.Action.Id} x{hs.Times}" : "-")}");
@@ -1211,6 +1221,7 @@ public partial class App : Application
         LookAtScreen = () => WindowShots.Capture(WindowShots.TopOtherWindow()),
         ReadAloud = ReadAloud,
         ReadClipboard = ReadClipboardForCat,
+        StartAgent = StartAgent,
         RunRoutine = name => Routines.Find(name) is { } routine ? RunRoutine(routine, spoken: false) : $"There's no routine called \"{name}\".",
         Replied = (text, spoken) =>
         {
@@ -1235,6 +1246,55 @@ public partial class App : Application
             await Mouth.Say(text, _settings.TalkVoice, full: true);
             if (_readingToast == toast) { toast.CloseAnimated(); _readingToast = null; }
         });
+    }
+
+    // ---- The agent: mouse and keyboard ----
+
+    ComputerAgent? _agent;
+
+    /// <summary>Starts the agent on a task; it reports back to the chat when it's done.</summary>
+    string StartAgent(string task)
+    {
+        if (_agent != null) return "I'm already working on something on screen. Stop it first (the pill at the top right).";
+        if (ClaudeKey.Read() is not { } key) return "I need a Claude API key first.";
+        _bubble?.Close();
+        // Out of the way, so the screen is the person's apps and not the dashboard.
+        if (_dashboard is { IsVisible: true } dashboard) dashboard.WindowState = WindowState.Minimized;
+        AgentPill? pill = null;
+        var agent = _agent = new ComputerAgent(new RealScreen(), question => pill!.Ask(question), url => OpenWebsite(new Uri(url)), Apps.Open);
+        pill = new AgentPill(agent, task);
+        pill.TookOver += reason =>
+        {
+            if (agent.Stopped) return;
+            agent.Stop();
+            AiLog.Write("agent took over", reason);
+            Chat.Say(new CatDid("\uE71A", reason));
+        };
+        pill.Show();
+        _buddy?.Listening(true);
+        Dispatcher.BeginInvoke(async () =>
+        {
+            string summary;
+            try
+            {
+                summary = await agent.Run(task, key);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("The agent failed", ex);
+                summary = CatChat.Explain(ex).Message ?? "Stopped.";
+            }
+            _agent = null;
+            pill.Close();
+            _buddy?.Listening(false);
+            _settings.AiSpentUsd += agent.Cost;
+            _settings.AiRequests++;
+            _settings.Save();
+            Chat.Report("\uE8A7", summary);
+            AiLog.Write("agent cost", $"${agent.Cost:0.000} over {agent.Steps} steps");
+            ToastHost.Show(ToastWindow.Message(agent.Stopped ? "Stopped" : "Done", summary));
+        });
+        return "Started: watch the pill at the top right. Touch the mouse or keyboard to take over.";
     }
 
     // ---- Live captions ----
@@ -1571,6 +1631,52 @@ public partial class App : Application
         if (_captionsWindow != null) DashboardWindow.SaveElement((FrameworkElement)_captionsWindow.Content, _captionsWindow.ActualWidth, Path.ChangeExtension(wav, ".png"));
         StopCaptions();
         Log.Info("captions-test done");
+    }
+
+    void AgentSelfTest()
+    {
+        var real = new RealScreen();
+        var png = real.Screenshot();
+        using (var image = System.Drawing.Image.FromStream(new MemoryStream(png)))
+            Log.Info($"agent-selftest: screen {System.Windows.Forms.Screen.PrimaryScreen!.Bounds.Size} -> shots {real.Size}, png {image.Width}x{image.Height}, {png.Length / 1024} KB; cursor {real.Cursor()}");
+        var zoom = real.Zoom(0, 0, 300, 200);
+        using (var image = System.Drawing.Image.FromStream(new MemoryStream(zoom))) Log.Info($"agent-selftest: zoom {image.Width}x{image.Height}");
+        foreach (var combo in new[] { "Return", "ctrl+s", "alt+Tab", "ctrl+shift+t", "Page_Down", "F5", "super", "a", "A", "@", "ctrl+a", "BackSpace" })
+            Log.Info($"agent-selftest: key {combo} = {string.Join(",", RealScreen.Keys(combo).Select(k => $"0x{k:X2}"))}");
+        var sandbox = new AgentSandbox();
+        sandbox.Click("left", 1, sandbox.Where("Reply"), null);
+        sandbox.Key("ctrl+a", 1);
+        sandbox.Type("Yes, Friday works.");
+        sandbox.Click("left", 1, sandbox.Where("Send"), null);
+        Log.Info($"agent-selftest: sandbox sent={sandbox.Sent} to={sandbox.To} body={sandbox.Body}");
+        File.WriteAllBytes(Path.Combine(Path.GetTempPath(), "agent-sandbox.png"), sandbox.Screenshot());
+        var agent = new ComputerAgent(sandbox, _ => System.Threading.Tasks.Task.FromResult(false), u => u, a => a);
+        var pill = new AgentPill(agent, "Reply to Rahul's email about lunch saying: Yes, Friday at 1 works for me.");
+        _ = pill.Ask(new AgentQuestion("Send this reply to Rahul: \"Yes, Friday at 1 works for me. See you there!\"?", true));
+        DashboardWindow.SaveElement((FrameworkElement)pill.Content, 380, Path.Combine(Path.GetTempPath(), "agent-pill.png"));
+        pill.Close();
+    }
+
+    async System.Threading.Tasks.Task AgentSandboxTest(string task)
+    {
+        if (ClaudeKey.Read() is not { } key) { Log.Info("agent-sandbox: no key"); return; }
+        var sandbox = new AgentSandbox();
+        var agent = new ComputerAgent(sandbox,
+            question => { Log.Info($"agent-sandbox: ASKED \"{question.Question}\" -> yes"); return System.Threading.Tasks.Task.FromResult(true); },
+            url => { Log.Info($"agent-sandbox: open website {url}"); return "Opened."; },
+            app => { Log.Info($"agent-sandbox: open app {app}"); return "Opened."; });
+        string summary;
+        try
+        {
+            summary = await agent.Run(task, key);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("agent-sandbox failed", ex);
+            return;
+        }
+        File.WriteAllBytes(Path.Combine(Path.GetTempPath(), "agent-sandbox.png"), sandbox.Screenshot());
+        Log.Info($"agent-sandbox: done in {agent.Steps} steps, ${agent.Cost:0.000}; sent={sandbox.Sent}; to={sandbox.To}; body={sandbox.Body.Replace("\n", " / ")}; summary: {summary}");
     }
 
     static void PcTest()

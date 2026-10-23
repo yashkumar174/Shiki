@@ -93,6 +93,6 @@ In no fixed order yet; we pick as we go.
 
 ## Much later
 
-- **Agents**: email replies (asks before sending), a browser agent, computer use. Never
+- **Agents** (built, v2.17, one computer-use agent: email through the browser, websites, apps; live test pending Claude credit): email replies (asks before sending), a browser agent, computer use. Never
   passwords or payments.
 - **Phone link**: files between phone and PC by voice or QR, after the desktop is polished.

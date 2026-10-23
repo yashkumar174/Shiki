@@ -94,6 +94,8 @@ public sealed class CatHands
     public required Func<(byte[] Png, string Title)?> LookAtScreen { get; init; }
     /// <summary>Runs a routine by name; says what it did (or that there's no such routine).</summary>
     public required Func<string, string> RunRoutine { get; init; }
+    /// <summary>Starts the agent on a task (it works by itself, with its own pill); says whether it started.</summary>
+    public required Func<string, string> StartAgent { get; init; }
     /// <summary>What's on the clipboard: text, or a picture (PNG), or neither.</summary>
     public required Func<(string? Text, byte[]? Png)> ReadClipboard { get; init; }
     /// <summary>Reads text aloud, all of it (a document); a Stop button shows meanwhile.</summary>
@@ -426,7 +428,7 @@ public sealed class CatChat(CatHands hands)
                     AiLog.Write("plan", card.Summary);
                     continue;
                 }
-                if (use.Name is "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app" && !waitForPerson)
+                if (use.Name is "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app" or "do_on_screen" && !waitForPerson)
                 {
                     var (card, problem) = await ChoreCard(use.Name, input);
                     if (card == null)
@@ -441,7 +443,7 @@ public sealed class CatChat(CatHands hands)
                     AiLog.Write("plan", $"{card.Summary}: {card.Detail}");
                     continue;
                 }
-                if (use.Name is "propose_plan" or "pc_power" or "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app")
+                if (use.Name is "propose_plan" or "pc_power" or "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app" or "do_on_screen")
                 {
                     results.Add(Result(use.ID, "Only one plan at a time; this one was ignored.", error: true));
                     continue;
@@ -570,6 +572,14 @@ public sealed class CatChat(CatHands hands)
         Notify();
     }
 
+    /// <summary>Something finished outside the chat (the agent): shown, and Claude hears of it with the next message.</summary>
+    public void Report(string glyph, string text)
+    {
+        _items.Add(new CatSaid(text));
+        _pending.Add(new TextBlockParam { Text = $"[The task on screen finished: {text}]" });
+        Notify();
+    }
+
     /// <summary>The person pressed Undo on a done card (a tidy): put things back.</summary>
     public async Task UndoPlan(PlanItem plan)
     {
@@ -632,6 +642,17 @@ public sealed class CatChat(CatHands hands)
                     card.Outputs = [target];
                     return outcome;
                 };
+                return (card, null);
+            }
+            case "do_on_screen":
+            {
+                var task = (Str(input, "task") ?? "").Trim();
+                if (task.Length == 0) return (null, "Say what to do.");
+                var card = new PlanItem($"Let {hands.CatName()} use the mouse and keyboard", [])
+                {
+                    Detail = $"{task}\nIt asks before sending, submitting or deleting anything, never types passwords or card numbers, and stops the moment you touch the mouse or keyboard. Uses {ComputerAgent.ModelName}: usually a few cents a task.",
+                };
+                card.Run = () => Task.FromResult(hands.StartAgent(task));
                 return (card, null);
             }
             case "close_app":
@@ -1155,7 +1176,8 @@ public sealed class CatChat(CatHands hands)
         hands.Spent(cost);
     }
 
-    static (string? Message, bool NeedsKey) Explain(Exception ex) => ex switch
+    /// <summary>A Claude error in plain words (null when it was just stopped), and whether the key needs fixing.</summary>
+    internal static (string? Message, bool NeedsKey) Explain(Exception ex) => ex switch
     {
         OperationCanceledException => (null, false),
         Anthropic.Exceptions.AnthropicUnauthorizedException => ("Claude didn't accept the API key. Check it in Settings, under Ask the cat.", true),
@@ -1175,7 +1197,6 @@ public sealed class CatChat(CatHands hands)
     static ImageBlockParam ImageBlock(byte[] png) =>
         new() { Source = new Base64ImageSource { Data = Convert.ToBase64String(png), MediaType = MediaType.ImagePng } };
 
-    /// <summary>"What's this error?": a picture of the window in front goes back to Claude as the tool's result.</summary>
     /// <summary>The privacy guard's pass over text leaving the PC, with a line in the chat when it hid something.</summary>
     string Guard(string text)
     {
@@ -1287,6 +1308,7 @@ public sealed class CatChat(CatHands hands)
         return Result(id, $"The text of \"{name}\"{about}. {Note}{cut}\n\n{contents.Text}");
     }
 
+    /// <summary>"What's this error?": a picture of the window in front goes back to Claude as the tool's result.</summary>
     ToolResultBlockParam LookAtScreen(string id)
     {
         var shot = hands.LookAtScreen();
