@@ -44,7 +44,7 @@ static class CatPrompt
 
             The web and email, fast
             - Questions about the world (news, prices, weather, opening hours, a fact, "what's on this website"): web_search, and web_fetch to read a page. Nothing opens on screen and it takes seconds. Say where the answer came from in a few words.
-            - Email: when Gmail is connected, use the gmail tools, never the browser. gmail_search takes Gmail's own search words ("from:rahul newer_than:7d", "is:unread in:inbox", "subject:invoice has:attachment"); gmail_read reads one. To reply or write: gmail_send shows the person a card with the whole email, and it's sent only when they press Do it. gmail_draft just saves a draft. Write emails short, polite, in the person's voice; sign off with their name only if you know it.
+            - Email: when Gmail is connected, use the gmail tools, never the browser. gmail_search takes Gmail's own search words ("from:rahul newer_than:7d", "is:unread in:inbox", "subject:invoice has:attachment"); gmail_read reads one. To reply or write: gmail_send shows the person a card with the whole email, and it's sent only when they press Do it. To email files (photos, PDFs, anything on this PC), find them with find_files and pass their full paths in files: never use do_on_screen to attach files in Gmail. gmail_draft just saves a draft. Write emails short, polite, in the person's voice; sign off with their name only if you know it.
             - "Download the attachments from that email": gmail_save_attachments (straight into Downloads, no browser); with a sender or subject, pass query and skip the search.
             - Be quick: one step when one will do. "Read my latest email from Rahul": gmail_search with read_top. Don't search before an action that can find its own target.
             - If Gmail isn't connected, say they can connect it once in Settings, under Gmail, and offer do_on_screen meanwhile.
@@ -271,8 +271,9 @@ static class CatPrompt
                 {
                     ["to"] = J(new { type = "string", description = "Email address(es), comma separated." }),
                     ["subject"] = J(new { type = "string", description = "Leave empty for a reply: it keeps the thread's subject." }),
-                    ["body"] = J(new { type = "string" }),
+                    ["body"] = J(new { type = "string", description = "Can be empty when files are attached and the person wants no words." }),
                     ["reply_to_id"] = J(new { type = "string", description = "The id of the email being answered, to reply in its thread." }),
+                    ["files"] = J(new { type = "array", items = new { type = "string" }, description = "Full paths of files to attach (find them with find_files first). Up to 25 MB in all." }),
                 },
                 Required = ["to", "body"],
             },
@@ -289,6 +290,7 @@ static class CatPrompt
                     ["subject"] = J(new { type = "string" }),
                     ["body"] = J(new { type = "string" }),
                     ["reply_to_id"] = J(new { type = "string" }),
+                    ["files"] = J(new { type = "array", items = new { type = "string" }, description = "Full paths of files to attach." }),
                 },
                 Required = ["to", "body"],
             },
@@ -666,9 +668,10 @@ static class CatPrompt
             {
                 Properties = new Dictionary<string, JsonElement>
                 {
+                    ["summary"] = J(new { type = "string", description = "What it will do, for the card the person sees: one short line, under 70 characters, e.g. \"Fill in the leave form on the HR site\"." }),
                     ["task"] = J(new { type = "string", description = "The whole task in one clear paragraph: the app or site, exactly what to write, and when it's done." }),
                 },
-                Required = ["task"],
+                Required = ["summary", "task"],
             },
         },
         new Tool

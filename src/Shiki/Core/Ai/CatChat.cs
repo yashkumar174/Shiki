@@ -63,6 +63,12 @@ public sealed class PlanItem(string summary, IReadOnlyList<PlanStep> steps) : Ch
     public bool Undone { get; internal set; }
     /// <summary>A line under the summary when there are no steps to show.</summary>
     public string? Detail { get; init; }
+    /// <summary>Files that go with it (an email's attachments), shown by name.</summary>
+    public IReadOnlyList<string> Attached { get; init; } = [];
+    /// <summary>The long version (an agent's full instructions), behind "Show the steps".</summary>
+    public string? More { get; init; }
+    /// <summary>Small print at the bottom: what it will and won't do.</summary>
+    public string? Fine { get; init; }
     public IReadOnlyList<PlanStep> Steps { get; } = steps;
     public PlanState State { get; internal set; } = PlanState.Waiting;
     /// <summary>The step running now (0-based) while Running.</summary>
@@ -830,11 +836,15 @@ public sealed class CatChat(CatHands hands)
             case "gmail_send":
             {
                 if (!Mail.Gmail.Connected) return (null, "Gmail isn't connected. Tell the person to connect it in Settings, under Gmail.");
-                var draft = new Mail.Gmail.Draft(Str(input, "to") ?? "", Str(input, "subject") ?? "", Str(input, "body") ?? "", Str(input, "reply_to_id"));
-                if (draft.To.Length == 0 || draft.Body.Trim().Length == 0) return (null, "An email needs a recipient and some words.");
+                var (files, problem) = Attachments(input);
+                if (problem != null) return (null, problem);
+                var draft = new Mail.Gmail.Draft(Str(input, "to") ?? "", Str(input, "subject") ?? "", Str(input, "body") ?? "", Str(input, "reply_to_id"), files);
+                if (draft.To.Length == 0 || draft.Body.Trim().Length == 0 && files.Count == 0) return (null, "An email needs a recipient and some words (or files).");
+                var lines = (draft.Subject.Length > 0 ? $"Subject: {draft.Subject}\n" : draft.ReplyToId != null ? "A reply in the same thread\n" : "") + draft.Body.Trim();
                 var card = new PlanItem($"Send an email to {draft.To}", [])
                 {
-                    Detail = (draft.Subject.Length > 0 ? $"Subject: {draft.Subject}\n" : draft.ReplyToId != null ? "A reply in the same thread\n" : "") + draft.Body,
+                    Detail = lines.Trim().Length > 0 ? lines.Trim() : null,
+                    Attached = files,
                 };
                 card.Run = async () =>
                 {
@@ -847,9 +857,14 @@ public sealed class CatChat(CatHands hands)
             {
                 var task = (Str(input, "task") ?? "").Trim();
                 if (task.Length == 0) return (null, "Say what to do.");
-                var card = new PlanItem($"Let {hands.CatName()} use the mouse and keyboard", [])
+                // The card says what it'll do in a line; the full instructions wait behind "Show the steps".
+                var summary = (Str(input, "summary") ?? "").Trim().TrimEnd('.');
+                if (summary.Length == 0) summary = task.Length <= 90 ? task.TrimEnd('.') : task[..task[..90].LastIndexOf(' ')].TrimEnd(',', '.') + "…";
+                var card = new PlanItem(summary, [])
                 {
-                    Detail = $"{task}\nIt asks before sending, submitting or deleting anything, never types passwords or card numbers, and pauses when you click or type yourself. Uses {ComputerAgent.ModelName}: usually a few cents a task.",
+                    Detail = $"{hands.CatName()} uses your mouse and keyboard for this.",
+                    More = task,
+                    Fine = $"Asks before sending or deleting anything, never types passwords, and stops if you click or type. Uses {ComputerAgent.ModelName}, a few cents a task.",
                 };
                 card.Run = () => Task.FromResult(hands.StartAgent(task));
                 return (card, null);
@@ -1231,9 +1246,11 @@ public sealed class CatChat(CatHands hands)
             case "gmail_draft":
             {
                 if (!Mail.Gmail.Connected) return "Gmail isn't connected (Settings, Gmail).";
-                var draft = new Mail.Gmail.Draft(Str(input, "to") ?? "", Str(input, "subject") ?? "", Str(input, "body") ?? "", Str(input, "reply_to_id"));
+                var (files, problem) = Attachments(input);
+                if (problem != null) return problem;
+                var draft = new Mail.Gmail.Draft(Str(input, "to") ?? "", Str(input, "subject") ?? "", Str(input, "body") ?? "", Str(input, "reply_to_id"), files);
                 await Mail.Gmail.SaveDraft(draft, CancellationToken.None);
-                _items.Add(new CatDid("\uE70F", $"Saved a draft to {draft.To} in Gmail"));
+                _items.Add(new CatDid("\uE70F", $"Saved a draft to {draft.To} in Gmail{(files.Count > 0 ? $" with {files.Count} file{(files.Count == 1 ? "" : "s")}" : "")}"));
                 return "Saved in Gmail's Drafts; nothing was sent.";
             }
             case "search_inside_files":
@@ -1684,6 +1701,24 @@ public sealed class CatChat(CatHands hands)
     {
         var all = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(block, block.GetType())) ?? [];
         return all.Where(kv => keep.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
+    }
+
+    /// <summary>An email's "files": full paths that exist, within Gmail's 25 MB; or what's wrong.</summary>
+    static (List<string> Files, string? Problem) Attachments(JsonElement input)
+    {
+        var files = new List<string>();
+        if (!input.TryGetProperty("files", out var list) || list.ValueKind != JsonValueKind.Array) return (files, null);
+        foreach (var item in list.EnumerateArray())
+        {
+            var path = (item.GetString() ?? "").Trim().Trim('"');
+            if (path.Length == 0) continue;
+            if (!File.Exists(path)) return (files, $"There's no file at {path}. Find it with find_files and pass its full path.");
+            if (!files.Contains(path, StringComparer.OrdinalIgnoreCase)) files.Add(path);
+        }
+        long total = files.Sum(f => new FileInfo(f).Length);
+        if (total > Mail.Gmail.MostAttached)
+            return (files, $"Those files come to {total / 1024.0 / 1024:0.#} MB; Gmail takes up to 25 MB in one email. Offer to send them in parts, or a zip.");
+        return (files, null);
     }
 
     static string? Str(JsonElement e, string name) =>

@@ -591,6 +591,15 @@ public partial class App : Application
                 DashboardWindow.SaveElement(pillShot, 420 + 36, args[1]);
                 voicePill.Close();
                 break;
+            case "mime-test" when args.Length >= 3:
+                // Dev aid: writes the email Shiki would send (to yourself, with these files) to a file; nothing is sent.
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    var mime = await Shiki.Core.Mail.Gmail.Preview(new Shiki.Core.Mail.Gmail.Draft("me@example.com", "Shiki logo photos", "", null, args.Skip(2).ToList()));
+                    await File.WriteAllBytesAsync(args[1], mime);
+                    Log.Info($"mime-test: {mime.Length:N0} bytes, {args.Length - 2} file(s)");
+                });
+                break;
             case "pill-demo":
                 // Dev aid: the "Hey Sky" pill opens (and, with words, they're asked), then grows into the chat.
                 EnterBuddyMode();
@@ -664,6 +673,10 @@ public partial class App : Application
                 // Dev aid: say something to the cat without opening anything (see it with "snapshot ask").
                 EnterBuddyMode();
                 _ = Chat.Send(string.Join(" ", args[1..]));
+                break;
+            case "ask-decline":
+                // Dev aid: press Not now on the waiting plan.
+                if (Chat.Items.OfType<PlanItem>().LastOrDefault(x => x.State == PlanState.Waiting) is { } declined) Chat.Decline(declined);
                 break;
             case "ask-confirm" when args.Length == 2:
                 // Dev aid: press Do it on the waiting plan, with results going to this folder for once.

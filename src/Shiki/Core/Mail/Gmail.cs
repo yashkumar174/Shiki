@@ -181,11 +181,12 @@ public static class Gmail
     static Task<JsonDocument> Call(HttpMethod method, string path, object? body, CancellationToken ct) => Google(method, Api + path, body, ct);
 
     /// <summary>Any Google API call with the signed-in access (Gmail, Calendar, People).</summary>
-    internal static async Task<JsonDocument> Google(HttpMethod method, string url, object? body, CancellationToken ct)
+    internal static async Task<JsonDocument> Google(HttpMethod method, string url, object? body, CancellationToken ct, HttpContent? content = null)
     {
         using var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await AccessToken(ct));
-        if (body != null) request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        if (content != null) request.Content = content;
+        else if (body != null) request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         using var response = await Http.SendAsync(request, ct);
         var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct) is { Length: > 0 } text ? text : "{}");
         if (!response.IsSuccessStatusCode)
@@ -257,10 +258,14 @@ public static class Gmail
             headers.GetValueOrDefault("subject", ""), Date(root), bodyText.Trim(), headers.GetValueOrDefault("message-id", ""), attachments);
     }
 
-    public sealed record Draft(string To, string Subject, string Body, string? ReplyToId);
+    /// <summary>An email to send or save; Files are full paths to attach.</summary>
+    public sealed record Draft(string To, string Subject, string Body, string? ReplyToId, IReadOnlyList<string>? Files = null);
 
-    /// <summary>The message as Gmail wants it: the whole email, base64url. A reply keeps its thread.</summary>
-    static async Task<object> Raw(Draft draft, CancellationToken ct)
+    /// <summary>Gmail's limit for what's attached to one email.</summary>
+    public const long MostAttached = 25L * 1024 * 1024;
+
+    /// <summary>The whole email (MIME), and the thread it belongs to when it's a reply.</summary>
+    static async Task<(byte[] Mime, string? ThreadId)> Build(Draft draft, CancellationToken ct)
     {
         string? threadId = null, inReplyTo = null, subject = draft.Subject;
         if (draft.ReplyToId is { Length: > 0 } replyTo)
@@ -274,25 +279,77 @@ public static class Gmail
         mime.Append("To: ").Append(draft.To).Append("\r\n");
         mime.Append("Subject: =?UTF-8?B?").Append(Convert.ToBase64String(Encoding.UTF8.GetBytes(subject ?? ""))).Append("?=\r\n");
         if (inReplyTo is { Length: > 0 }) mime.Append("In-Reply-To: ").Append(inReplyTo).Append("\r\nReferences: ").Append(inReplyTo).Append("\r\n");
-        mime.Append("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n");
-        mime.Append(Convert.ToBase64String(Encoding.UTF8.GetBytes(draft.Body.Replace("\r\n", "\n").Replace("\n", "\r\n")), Base64FormattingOptions.InsertLineBreaks));
-        var raw = Base64Url(Encoding.UTF8.GetBytes(mime.ToString()));
-        return threadId != null ? new { raw, threadId } : new { raw };
+        mime.Append("MIME-Version: 1.0\r\n");
+        var text = Convert.ToBase64String(Encoding.UTF8.GetBytes(draft.Body.Replace("\r\n", "\n").Replace("\n", "\r\n")), Base64FormattingOptions.InsertLineBreaks);
+        if (draft.Files is not { Count: > 0 } files)
+        {
+            mime.Append("Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n").Append(text);
+            return (Encoding.UTF8.GetBytes(mime.ToString()), threadId);
+        }
+        // The words, then each file.
+        var boundary = "shiki-" + Guid.NewGuid().ToString("N");
+        mime.Append("Content-Type: multipart/mixed; boundary=\"").Append(boundary).Append("\"\r\n\r\n");
+        mime.Append("--").Append(boundary).Append("\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n").Append(text).Append("\r\n");
+        foreach (var file in files)
+        {
+            var name = "=?UTF-8?B?" + Convert.ToBase64String(Encoding.UTF8.GetBytes(System.IO.Path.GetFileName(file))) + "?=";
+            mime.Append("--").Append(boundary).Append("\r\n");
+            mime.Append("Content-Type: ").Append(MediaType(file)).Append("; name=\"").Append(name).Append("\"\r\n");
+            mime.Append("Content-Disposition: attachment; filename=\"").Append(name).Append("\"\r\n");
+            mime.Append("Content-Transfer-Encoding: base64\r\n\r\n");
+            mime.Append(Convert.ToBase64String(await System.IO.File.ReadAllBytesAsync(file, ct), Base64FormattingOptions.InsertLineBreaks)).Append("\r\n");
+        }
+        mime.Append("--").Append(boundary).Append("--\r\n");
+        return (Encoding.UTF8.GetBytes(mime.ToString()), threadId);
+    }
+
+    /// <summary>Dev aid: the email exactly as it would go, without sending it.</summary>
+    public static async Task<byte[]> Preview(Draft draft) => (await Build(draft, CancellationToken.None)).Mime;
+
+    static string MediaType(string file) => System.IO.Path.GetExtension(file).ToLowerInvariant() switch
+    {
+        ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".gif" => "image/gif", ".webp" => "image/webp", ".heic" => "image/heic",
+        ".pdf" => "application/pdf", ".txt" => "text/plain", ".csv" => "text/csv", ".zip" => "application/zip",
+        ".doc" => "application/msword", ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".xls" => "application/vnd.ms-excel", ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".ppt" => "application/vnd.ms-powerpoint", ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        ".mp4" => "video/mp4", ".mov" => "video/quicktime", ".mp3" => "audio/mpeg", ".wav" => "audio/wav", ".m4a" => "audio/mp4",
+        _ => "application/octet-stream",
+    };
+
+    /// <summary>
+    /// Sends (or saves) the email: small ones as JSON, bigger ones (attachments over a few MB)
+    /// through Gmail's upload address, which takes the email as it is.
+    /// </summary>
+    static async Task<JsonDocument> Post(string what, Draft draft, CancellationToken ct)
+    {
+        var (mime, threadId) = await Build(draft, ct);
+        if (mime.Length < 4_000_000)
+        {
+            var raw = Base64Url(mime);
+            object message = threadId != null ? new { raw, threadId } : new { raw };
+            return await Call(HttpMethod.Post, what, what == "drafts" ? new { message } : message, ct);
+        }
+        var content = new ByteArrayContent(mime);
+        content.Headers.ContentType = new MediaTypeHeaderValue("message/rfc822");
+        return await Google(HttpMethod.Post, "https://gmail.googleapis.com/upload/gmail/v1/users/me/" + what + "?uploadType=media", null, ct, content);
     }
 
     public static async Task<string> Send(Draft draft, CancellationToken ct)
     {
-        using var sent = await Call(HttpMethod.Post, "messages/send", await Raw(draft, ct), ct);
-        AiLog.Write("gmail sent", $"to {draft.To}: {draft.Subject}");
+        using var sent = await Post("messages/send", draft, ct);
+        AiLog.Write("gmail sent", $"to {draft.To}: {draft.Subject}{Attached(draft)}");
         return sent.RootElement.GetProperty("id").GetString()!;
     }
 
     public static async Task<string> SaveDraft(Draft draft, CancellationToken ct)
     {
-        using var saved = await Call(HttpMethod.Post, "drafts", new { message = await Raw(draft, ct) }, ct);
-        AiLog.Write("gmail draft", $"to {draft.To}: {draft.Subject}");
+        using var saved = await Post("drafts", draft, ct);
+        AiLog.Write("gmail draft", $"to {draft.To}: {draft.Subject}{Attached(draft)}");
         return saved.RootElement.GetProperty("id").GetString()!;
     }
+
+    static string Attached(Draft draft) => draft.Files is { Count: > 0 } files ? $" (+{files.Count} file{(files.Count == 1 ? "" : "s")})" : "";
 
     /// <summary>
     /// Saves an email's attachments into a folder (all of them, or those whose name contains the

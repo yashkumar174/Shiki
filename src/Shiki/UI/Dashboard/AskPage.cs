@@ -164,11 +164,57 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         if (plan.Detail is { } note)
         {
             var line = k.Text(note, compact ? 12.5 : 13, P.Muted, wrap: true);
-            line.Margin = new Thickness(0, 4, 0, 12);
+            line.Margin = new Thickness(0, 4, 0, 0);
             stack.Children.Add(line);
         }
-        else stack.Children.Add(steps);
-        stack.Children.Add(PlanFooter(plan));
+        else if (plan.Steps.Count > 0) stack.Children.Add(steps);
+        // Attached files, one per line, by name.
+        if (plan.Attached.Count > 0)
+        {
+            var files = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+            foreach (var file in plan.Attached)
+            {
+                var row = new DockPanel { Margin = new Thickness(0, 0, 0, 4), ToolTip = file };
+                var clip = k.Icon("\uE723", 12, P.Muted);
+                clip.Margin = new Thickness(0, 1, 8, 0);
+                DockPanel.SetDock(clip, Dock.Left);
+                row.Children.Add(clip);
+                var name = k.Text(Path.GetFileName(file), compact ? 12.5 : 13, P.Text);
+                name.TextTrimming = TextTrimming.CharacterEllipsis;
+                row.Children.Add(name);
+                files.Children.Add(row);
+            }
+            stack.Children.Add(files);
+        }
+        // The long version, folded away.
+        if (plan.More is { } more)
+        {
+            var full = k.Text(more, compact ? 12 : 12.5, P.Muted, wrap: true);
+            full.Margin = new Thickness(0, 6, 0, 0);
+            full.Visibility = Visibility.Collapsed;
+            var toggle = k.Text("Show the steps", compact ? 12 : 12.5, P.Text, weight: FontWeights.SemiBold);
+            toggle.Margin = new Thickness(0, 8, 0, 0);
+            toggle.Cursor = System.Windows.Input.Cursors.Hand;
+            toggle.HorizontalAlignment = HorizontalAlignment.Left;
+            toggle.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                bool show = full.Visibility != Visibility.Visible;
+                full.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+                toggle.Text = show ? "Hide the steps" : "Show the steps";
+            };
+            stack.Children.Add(toggle);
+            stack.Children.Add(full);
+        }
+        if (plan.Fine is { } fine)
+        {
+            var small = k.Text(fine, compact ? 11.5 : 12, P.Faint, wrap: true);
+            small.Margin = new Thickness(0, 10, 0, 0);
+            stack.Children.Add(small);
+        }
+        var footer = PlanFooter(plan);
+        if (footer is FrameworkElement spaced && plan.Steps.Count == 0) spaced.Margin = new Thickness(spaced.Margin.Left, Math.Max(spaced.Margin.Top, 14), spaced.Margin.Right, spaced.Margin.Bottom);
+        stack.Children.Add(footer);
 
         var card = k.Card(stack, compact ? new Thickness(16, 14, 16, 14) : new Thickness(20, 18, 20, 18), 16);
         card.Margin = new Thickness(compact ? 30 : 36, 10, 0, 4);
