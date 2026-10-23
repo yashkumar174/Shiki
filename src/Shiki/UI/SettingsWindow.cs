@@ -11,8 +11,8 @@ using Shiki.Shell;
 
 namespace Shiki.UI;
 
-/// <summary>A switch in the settings window: a label and how to read and flip it.</summary>
-public sealed record SettingSwitch(string Label, string Hint, Func<bool> IsOn, Action Toggle);
+/// <summary>A switch in the settings window: a label, how to read and flip it, and the tab it lives on.</summary>
+public sealed record SettingSwitch(string Label, string Hint, Func<bool> IsOn, Action Toggle, string Tab = "general");
 
 /// <summary>A global shortcut in the settings window. Set returns false when another app owns it.</summary>
 public sealed record ShortcutSetting(string Label, Func<string> Get, Func<string, bool> Set);
@@ -38,9 +38,17 @@ public sealed record RoutineSetting(string CatName, Func<IReadOnlyList<Core.Rout
 public sealed record GmailSetting(Func<string?> Account, Func<bool> HasClient, Action<string, string> SaveClient,
     Func<System.Threading.Tasks.Task<string>> Connect, Func<System.Threading.Tasks.Task> Disconnect, Action<string> OpenLink);
 
-/// <summary>Shortcuts and the main switches, in one place.</summary>
+/// <summary>
+/// Settings, in tabs: General, Voice, AI and accounts, Meetings, Automation, Shortcuts. The tab
+/// last open is the one that opens next time.
+/// </summary>
 public sealed class SettingsWindow : Window
 {
+    static string _tab = "general";
+
+    /// <summary>The tab the window opens on (the last one used).</summary>
+    public static string OpenTab { get => _tab; set => _tab = value; }
+
     readonly Palette _p = Theme.Editor;
     readonly TextBlock _error = UiKit.Error();
     (ShortcutSetting Setting, Border Chip)? _recording;
@@ -61,9 +69,21 @@ public sealed class SettingsWindow : Window
         ResizeMode = ResizeMode.NoResize;
         UiKit.Prepare(this);
 
-        var stack = new StackPanel { Margin = new Thickness(26, 22, 26, 24) };
-        stack.Children.Add(UiKit.Title("Settings"));
+        var root = new StackPanel { Margin = new Thickness(26, 22, 26, 24) };
+        root.Children.Add(UiKit.Title("Settings"));
+        var tabRow = new WrapPanel { Margin = new Thickness(0, 4, 0, 2) };
+        root.Children.Add(tabRow);
+        var pages = new List<(string Id, string Label, StackPanel Page)>();
+        StackPanel Tab(string id, string label)
+        {
+            var tabPage = new StackPanel();
+            pages.Add((id, label, tabPage));
+            return tabPage;
+        }
+        IEnumerable<SettingSwitch> On(string tab) => switches.Where(s => s.Tab == tab);
 
+        // ---- General ----
+        var stack = Tab("general", "General");
         stack.Children.Add(UiKit.Heading("Where results go"));
         _nextTo = UiKit.Button("Next to the original", () => SetMode(false));
         _oneFolder = UiKit.Button("One folder", () => SetMode(true));
@@ -90,35 +110,94 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(_folderPart);
         ShowMode();
 
-        stack.Children.Add(UiKit.Heading("Shortcuts"));
+        stack.Children.Add(UiKit.Heading("The cat and Windows"));
+        foreach (var setting in On("general")) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+
+        // ---- Voice ----
+        if (ai != null) AddVoice(Tab("voice", "Voice"), ai);
+
+        // ---- AI and accounts ----
+        var accounts = Tab("ai", "AI and accounts");
+        if (ai != null) AddAi(accounts, ai);
+        if (On("ai").Any())
+        {
+            accounts.Children.Add(UiKit.Heading("Privacy"));
+            foreach (var setting in On("ai")) accounts.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+        }
+        if (gmail != null) AddGmail(accounts, gmail);
+        if (ai != null)
+        {
+            var spent = UiKit.Body(ai.Spent());
+            spent.Margin = new Thickness(0, 22, 0, 8);
+            accounts.Children.Add(spent);
+            accounts.Children.Add(UiKit.Button("Open the cat's log", ai.OpenLog));
+        }
+
+        // ---- Meetings ----
+        if (On("meetings").Any())
+        {
+            var meetings = Tab("meetings", "Meetings");
+            meetings.Children.Add(UiKit.Heading("Meeting notes"));
+            meetings.Children.Add(UiKit.Body("Notes for any call: say \"take notes\" or use the shortcut, and at the end you get a summary, the decisions and everyone's tasks."));
+            foreach (var setting in On("meetings")) meetings.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+        }
+
+        // ---- Automation ----
+        var automation = Tab("automation", "Automation");
+        if (On("automation").Any())
+        {
+            automation.Children.Add(UiKit.Heading("Suggestions"));
+            foreach (var setting in On("automation")) automation.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+        }
+        if (routines != null) AddRoutines(automation, routines);
+
+        // ---- Shortcuts ----
+        var keys = Tab("shortcuts", "Shortcuts");
+        keys.Children.Add(UiKit.Heading("Shortcuts"));
+        keys.Children.Add(UiKit.Body("They work everywhere in Windows. Click one, then press the keys you want."));
         foreach (var shortcut in shortcuts)
         {
             Border? chip = null;
             chip = UiKit.Button(shortcut.Get(), () => StartRecording(shortcut, chip!));
-            stack.Children.Add(Line(shortcut.Label, "Click, then press the keys you want.", chip));
+            keys.Children.Add(Line(shortcut.Label, "", chip));
         }
-        stack.Children.Add(_error);
+        keys.Children.Add(_error);
 
-        stack.Children.Add(UiKit.Heading("Behaviour"));
-        foreach (var setting in switches) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
-
-        if (ai != null) AddAi(stack, ai);
-        if (gmail != null) AddGmail(stack, gmail);
-        if (routines != null) AddRoutines(stack, routines);
+        // The tabs: one page shows at a time.
+        var shownPages = new StackPanel();
+        var chips = new List<(string Id, Border Chip)>();
+        void ShowTab(string id)
+        {
+            if (pages.All(p => p.Id != id)) id = pages[0].Id;
+            _tab = id;
+            foreach (var (pageId, _, page) in pages) page.Visibility = pageId == id ? Visibility.Visible : Visibility.Collapsed;
+            foreach (var (chipId, chip) in chips) UiKit.Select(chip, chipId == id);
+        }
+        foreach (var (id, label, page) in pages.Where(p => p.Page.Children.Count > 0))
+        {
+            var chip = UiKit.Button(label, () => ShowTab(id));
+            chip.Margin = new Thickness(0, 0, 6, 6);
+            chips.Add((id, chip));
+            tabRow.Children.Add(chip);
+            shownPages.Children.Add(page);
+        }
+        pages.RemoveAll(p => p.Page.Children.Count == 0);
+        root.Children.Add(shownPages);
+        ShowTab(_tab);
 
         var done = UiKit.Button("Done", Close, primary: true);
         done.Margin = new Thickness(0, 22, 0, 0);
-        stack.Children.Add(done);
-        Content = stack;
+        root.Children.Add(done);
+        Content = root;
 
         PreviewKeyDown += OnKey;
     }
 
     void AddAi(StackPanel stack, AiSetting ai)
     {
-        stack.Children.Add(UiKit.Heading("Ask the cat (uses Claude)"));
-        stack.Children.Add(UiKit.Body($"Tell {ai.CatName} what to do with your files. Your words and the names of the files involved go to Claude Haiku 5.5 with your own API key; the files themselves are never uploaded. Nothing is sent while this is off."));
-        stack.Children.Add(Line($"Ask {ai.CatName}", "On the Ask page and with the shortcut above.", Toggle(new SettingSwitch("", "", ai.IsOn, ai.Toggle))));
+        stack.Children.Add(UiKit.Heading($"Ask {ai.CatName} (Claude)"));
+        stack.Children.Add(UiKit.Body($"{ai.CatName} understands what you say with Claude Haiku 5.5 and your own API key. Only what a request needs goes to Claude: your words, file names, and a document, picture or email when you ask about it. Nothing is sent while this is off."));
+        stack.Children.Add(Line($"Ask {ai.CatName}", "The Ask page, voice, and the Ask shortcut.", Toggle(new SettingSwitch("", "", ai.IsOn, ai.Toggle))));
 
         var status = UiKit.Body("");
         status.Margin = new Thickness(0, 10, 0, 6);
@@ -159,13 +238,6 @@ public sealed class SettingsWindow : Window
         field.Margin = new Thickness(0, 0, 8, 0);
         stack.Children.Add(row);
         Show();
-
-        AddVoice(stack, ai);
-
-        var spent = UiKit.Body(ai.Spent());
-        spent.Margin = new Thickness(0, 14, 0, 8);
-        stack.Children.Add(spent);
-        stack.Children.Add(UiKit.Button("Open the cat's log", ai.OpenLog));
     }
 
     /// <summary>
@@ -174,8 +246,8 @@ public sealed class SettingsWindow : Window
     /// </summary>
     void AddVoice(StackPanel stack, AiSetting ai)
     {
-        stack.Children.Add(UiKit.Heading("Voice"));
-        stack.Children.Add(UiKit.Body($"Press the mic or the talk shortcut and speak (English). The microphone is only on while {ai.CatName} is listening, unless \"Hey {ai.CatName}\" is on."));
+        stack.Children.Add(UiKit.Heading("Speech"));
+        stack.Children.Add(UiKit.Body($"Press the mic or the talk shortcut and speak. The microphone is only on while {ai.CatName} is listening, unless \"Hey {ai.CatName}\" is on."));
 
         Action refresh = () => { };
 
@@ -247,6 +319,7 @@ public sealed class SettingsWindow : Window
         Show();
 
         // Hindi and Hinglish.
+        stack.Children.Add(UiKit.Heading("Language"));
         stack.Children.Add(Line("I speak", "Hindi + English understands Hindi, English and Hinglish, even mixed in one sentence. With Deepgram it's live; Whisper on this PC downloads a 190 MB model for it once.", new Border()));
         var languages = new List<(string Id, Border Chip)>();
         void ShowLanguage() { foreach (var (id, chip) in languages) UiKit.Select(chip, ai.GetSpeechLanguage() == id); }
@@ -272,6 +345,7 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(scriptRow);
         ShowScript();
 
+        stack.Children.Add(UiKit.Heading("Listening"));
         stack.Children.Add(Line("Answer plans by voice", "After a spoken request, listen for \"yes\" or \"no\" when a plan card shows.",
             Toggle(new SettingSwitch("", "", ai.VoiceAnswers, ai.ToggleVoiceAnswers))));
 
@@ -315,6 +389,7 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(teach);
 
         // The cat's own voice.
+        stack.Children.Add(UiKit.Heading("Talking back"));
         stack.Children.Add(Line($"{ai.CatName} talks back", "Replies are read aloud. The mic waits until it's done, so it never hears itself; press the mic or the shortcut to cut it short.", new Border()));
         var talks = new List<(string Id, Border Chip)>();
         void ShowTalk() { foreach (var (id, chip) in talks) UiKit.Select(chip, ai.GetTalkBack() == id); }

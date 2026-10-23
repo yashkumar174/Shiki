@@ -478,9 +478,10 @@ public partial class App : Application
                 if (_dashboard == null) ShowDashboard(wholePage, show: false);
                 _dashboard!.SnapshotWhole(args[2], wholePage);
                 break;
-            case "snapshot-settings" when args.Length == 2:
-                // Dev aid: the settings drawn off screen, whole.
+            case "snapshot-settings" when args.Length is 2 or 3:
+                // Dev aid: the settings drawn off screen, whole (one tab, if named).
                 EnterBuddyMode();
+                if (args.Length == 3) SettingsWindow.OpenTab = args[2];
                 var settingsShot = NewSettings();
                 DashboardWindow.SaveElement((FrameworkElement)settingsShot.Content, 640, args[1]);
                 settingsShot.Close();
@@ -915,11 +916,11 @@ public partial class App : Application
                 new SettingSwitch("Shift + drag opens the wheel", "Hold Shift while dragging any file.", () => _settings.ShiftDragSummon, ToggleShiftDrag),
                 new SettingSwitch("Glass follows what's behind", "Glass look only. Off shows popups in screen recordings.", () => _settings.LiveGlass, ToggleLiveGlass),
                 new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
-                new SettingSwitch("Offer to take notes when a call starts", "Zoom, Teams, Meet in a browser and other calling apps. Asks once per call.", () => _settings.OfferNotes, () => { _settings.OfferNotes = !_settings.OfferNotes; _settings.Save(); }),
-                new SettingSwitch("Privacy guard", "Card numbers, Aadhaar and PAN numbers, passwords and keys in documents or copied text are hidden on this PC before anything goes to Claude.", () => _settings.PrivacyGuard, () => { _settings.PrivacyGuard = !_settings.PrivacyGuard; Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard; _settings.Save(); }),
-                new SettingSwitch("Suggest what to do with downloads", "A HEIC photo, a huge video, an archive: one tap to fix it. Worked out on this PC.", () => _settings.SuggestDownloads, () => { _settings.SuggestDownloads = !_settings.SuggestDownloads; _settings.Save(); }),
+                new SettingSwitch("Offer to take notes when a call starts", "Zoom, Teams, Meet in a browser and other calling apps. Asks once per call.", () => _settings.OfferNotes, () => { _settings.OfferNotes = !_settings.OfferNotes; _settings.Save(); }, "meetings"),
+                new SettingSwitch("Privacy guard", "Card numbers, Aadhaar and PAN numbers, passwords and keys in documents or copied text are hidden on this PC before anything goes to Claude.", () => _settings.PrivacyGuard, () => { _settings.PrivacyGuard = !_settings.PrivacyGuard; Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard; _settings.Save(); }, "ai"),
+                new SettingSwitch("Suggest what to do with downloads", "A HEIC photo, a huge video, an archive: one tap to fix it. Worked out on this PC.", () => _settings.SuggestDownloads, () => { _settings.SuggestDownloads = !_settings.SuggestDownloads; _settings.Save(); }, "automation"),
                 new SettingSwitch($"{CatName} says a word now and then", "Welcome back, what a job saved, your tasks for today. Never over full-screen apps.", () => _settings.Quips, () => { _settings.Quips = !_settings.Quips; _settings.Save(); }),
-                new SettingSwitch("Keep meeting recordings", "Also save a meeting's sound (M4A, with your recordings). Off: only the notes and the transcript stay.", () => _settings.KeepMeetingAudio, () => { _settings.KeepMeetingAudio = !_settings.KeepMeetingAudio; _settings.Save(); }),
+                new SettingSwitch("Keep meeting recordings", "Also save a meeting's sound (M4A, with your recordings). Off: only the notes and the transcript stay.", () => _settings.KeepMeetingAudio, () => { _settings.KeepMeetingAudio = !_settings.KeepMeetingAudio; _settings.Save(); }, "meetings"),
             ],
             new AiSetting(
                 CatName,
