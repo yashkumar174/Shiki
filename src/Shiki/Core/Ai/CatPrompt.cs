@@ -47,6 +47,12 @@ static class CatPrompt
             - "Download the attachments from that email": gmail_save_attachments (straight into Downloads, no browser).
             - If Gmail isn't connected, say they can connect it once in Settings, under Gmail, and offer do_on_screen meanwhile.
 
+            Calendar and contacts (Google, when connected)
+            - "What's on today / tomorrow / this week?": calendar_list. Say it plainly: times, what, where; mention a video call if there's one.
+            - "Add dentist tomorrow at 5": calendar_add straight away (no card), an hour long unless said; all-day for birthdays and trips. With other people: calendar_invite (a card, since they get emails).
+            - "Move my 3 pm to Friday", "cancel the dentist": find it with calendar_list, then calendar_move or calendar_delete (both cards).
+            - A person by name (to email, invite or WhatsApp): contacts_find first; ask only if it finds nobody or several, then remember the answer. WhatsApp numbers: use the phone with the country code, digits only.
+
             Fast ways first (seconds), the mouse and keyboard last (minutes)
             - Open things directly with open_link: a YouTube search (https://www.youtube.com/results?search_query=…), Google Maps (https://www.google.com/maps/search/…), Amazon or Flipkart searches, any page. For Spotify: find the song or playlist with web_search, then open_link with its spotify:track:ID (or spotify:playlist:ID, spotify:artist:ID) and then_play true. Or spotify:search:… to show results.
             - Play, pause, next and previous song: control_pc media_play_pause, media_next, media_previous.
@@ -138,6 +144,95 @@ static class CatPrompt
 
     static IEnumerable<ToolUnion> MailTools() =>
     [
+        new Tool
+        {
+            Name = "calendar_list",
+            Description = "The person's Google Calendar events between two days (default today), with ids.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["from"] = J(new { type = "string", description = "YYYY-MM-DD, default today." }),
+                    ["to"] = J(new { type = "string", description = "YYYY-MM-DD (inclusive), default the same day." }),
+                },
+            },
+        },
+        new Tool
+        {
+            Name = "calendar_add",
+            Description = "Add an event to the person's own calendar straight away (no guests).",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["title"] = J(new { type = "string" }),
+                    ["start"] = J(new { type = "string", description = "YYYY-MM-DDTHH:MM, or YYYY-MM-DD with all_day." }),
+                    ["end"] = J(new { type = "string", description = "Optional; an hour after the start by default." }),
+                    ["all_day"] = J(new { type = "boolean" }),
+                    ["location"] = J(new { type = "string" }),
+                    ["notes"] = J(new { type = "string" }),
+                },
+                Required = ["title", "start"],
+            },
+        },
+        new Tool
+        {
+            Name = "calendar_invite",
+            Description = "Offer to add an event with guests (they get invitation emails): a card first.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["title"] = J(new { type = "string" }),
+                    ["start"] = J(new { type = "string", description = "YYYY-MM-DDTHH:MM" }),
+                    ["end"] = J(new { type = "string" }),
+                    ["attendees"] = J(new { type = "array", items = new { type = "string" }, description = "Guests' email addresses." }),
+                    ["location"] = J(new { type = "string" }),
+                    ["notes"] = J(new { type = "string" }),
+                },
+                Required = ["title", "start", "attendees"],
+            },
+        },
+        new Tool
+        {
+            Name = "calendar_move",
+            Description = "Offer to move an event (by id from calendar_list) to a new start: a card first.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["id"] = J(new { type = "string" }),
+                    ["title"] = J(new { type = "string", description = "Its title, for the card." }),
+                    ["start"] = J(new { type = "string", description = "YYYY-MM-DDTHH:MM" }),
+                    ["end"] = J(new { type = "string", description = "Optional; keeps its length by default." }),
+                },
+                Required = ["id", "start"],
+            },
+        },
+        new Tool
+        {
+            Name = "calendar_delete",
+            Description = "Offer to delete an event (by id): a card first.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["id"] = J(new { type = "string" }),
+                    ["title"] = J(new { type = "string", description = "Its title, for the card." }),
+                },
+                Required = ["id"],
+            },
+        },
+        new Tool
+        {
+            Name = "contacts_find",
+            Description = "Find people in the person's Google contacts and among people they've emailed: names, emails, phone numbers.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement> { ["name"] = J(new { type = "string" }) },
+                Required = ["name"],
+            },
+        },
         new Tool
         {
             Name = "gmail_search",

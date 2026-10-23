@@ -57,7 +57,7 @@ public sealed class SkillsPage(DashKit k, DashboardHost host)
             new("agla gaana", "Next song (\"gaana roko\" pauses it).", How.Instant),
             new("meri downloads saaf kar do", "Anything else in Hinglish goes to Claude, who answers in Hinglish.", How.Ask),
         ]),
-        ("The web and email", "Answered in seconds, without opening the browser.",
+        ("The web, email and calendar", "Answered in seconds, without opening the browser.",
         [
             new("what's the weather in Pune today?", "Searches the web and says where the answer came from.", How.Ask),
             new("latest news about the Indian cricket team", "News, prices, opening hours, facts.", How.Ask),
@@ -66,6 +66,9 @@ public sealed class SkillsPage(DashKit k, DashboardHost host)
             new("reply to my latest email saying thanks, I'll get back to you tomorrow", "Shows you the whole email on a card; sent only when you press Do it.", How.Ask),
             new("find emails with invoices from this month", "Gmail's own search, from your words.", How.Ask),
             new("download the attachments from my latest email", "Saved straight into Downloads, no browser.", How.Ask),
+            new("what's on today?", "Your Google Calendar (connect Google once in Settings).", How.Ask),
+            new("add dentist tomorrow at 5", "Straight into your calendar. With guests, a card first.", How.Ask),
+            new("email Rahul saying I'll be late", "Finds Rahul in your contacts; shows the email before sending.", How.Ask),
             new("play Pink Floyd on Spotify", "Finds it and starts it in the Spotify app.", How.Ask),
             new("search YouTube for lofi music", "Opens the results straight away.", How.Ask),
         ]),

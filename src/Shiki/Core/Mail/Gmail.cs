@@ -31,7 +31,22 @@ public static class Gmail
     static readonly SecretStore Client = new("Shiki/GmailClient");   // "client id\nclient secret"
     static readonly SecretStore Refresh = new("Shiki/GmailToken");   // the refresh token
     static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
-    const string Scope = "https://www.googleapis.com/auth/gmail.modify";
+    // Gmail, the calendar's events, and contacts (saved ones, and "other contacts": people emailed).
+    const string GmailScope = "https://www.googleapis.com/auth/gmail.modify";
+    const string CalendarScope = "https://www.googleapis.com/auth/calendar.events";
+    const string ContactsScope = "https://www.googleapis.com/auth/contacts.readonly";
+    const string OtherContactsScope = "https://www.googleapis.com/auth/contacts.other.readonly";
+    static readonly string Scope = string.Join(" ", GmailScope, CalendarScope, ContactsScope, OtherContactsScope);
+
+    static string GrantedFile => System.IO.Path.Combine(Log.DataDir, "google-access.txt");
+    static string? _granted;
+
+    /// <summary>What Google let Shiki do (the scopes, space separated), as last told.</summary>
+    static string Granted => _granted ??= System.IO.File.Exists(GrantedFile) ? System.IO.File.ReadAllText(GrantedFile) : GmailScope;
+
+    /// <summary>Calendar and contacts were allowed (an older connection had only Gmail: connect again).</summary>
+    public static bool HasCalendar => Connected && Granted.Contains(CalendarScope);
+    public static bool HasContacts => Connected && Granted.Contains(ContactsScope);
     const string Api = "https://gmail.googleapis.com/gmail/v1/users/me/";
 
     static string? _access;
@@ -74,7 +89,7 @@ public static class Gmail
         var state = Base64Url(RandomNumberGenerator.GetBytes(16));
         var url = "https://accounts.google.com/o/oauth2/v2/auth?" + string.Join("&",
             $"client_id={Uri.EscapeDataString(id)}", $"redirect_uri={Uri.EscapeDataString(redirect)}", "response_type=code",
-            $"scope={Uri.EscapeDataString(Scope)}", $"code_challenge={challenge}", "code_challenge_method=S256",
+            $"scope={Uri.EscapeDataString(Scope)}", "include_granted_scopes=true", $"code_challenge={challenge}", "code_challenge_method=S256",
             "access_type=offline", "prompt=consent", $"state={state}");
 
         using var listener = new HttpListener();
@@ -132,6 +147,11 @@ public static class Gmail
     static void Remember(JsonElement token)
     {
         _access = token.GetProperty("access_token").GetString();
+        if (token.TryGetProperty("scope", out var scope) && scope.GetString() is { Length: > 0 } granted && granted != _granted)
+        {
+            _granted = granted;
+            try { System.IO.File.WriteAllText(GrantedFile, granted); } catch (System.IO.IOException) { }
+        }
         _accessUntil = DateTime.UtcNow.AddSeconds(token.TryGetProperty("expires_in", out var e) ? e.GetInt32() - 60 : 3000);
     }
 
@@ -158,9 +178,12 @@ public static class Gmail
         return _access!;
     }
 
-    static async Task<JsonDocument> Call(HttpMethod method, string path, object? body, CancellationToken ct)
+    static Task<JsonDocument> Call(HttpMethod method, string path, object? body, CancellationToken ct) => Google(method, Api + path, body, ct);
+
+    /// <summary>Any Google API call with the signed-in access (Gmail, Calendar, People).</summary>
+    internal static async Task<JsonDocument> Google(HttpMethod method, string url, object? body, CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(method, Api + path);
+        using var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await AccessToken(ct));
         if (body != null) request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
         using var response = await Http.SendAsync(request, ct);
@@ -169,7 +192,15 @@ public static class Gmail
         {
             var message = Error(json);
             json.Dispose();
-            throw new InvalidOperationException($"Gmail said: {message}");
+            // The API isn't switched on in the person's Google Cloud project yet.
+            if (message.Contains("has not been used in project") || message.Contains("is disabled"))
+            {
+                var api = url.Contains("calendar") ? "Google Calendar API" : url.Contains("people") ? "People API" : "Gmail API";
+                throw new InvalidOperationException($"The {api} is switched off in your Google Cloud project: open console.cloud.google.com, APIs & Services, Library, find {api} and press Enable. Then try again.");
+            }
+            if ((int)response.StatusCode == 403 && message.Contains("insufficient", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Shiki needs a little more access: Settings, AI and accounts, Google, Connect again.");
+            throw new InvalidOperationException($"Google said: {message}");
         }
         return json;
     }

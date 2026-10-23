@@ -421,6 +421,10 @@ public partial class App : Application
                 EnterBuddyMode();
                 AgentSelfTest();
                 break;
+            case "google-test":
+                // Dev aid: today's calendar and a contacts search (read-only; nothing goes to Claude).
+                _ = GoogleTest(args.Length > 1 ? args[1] : "a");
+                break;
             case "gmail-test":
                 // Dev aid: the newest email's sender and subject (read-only; nothing goes to Claude).
                 _ = GmailTest();
@@ -997,7 +1001,9 @@ public partial class App : Application
                     _settings.GmailAccount = null;
                     _settings.Save();
                 },
-                url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose()),
+                url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose(),
+                () => Core.Mail.Gmail.HasCalendar,
+                () => Core.Mail.Gmail.HasContacts),
             new CatSetting(
                 () => CatSprites.Skins.Where(c => CatLevel.CatUnlocked(c.Id, Level())).Select(c => (c.Id, c.Name, (ImageSource)CatSprites.Head(c))).ToList(),
                 () => _settings.Cat, SetCat,
@@ -1842,6 +1848,23 @@ public partial class App : Application
         }
     }
 
+    static async System.Threading.Tasks.Task GoogleTest(string name)
+    {
+        Log.Info($"google-test: calendar allowed {Core.Mail.Gmail.HasCalendar}, contacts allowed {Core.Mail.Gmail.HasContacts}");
+        try
+        {
+            var events = await Core.Mail.Calendar.Between(DateTime.Today, DateTime.Today.AddDays(2), default);
+            Log.Info($"google-test: {events.Count} events today and tomorrow" + string.Concat(events.Take(5).Select(e => " | " + Core.Mail.Calendar.Describe(e))));
+        }
+        catch (Exception ex) { Log.Info($"google-test calendar: {ex.Message}"); }
+        try
+        {
+            var people = await Core.Mail.Contacts.Find(name, default);
+            Log.Info($"google-test: {people.Count} contacts for \"{name}\"" + string.Concat(people.Take(3).Select(p => $" | {p.Name} ({p.Emails.Count} emails, {p.Phones.Count} phones)")));
+        }
+        catch (Exception ex) { Log.Info($"google-test contacts: {ex.Message}"); }
+    }
+
     static async System.Threading.Tasks.Task GmailTest()
     {
         try
@@ -2121,11 +2144,49 @@ public partial class App : Application
         return null;
     }
 
+    // ---- Meetings from the calendar ----
+
+    List<Core.Mail.CalendarEvent> _upcoming = [];
+    DateTime _upcomingRead = DateTime.MinValue;
+    readonly HashSet<string> _meetingOffered = [];
+
+    /// <summary>A calendar meeting with a video call is starting: offer to join it, and to take notes.</summary>
+    async void WatchMeetings()
+    {
+        if (!Core.Mail.Gmail.HasCalendar || !_settings.OfferNotes) return;
+        try
+        {
+            var now = DateTime.Now;
+            if (now - _upcomingRead > TimeSpan.FromMinutes(10))
+            {
+                _upcomingRead = now;
+                _upcoming = await Core.Mail.Calendar.Between(now.AddMinutes(-5), now.AddHours(2), default);
+            }
+            foreach (var meeting in _upcoming.Where(e => !e.AllDay && e.JoinLink != null && e.Start <= now.AddMinutes(1) && e.Start >= now.AddMinutes(-3)))
+            {
+                if (!_meetingOffered.Add(meeting.Id)) continue;
+                var link = meeting.JoinLink!;
+                void Join() => Process.Start(new ProcessStartInfo(link) { UseShellExecute = true })?.Dispose();
+                ToastWindow? toast = null;
+                toast = ToastWindow.Message($"{meeting.Title} is starting", meeting.Attendees.Count > 0 ? $"With {string.Join(", ", meeting.Attendees.Take(4))}." : "Your video call.", null,
+                    ("Join and take notes", () => { toast!.CloseAnimated(); Join(); if (_meeting == null) StartNotes(meeting.Title); }),
+                    ("Join", () => { toast!.CloseAnimated(); Join(); }),
+                    ("Not now", () => toast!.CloseAnimated()));
+                ToastHost.Show(toast);
+                AiLog.Write("meeting starting", meeting.Title);
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Couldn't check the calendar", ex);
+        }
+    }
+
     // ---- Task reminders ----
 
     void StartReminders()
     {
-        _reminders.Tick += (_, _) => RemindDue();
+        _reminders.Tick += (_, _) => { RemindDue(); WatchMeetings(); };
         _reminders.Start();
         RemindDue();
     }

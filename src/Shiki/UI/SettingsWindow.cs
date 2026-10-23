@@ -40,7 +40,8 @@ public sealed record CatSetting(Func<IReadOnlyList<(string Id, string Name, Imag
 
 /// <summary>Gmail through Google's API: connected or not, the person's own OAuth client, and connecting.</summary>
 public sealed record GmailSetting(Func<string?> Account, Func<bool> HasClient, Action<string, string> SaveClient,
-    Func<System.Threading.Tasks.Task<string>> Connect, Func<System.Threading.Tasks.Task> Disconnect, Action<string> OpenLink);
+    Func<System.Threading.Tasks.Task<string>> Connect, Func<System.Threading.Tasks.Task> Disconnect, Action<string> OpenLink,
+    Func<bool> HasCalendar, Func<bool> HasContacts);
 
 /// <summary>
 /// Settings, in tabs: General, Voice, AI and accounts, Meetings, Automation, Shortcuts. The tab
@@ -547,7 +548,7 @@ public sealed class SettingsWindow : Window
 
     void AddGmail(StackPanel stack, GmailSetting gmail)
     {
-        stack.Children.Add(UiKit.Heading("Gmail"));
+        stack.Children.Add(UiKit.Heading("Google: Gmail, Calendar, Contacts"));
         var part = new StackPanel();
         stack.Children.Add(part);
         void Fill()
@@ -562,6 +563,24 @@ public sealed class SettingsWindow : Window
                     Fill();
                 });
                 part.Children.Add(Line($"Connected: {account}", "Searching, reading and drafting take a moment, with no browser. Sending always shows you the email first.", disconnect));
+                if (gmail.HasCalendar() && gmail.HasContacts())
+                {
+                    part.Children.Add(UiKit.Body("Calendar and Contacts are on too: \"what's on today?\", \"add dentist tomorrow at 5\", and people found by name.", 11.5));
+                    return;
+                }
+                // Connected before Calendar and Contacts came along: two APIs to switch on, then connect again.
+                part.Children.Add(UiKit.Body("Calendar and Contacts need two things, once:\n"
+                    + "1. In Google Cloud, APIs & Services, Library: find Google Calendar API and press Enable, then People API and press Enable.\n"
+                    + "2. Press Connect again below and allow the new permissions.", 11.5));
+                var again = UiKit.Button("Connect again…", async () =>
+                {
+                    try { await gmail.Connect(); } catch (Exception) { }
+                    Fill();
+                }, primary: true);
+                var cloud = UiKit.Button("Open Google Cloud", () => gmail.OpenLink("https://console.cloud.google.com/apis/library/calendar-json.googleapis.com"));
+                var buttons = UiKit.Row(again, cloud);
+                buttons.Margin = new Thickness(0, 8, 0, 0);
+                part.Children.Add(buttons);
                 return;
             }
             part.Children.Add(UiKit.Body("Connect Gmail and the cat finds, reads and answers your email in a moment, without opening the browser. Google asks you to sign in on its own page; Shiki never sees your password, and you can disconnect any time.", 11.5));
