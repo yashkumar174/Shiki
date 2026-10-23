@@ -299,6 +299,10 @@ public partial class App : Application
             case "run" when args.Length >= 3:
                 Queue(args[1], args[2..]);
                 break;
+            case "recent-test":
+                // Dev aid: what a new conversation is told about lately.
+                Log.Info("recent-test: " + Core.Ai.Recent.Summary().Replace("\n", " | "));
+                break;
             case "say-test" when args.Length >= 2:
                 // Dev aid: the cat says this, the normal way (first-sound time goes to the log).
                 _ = Mouth.Say(string.Join(" ", args[1..]), _settings.TalkVoice);
@@ -1314,6 +1318,7 @@ public partial class App : Application
         ReadAloud = ReadAloud,
         ReadClipboard = ReadClipboardForCat,
         StartAgent = StartAgent,
+        SendWhatsApp = SendWhatsApp,
         RunRoutine = name => Routines.Find(name) is { } routine ? RunRoutine(routine, spoken: false) : $"There's no routine called \"{name}\".",
         Replied = (text, spoken) =>
         {
@@ -1340,6 +1345,34 @@ public partial class App : Application
         });
     }
 
+    // ---- WhatsApp ----
+
+    /// <summary>
+    /// WhatsApp opens on the chat with the message typed (its own link, no searching), and once
+    /// its window is in front, Enter sends it. If it never comes up, the message waits there.
+    /// </summary>
+    async System.Threading.Tasks.Task<string> SendWhatsApp(string phone, string text)
+    {
+        var link = $"whatsapp://send?phone={phone}&text={Uri.EscapeDataString(text)}";
+        Process.Start(new ProcessStartInfo(link) { UseShellExecute = true })?.Dispose();
+        AiLog.Write("whatsapp", $"to {phone}: {text.Length} characters");
+        for (int i = 0; i < 40; i++)
+        {
+            await System.Threading.Tasks.Task.Delay(250);
+            NativeMethods.GetWindowThreadProcessId(NativeMethods.GetForegroundWindow(), out var pid);
+            string? name = null;
+            try { using var process = Process.GetProcessById((int)pid); name = process.ProcessName; } catch (ArgumentException) { }
+            if (name != null && name.Contains("WhatsApp", StringComparison.OrdinalIgnoreCase))
+            {
+                // Give the chat a moment to load the message into the box.
+                await System.Threading.Tasks.Task.Delay(1200);
+                TypeText.PressEnter();
+                return "Sent on WhatsApp.";
+            }
+        }
+        return "WhatsApp is open with the message ready: press Enter to send it.";
+    }
+
     // ---- The agent: mouse and keyboard ----
 
     ComputerAgent? _agent;
@@ -1355,13 +1388,15 @@ public partial class App : Application
         AgentPill? pill = null;
         var agent = _agent = new ComputerAgent(new RealScreen(), question => pill!.Ask(question), url => OpenWebsite(new Uri(url)), Apps.Open);
         pill = new AgentPill(agent, task);
-        pill.TookOver += reason =>
+        pill.StopPressed += () =>
         {
             if (agent.Stopped) return;
             agent.Stop();
-            AiLog.Write("agent took over", reason);
-            Chat.Say(new CatDid("\uE71A", reason));
+            AiLog.Write("agent stopped", "Stop pressed");
+            Chat.Say(new CatDid("\uE71A", "Stopped."));
         };
+        pill.Paused += agent.Pause;
+        pill.Resumed += agent.Resume;
         pill.Show();
         _buddy?.Listening(true);
         Dispatcher.BeginInvoke(async () =>
@@ -1386,7 +1421,7 @@ public partial class App : Application
             AiLog.Write("agent cost", $"${agent.Cost:0.000} over {agent.Steps} steps");
             ToastHost.Show(ToastWindow.Message(agent.Stopped ? "Stopped" : "Done", summary));
         });
-        return "Started: watch the pill at the top right. Touch the mouse or keyboard to take over.";
+        return "Started: watch the pill at the top right. Click or type yourself and it pauses.";
     }
 
     // ---- Live captions ----

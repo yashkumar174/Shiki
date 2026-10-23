@@ -213,6 +213,19 @@ public static class PcControl
         return $"Windows didn't let me switch it, so I opened the notification settings: turn Do not disturb {(on ? "on" : "off")} there.";
     }
 
+    // ---- Media ----
+
+    /// <summary>Play or pause, next, previous: the keyboard's media keys, for whatever is playing (Spotify, YouTube…).</summary>
+    public static string Media(string what)
+    {
+        byte key = what switch { "next" => 0xB0, "previous" => 0xB1, _ => 0xB3 };
+        keybd_event(key, 0, 1, UIntPtr.Zero);
+        keybd_event(key, 0, 1 | 2, UIntPtr.Zero);
+        return what switch { "next" => "Next song", "previous" => "Previous song", _ => "Play / pause" };
+    }
+
+    [DllImport("user32.dll")] static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
+
     // ---- Power ----
 
     public enum Power { Lock, Sleep, Restart, ShutDown }

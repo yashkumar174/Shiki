@@ -73,6 +73,36 @@ public sealed class ComputerAgent
 
     public void Stop() => _stop.Cancel();
 
+    TaskCompletionSource? _resume;
+    // The person used the PC while it waited: the screen may have changed under the next action.
+    bool _interrupted;
+
+    /// <summary>The person is using the PC: wait (between steps) until Resume.</summary>
+    public void Pause()
+    {
+        if (_resume != null) return;
+        _resume = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _interrupted = true;
+        Set("Paused");
+        AiLog.Write("agent paused", "the person used the PC");
+    }
+
+    public void Resume()
+    {
+        var resume = _resume;
+        _resume = null;
+        Set("Carrying on…");
+        resume?.TrySetResult();
+    }
+
+    async Task WaitIfPaused()
+    {
+        if (_resume is { } resume)
+            using (_stop.Token.Register(() => resume.TrySetResult()))
+                await resume.Task;
+        _stop.Token.ThrowIfCancellationRequested();
+    }
+
     void Set(string status)
     {
         Status = status;
@@ -158,7 +188,7 @@ public sealed class ComputerAgent
         {
             for (int turn = 0; turn < MaxTurns; turn++)
             {
-                _stop.Token.ThrowIfCancellationRequested();
+                await WaitIfPaused();
                 Set(turn == 0 ? "Looking at the screen…" : "Thinking…");
                 // One slow answer mustn't hang the agent: two minutes per step at most.
                 using var step = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
@@ -170,8 +200,8 @@ public sealed class ComputerAgent
                     System = new List<TextBlockParam> { new() { Text = System(width, height) } },
                     Tools = Tools,
                     Messages = _messages,
-                    // Medium effort: quicker steps; screen work is mostly look-and-click.
-                    OutputConfig = new OutputConfig { Effort = Effort.Medium },
+                    // Low effort: quick steps; screen work is mostly look-and-click, and it checks with a screenshot.
+                    OutputConfig = new OutputConfig { Effort = Effort.Low },
                     CacheControl = new CacheControlEphemeral(),
                 }, step.Token);
                 Cost += (response.Usage.InputTokens * InputPrice + (response.Usage.CacheCreationInputTokens ?? 0) * CacheWritePrice
@@ -288,6 +318,14 @@ public sealed class ComputerAgent
     /// <summary>One computer action; a screenshot or zoom comes back as a picture, the rest as OK.</summary>
     async Task<ToolResultBlockParam> Act(string id, string name, JsonElement input)
     {
+        await WaitIfPaused();
+        // After the person used the PC, look again before touching anything.
+        if (_interrupted && name is not ("screenshot" or "zoom" or "wait" or "cursor_position"))
+        {
+            _interrupted = false;
+            throw new InvalidOperationException("The person used the PC for a moment, so the screen may have changed: take a new screenshot before going on.");
+        }
+        if (name == "screenshot") _interrupted = false;
         Steps++;
         (int X, int Y)? At(string property = "coordinate") =>
             input.TryGetProperty(property, out var c) && c.ValueKind == JsonValueKind.Array && c.GetArrayLength() == 2 ? (c[0].GetInt32(), c[1].GetInt32()) : null;

@@ -263,6 +263,43 @@ public static class Gmail
         return saved.RootElement.GetProperty("id").GetString()!;
     }
 
+    /// <summary>
+    /// Saves an email's attachments into a folder (all of them, or those whose name contains the
+    /// words), never over an existing file. Tiny inline pictures (logos in a signature) are skipped.
+    /// </summary>
+    public static async Task<List<string>> SaveAttachments(string id, string? nameContains, string folder, CancellationToken ct)
+    {
+        using var m = await Call(HttpMethod.Get, $"messages/{id}?format=full", null, ct);
+        var found = new List<(string Name, string AttachmentId, long Size)>();
+        void Walk(JsonElement part)
+        {
+            var name = part.TryGetProperty("filename", out var f) ? f.GetString() ?? "" : "";
+            if (name.Length > 0 && part.TryGetProperty("body", out var body) && body.TryGetProperty("attachmentId", out var attachment))
+                found.Add((name, attachment.GetString()!, body.TryGetProperty("size", out var size) ? size.GetInt64() : 0));
+            if (part.TryGetProperty("parts", out var parts)) foreach (var p in parts.EnumerateArray()) Walk(p);
+        }
+        Walk(m.RootElement.GetProperty("payload"));
+        var wanted = found.Where(a => a.Size > 4096 || !Regex.IsMatch(a.Name, @"\.(png|jpe?g|gif)$", RegexOptions.IgnoreCase))
+            .Where(a => string.IsNullOrWhiteSpace(nameContains) || nameContains.Split(' ', StringSplitOptions.RemoveEmptyEntries).All(w => a.Name.Contains(w, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        System.IO.Directory.CreateDirectory(folder);
+        var saved = new List<string>();
+        foreach (var (name, attachmentId, _) in wanted)
+        {
+            using var data = await Call(HttpMethod.Get, $"messages/{id}/attachments/{attachmentId}", null, ct);
+            var bytes = FromBase64Url(data.RootElement.GetProperty("data").GetString()!);
+            var safe = string.Concat(name.Split(System.IO.Path.GetInvalidFileNameChars())).Trim();
+            if (safe.Length == 0) safe = "attachment";
+            var path = System.IO.Path.Combine(folder, safe);
+            for (int i = 2; System.IO.File.Exists(path); i++)
+                path = System.IO.Path.Combine(folder, $"{System.IO.Path.GetFileNameWithoutExtension(safe)} ({i}){System.IO.Path.GetExtension(safe)}");
+            await System.IO.File.WriteAllBytesAsync(path, bytes, ct);
+            saved.Add(path);
+        }
+        AiLog.Write("attachments", $"{saved.Count} from \"{id}\" to {folder}");
+        return saved;
+    }
+
     public static async Task MarkRead(string id, CancellationToken ct)
     {
         using var _ = await Call(HttpMethod.Post, $"messages/{id}/modify", new { removeLabelIds = new[] { "UNREAD" } }, ct);

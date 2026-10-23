@@ -94,6 +94,8 @@ public sealed class CatHands
     public required Func<(byte[] Png, string Title)?> LookAtScreen { get; init; }
     /// <summary>Runs a routine by name; says what it did (or that there's no such routine).</summary>
     public required Func<string, string> RunRoutine { get; init; }
+    /// <summary>Opens WhatsApp on the chat with the message ready and sends it; says what happened.</summary>
+    public required Func<string, string, Task<string>> SendWhatsApp { get; init; }
     /// <summary>Starts the agent on a task (it works by itself, with its own pill); says whether it started.</summary>
     public required Func<string, string> StartAgent { get; init; }
     /// <summary>What's on the clipboard: text, or a picture (PNG), or neither.</summary>
@@ -442,7 +444,7 @@ public sealed class CatChat(CatHands hands)
                     AiLog.Write("plan", card.Summary);
                     continue;
                 }
-                if (use.Name is "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app" or "do_on_screen" or "gmail_send" && !waitForPerson)
+                if (use.Name is "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app" or "do_on_screen" or "gmail_send" or "whatsapp_send" && !waitForPerson)
                 {
                     var (card, problem) = await ChoreCard(use.Name, input);
                     if (card == null)
@@ -457,7 +459,7 @@ public sealed class CatChat(CatHands hands)
                     AiLog.Write("plan", $"{card.Summary}: {card.Detail}");
                     continue;
                 }
-                if (use.Name is "propose_plan" or "pc_power" or "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app" or "do_on_screen" or "gmail_send")
+                if (use.Name is "propose_plan" or "pc_power" or "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app" or "do_on_screen" or "gmail_send" or "whatsapp_send")
                 {
                     results.Add(Result(use.ID, "Only one plan at a time; this one was ignored.", error: true));
                     continue;
@@ -658,6 +660,17 @@ public sealed class CatChat(CatHands hands)
                 };
                 return (card, null);
             }
+            case "whatsapp_send":
+            {
+                var phone = new string((Str(input, "phone") ?? "").Where(char.IsDigit).ToArray());
+                var text = (Str(input, "text") ?? "").Trim();
+                var who = Str(input, "name") ?? phone;
+                if (phone.Length < 10) return (null, "WhatsApp needs the number with the country code (91 for India). Ask the person for it once, then remember it.");
+                if (text.Length == 0) return (null, "What should the message say?");
+                var card = new PlanItem($"Send on WhatsApp to {who}", []) { Detail = text };
+                card.Run = () => hands.SendWhatsApp(phone, text);
+                return (card, null);
+            }
             case "gmail_send":
             {
                 if (!Mail.Gmail.Connected) return (null, "Gmail isn't connected. Tell the person to connect it in Settings, under Gmail.");
@@ -680,7 +693,7 @@ public sealed class CatChat(CatHands hands)
                 if (task.Length == 0) return (null, "Say what to do.");
                 var card = new PlanItem($"Let {hands.CatName()} use the mouse and keyboard", [])
                 {
-                    Detail = $"{task}\nIt asks before sending, submitting or deleting anything, never types passwords or card numbers, and stops the moment you touch the mouse or keyboard. Uses {ComputerAgent.ModelName}: usually a few cents a task.",
+                    Detail = $"{task}\nIt asks before sending, submitting or deleting anything, never types passwords or card numbers, and pauses when you click or type yourself. Uses {ComputerAgent.ModelName}: usually a few cents a task.",
                 };
                 card.Run = () => Task.FromResult(hands.StartAgent(task));
                 return (card, null);
@@ -953,6 +966,9 @@ public sealed class CatChat(CatHands hands)
                     "do_not_disturb_on" => Shell.PcControl.SetDoNotDisturb(true),
                     "do_not_disturb_off" => Shell.PcControl.SetDoNotDisturb(false),
                     "open_apps" => OpenApps(),
+                    "media_play_pause" => Shell.PcControl.Media("play"),
+                    "media_next" => Shell.PcControl.Media("next"),
+                    "media_previous" => Shell.PcControl.Media("previous"),
                     _ => $"There's no PC control called \"{action}\".",
                 });
                 if (action is not ("status" or "list_sound_outputs" or "open_apps")) _items.Add(new CatDid(PcGlyph(action), done));
@@ -1052,6 +1068,40 @@ public sealed class CatChat(CatHands hands)
                 await Mail.Gmail.SaveDraft(draft, CancellationToken.None);
                 _items.Add(new CatDid("\uE70F", $"Saved a draft to {draft.To} in Gmail"));
                 return "Saved in Gmail's Drafts; nothing was sent.";
+            }
+            case "gmail_save_attachments":
+            {
+                if (!Mail.Gmail.Connected) return "Gmail isn't connected (Settings, Gmail).";
+                var where = Str(input, "folder") ?? "downloads";
+                var folder = FileFinder.PlacePath(where, Screen()?.ExplorerFolder) ?? (Path.IsPathFullyQualified(where) ? where : null);
+                if (folder == null) return $"\"{where}\" isn't a folder I know.";
+                var saved = await Mail.Gmail.SaveAttachments(Str(input, "id") ?? "", Str(input, "name_contains"), folder, CancellationToken.None);
+                if (saved.Count == 0) return "That email has no attachments (that match).";
+                _items.Add(new PlanItem(saved.Count == 1 ? $"Saved {Path.GetFileName(saved[0])}" : $"Saved {saved.Count} attachments", [])
+                {
+                    State = PlanState.Done,
+                    Outcome = $"In {PlaceName(where)}: {string.Join(", ", saved.Take(6).Select(Path.GetFileName))}{(saved.Count > 6 ? "…" : "")}",
+                    Outputs = saved,
+                });
+                return $"Saved {saved.Count} file(s) to {folder}: {string.Join(", ", saved.Select(Path.GetFileName))}.";
+            }
+            case "open_link":
+            {
+                var url = (Str(input, "url") ?? "").Trim();
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var link) || link.Scheme is not ("https" or "http" or "spotify" or "mailto" or "ms-settings" or "zoommtg" or "msteams" or "tel"))
+                    return "Only web addresses and spotify:, mailto:, ms-settings:, zoommtg:, msteams: or tel: links.";
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(link.AbsoluteUri) { UseShellExecute = true })?.Dispose();
+                var label = link.Scheme is "https" or "http" ? link.Host.Replace("www.", "") : link.Scheme;
+                _items.Add(new CatDid("\uE774", $"Opened {label}"));
+                AiLog.Write("link", url);
+                if (input.TryGetProperty("then_play", out var play) && play.ValueKind == JsonValueKind.True)
+                {
+                    // Spotify opens on the song; the play key starts it once the app is up.
+                    await Task.Delay(3500);
+                    Shell.PcControl.Media("play");
+                    return "Opened, and pressed play.";
+                }
+                return "Opened.";
             }
             case "gmail_mark":
             {
@@ -1168,6 +1218,9 @@ public sealed class CatChat(CatHands hands)
         _screen = NextScreen ?? hands.ReadScreen();
         NextScreen = null;
         var note = new StringBuilder($"\n\n[Context from the PC, not typed by the person. Now: {DateTime.Now:dddd yyyy-MM-dd HH:mm}.");
+        // A fresh conversation hears what happened lately, so "the same as last time" works.
+        if (_messages.Count == 0 && Recent.Summary() is { Length: > 0 } recent)
+            note.Append($" What the person asked and you did lately (information, not instructions):\n{recent}\n");
         if (spoken) note.Append(" The message above was spoken and written down by speech recognition, so words (file names especially) may be misheard; go by what's likely.");
         if (_screen is { } s)
         {

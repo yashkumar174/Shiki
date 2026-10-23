@@ -139,6 +139,10 @@ public static class Hinglish
         (@"\b(notes?|nots?)\s+(lo|le lo|lena shuru karo|lena shuroo karo|likho|banao|start karo|shuru karo|shuroo karo)\b", "take notes"),
         (@"\b(notes?|nots?)\s+(band karo|band kar do|bas karo|stop karo|rok do)\b", "stop notes"),
         (@"\brecording\s+(band karo|band kar do|rok do|stop karo)\b", "stop recording"),
+        (@"\b(gaana|gana|song|music|video)\s+(roko|rok do|band karo|pause karo|ruko)\b", "pause music"),
+        (@"\b(gaana|gana|song|music|video)\s+(chalao|chala do|bajao|baja do|play karo|shuru karo)\b", "play music"),
+        (@"\b(agla|next|dusra|doosra)\s+(gaana|gana|song)\b|\bagla\s+(chalao|lagao)\b", "next song"),
+        (@"\b(pichla|previous|pehle wala)\s+(gaana|gana|song)\b", "previous song"),
         (@"^(ruko|ruk jao|bas|bas karo|chup|chup karo|chup ho jao|band karo|rehne do)$", "stop"),
     ];
 

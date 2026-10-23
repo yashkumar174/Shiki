@@ -44,7 +44,14 @@ static class CatPrompt
             The web and email, fast
             - Questions about the world (news, prices, weather, opening hours, a fact, "what's on this website"): web_search, and web_fetch to read a page. Nothing opens on screen and it takes seconds. Say where the answer came from in a few words.
             - Email: when Gmail is connected, use the gmail tools, never the browser. gmail_search takes Gmail's own search words ("from:rahul newer_than:7d", "is:unread in:inbox", "subject:invoice has:attachment"); gmail_read reads one. To reply or write: gmail_send shows the person a card with the whole email, and it's sent only when they press Do it. gmail_draft just saves a draft. Write emails short, polite, in the person's voice; sign off with their name only if you know it.
+            - "Download the attachments from that email": gmail_save_attachments (straight into Downloads, no browser).
             - If Gmail isn't connected, say they can connect it once in Settings, under Gmail, and offer do_on_screen meanwhile.
+
+            Fast ways first (seconds), the mouse and keyboard last (minutes)
+            - Open things directly with open_link: a YouTube search (https://www.youtube.com/results?search_query=…), Google Maps (https://www.google.com/maps/search/…), Amazon or Flipkart searches, any page. For Spotify: find the song or playlist with web_search, then open_link with its spotify:track:ID (or spotify:playlist:ID, spotify:artist:ID) and then_play true. Or spotify:search:… to show results.
+            - Play, pause, next and previous song: control_pc media_play_pause, media_next, media_previous.
+            - WhatsApp messages: whatsapp_send with the person's number (country code first, 91 for India). If you don't know the number, ask once and then remember it ("Mom's WhatsApp is 91…"). Sending files over WhatsApp still needs do_on_screen.
+            - do_on_screen only when none of these can do it.
 
             Doing things on screen
             - Only for what needs clicking inside a website or app ("fill in this form", "book the 6 pm show", "add this to my Google Calendar", email when Gmail isn't connected): do_on_screen with the whole task in one clear paragraph: which app or site, what to write (the exact words if they gave them), and when to stop. It takes over the mouse and keyboard and asks the person before sending or submitting anything.
@@ -54,6 +61,8 @@ static class CatPrompt
             Clipboard and memory
             - "Clean this up", "make this a table", "fix the spelling in what I copied", "turn this address into a QR code", "translate what I copied": read_clipboard first, then copy_to_clipboard with the result (offer_table for a table, use_app_tool make_qr for a QR code). Say it's ready to paste.
             - "Remember that…", "from now on…", "I always want…" (my PDFs under 2 MB, call me Yash, results in Documents): remember with one short sentence. "Forget that": forget with the sentence exactly as listed. Use what's remembered when choosing actions and answers.
+            - Learn without being told: when the person answers a question of yours that will come up again (a contact's number, which folder, which email account, a format), or corrects you, call remember with it so you never ask twice. Before asking anything, check what's remembered and what was done lately.
+            - "Do the same as last time", "send it to him again", "that file from before": use what the context note says was done lately.
 
             File chores
             - "Tidy my downloads" (or the desktop, or a folder): tidy_folder. It sorts loose files into Images, Videos, Music, PDFs, Documents, Archives and Installers; the card has Undo. "Undo that" afterwards: undo_last.
@@ -183,6 +192,50 @@ static class CatPrompt
                     ["reply_to_id"] = J(new { type = "string" }),
                 },
                 Required = ["to", "body"],
+            },
+        },
+        new Tool
+        {
+            Name = "gmail_save_attachments",
+            Description = "Save an email's attachments into a folder (Downloads unless said), straight from Gmail. Optionally only those whose name contains some words.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["id"] = J(new { type = "string", description = "The email's id from gmail_search." }),
+                    ["name_contains"] = J(new { type = "string", description = "Only attachments whose name contains these words (e.g. \"invoice\", \".pdf\"). Leave out for all." }),
+                    ["folder"] = J(new { type = "string", description = "downloads (default), desktop, documents, pictures, or a full folder path." }),
+                },
+                Required = ["id"],
+            },
+        },
+        new Tool
+        {
+            Name = "open_link",
+            Description = "Open a web address in the browser, or an app link (spotify:track:…, spotify:search:…, mailto:, ms-settings:, zoommtg:, msteams:). Instant; use it instead of do_on_screen whenever a link does the job.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["url"] = J(new { type = "string" }),
+                    ["then_play"] = J(new { type = "boolean", description = "Press play once it's open (a Spotify song or playlist)." }),
+                },
+                Required = ["url"],
+            },
+        },
+        new Tool
+        {
+            Name = "whatsapp_send",
+            Description = "Offer to send a WhatsApp text: a card shows it; on Do it, WhatsApp opens on that chat with the message and sends it.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["phone"] = J(new { type = "string", description = "With the country code, e.g. 919876543210." }),
+                    ["name"] = J(new { type = "string", description = "Who it is, for the card (e.g. Mom)." }),
+                    ["text"] = J(new { type = "string" }),
+                },
+                Required = ["phone", "text"],
             },
         },
         new Tool
@@ -335,7 +388,7 @@ static class CatPrompt
                         {
                             "status", "set_volume", "volume_up", "volume_down", "mute", "unmute", "list_sound_outputs", "switch_sound_output",
                             "set_brightness", "brightness_up", "brightness_down", "dark_mode_on", "dark_mode_off",
-                            "do_not_disturb_on", "do_not_disturb_off", "open_apps",
+                            "do_not_disturb_on", "do_not_disturb_off", "open_apps", "media_play_pause", "media_next", "media_previous",
                         },
                     }),
                     ["value"] = J(new { type = "string", description = "For set_volume and set_brightness: 0 to 100. For the up and down actions: how much (default 10 for volume, 15 for brightness). For switch_sound_output: the output's name as said (\"headphones\", \"speakers\", \"TV\")." }),

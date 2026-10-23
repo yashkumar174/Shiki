@@ -51,6 +51,13 @@ public static class TypeText
         return true;
     }
 
+    /// <summary>One press of Enter (sending a message that's ready in its box).</summary>
+    public static void PressEnter()
+    {
+        var inputs = new[] { Key(0x0D, 0, 0), Key(0x0D, 0, KEYEVENTF_KEYUP) };
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+    }
+
     static INPUT Key(ushort vk, ushort scan, uint flags) => new()
     {
         type = INPUT_KEYBOARD,

@@ -41,6 +41,14 @@ public static class PcCommands
         if (Regex.Match(words, $@"^(set |change |turn |put )?(volume|sound)( to| at)? {Number}$") is { Success: true } v && Read(v) is { } volume)
             return () => PcControl.SetVolume(volume);
 
+        // Media (whatever is playing)
+        if (Regex.IsMatch(words, @"^(pause|play|resume|pause music|play music|pause it|play it|resume music|pause song|play song|stop music|pause video|play video)$"))
+            return () => PcControl.Media("play");
+        if (Regex.IsMatch(words, @"^(next|next song|next track|skip|skip song|skip this|next video)$"))
+            return () => PcControl.Media("next");
+        if (Regex.IsMatch(words, @"^(previous|previous song|previous track|last song|go back a song)$"))
+            return () => PcControl.Media("previous");
+
         // Brightness
         if (Regex.IsMatch(words, @"^(brightness up|brighter|increase brightness|turn up brightness|turn brightness up|make it brighter|more brightness)$"))
             return () => PcControl.ChangeBrightness(15);

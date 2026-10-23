@@ -24,13 +24,17 @@ public sealed class AgentPill : Window
     readonly TextBlock _status, _task;
     readonly StackPanel _question = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
     readonly TextBlock _questionText;
+    readonly StackPanel _pausedPanel = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
     TaskCompletionSource<bool>? _answer;
     IntPtr _mouseHook, _keyHook;
     readonly HookProc _mouseProc, _keyProc;
-    POINT? _firstMove;
+    bool _paused;
 
-    /// <summary>The person used the real mouse or keyboard (or pressed Stop).</summary>
-    public event Action<string>? TookOver;
+    /// <summary>Stop was pressed.</summary>
+    public event Action? StopPressed;
+    /// <summary>The person clicked or typed themselves: the agent waits (Continue picks up again).</summary>
+    public event Action? Paused;
+    public event Action? Resumed;
 
     public AgentPill(ComputerAgent agent, string task)
     {
@@ -50,7 +54,7 @@ public sealed class AgentPill : Window
         _task.MaxHeight = 34;
         _task.TextTrimming = TextTrimming.CharacterEllipsis;
         _status = _k.Text(agent.Status, 14, p.Text, FontWeights.SemiBold, wrap: true);
-        var stop = _k.Button("Stop", () => TookOver?.Invoke("You pressed Stop."), DashKit.Pill.Quiet, "\uE71A", 12.5);
+        var stop = _k.Button("Stop", () => StopPressed?.Invoke(), DashKit.Pill.Quiet, "\uE71A", 12.5);
         stop.VerticalAlignment = VerticalAlignment.Top;
         var top = new DockPanel();
         DockPanel.SetDock(stop, Dock.Right);
@@ -69,11 +73,20 @@ public sealed class AgentPill : Window
         buttons.Children.Add(_k.Button("No", () => Answer(false), DashKit.Pill.Quiet, size: 13));
         _question.Children.Add(buttons);
 
-        var hint = _k.Text("Touch the mouse or keyboard to take over.", 11.5, p.Faint);
+        _pausedPanel.Children.Add(_k.Text("Paused while you use the PC. Continue when you're done.", 14, p.Text, wrap: true));
+        var pausedButtons = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
+        var resume = _k.Button("Continue", Resume, DashKit.Pill.Accent, size: 13);
+        resume.Margin = new Thickness(0, 0, 8, 0);
+        pausedButtons.Children.Add(resume);
+        pausedButtons.Children.Add(_k.Button("Stop", () => StopPressed?.Invoke(), DashKit.Pill.Quiet, size: 13));
+        _pausedPanel.Children.Add(pausedButtons);
+
+        var hint = _k.Text("Click or type yourself and it pauses. Moving the mouse is fine.", 11.5, p.Faint);
         hint.Margin = new Thickness(0, 8, 0, 0);
         var stack = new StackPanel();
         stack.Children.Add(top);
         stack.Children.Add(_question);
+        stack.Children.Add(_pausedPanel);
         stack.Children.Add(hint);
         Content = new Border
         {
@@ -131,12 +144,27 @@ public sealed class AgentPill : Window
     void Answer(bool yes)
     {
         _question.Visibility = Visibility.Collapsed;
-        _firstMove = null;
         _answer?.TrySetResult(yes);
         _answer = null;
     }
 
     bool Asking => _answer != null;
+
+    void Pause()
+    {
+        if (_paused || Asking) return;
+        _paused = true;
+        _pausedPanel.Visibility = Visibility.Visible;
+        Paused?.Invoke();
+    }
+
+    void Resume()
+    {
+        if (!_paused) return;
+        _paused = false;
+        _pausedPanel.Visibility = Visibility.Collapsed;
+        Resumed?.Invoke();
+    }
 
     bool OverPill(POINT p)
     {
@@ -144,35 +172,24 @@ public sealed class AgentPill : Window
         return GetWindowRect(hwnd, out var r) && p.X >= r.Left && p.X <= r.Right && p.Y >= r.Top && p.Y <= r.Bottom;
     }
 
-    // Real input (not the agent's own, which Windows marks as injected) means the person is taking over.
+    // A real click, scroll or key (not the agent's own, which Windows marks as injected) means the
+    // person is doing something themselves: the agent waits. Just moving the mouse doesn't count.
     IntPtr MouseHook(int code, IntPtr message, IntPtr data)
     {
-        if (code >= 0 && !Asking)
+        if (code >= 0 && !Asking && !_paused && message.ToInt32() is 0x0201 or 0x0204 or 0x0207 or 0x020A)
         {
             var info = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(data);
-            bool injected = (info.flags & 0x01) != 0;
-            if (!injected && !OverPill(info.pt))
-            {
-                int msg = message.ToInt32();
-                if (msg is 0x0201 or 0x0204 or 0x0207 or 0x020A) Dispatcher.BeginInvoke(() => TookOver?.Invoke("You used the mouse, so I stopped."));
-                else if (msg == 0x0200)
-                {
-                    // A real move of more than a little: a nudge of the desk doesn't count.
-                    _firstMove ??= info.pt;
-                    if (Math.Abs(info.pt.X - _firstMove.Value.X) + Math.Abs(info.pt.Y - _firstMove.Value.Y) > 60)
-                        Dispatcher.BeginInvoke(() => TookOver?.Invoke("You moved the mouse, so I stopped."));
-                }
-            }
+            if ((info.flags & 0x01) == 0 && !OverPill(info.pt)) Dispatcher.BeginInvoke(Pause);
         }
         return CallNextHookEx(IntPtr.Zero, code, message, data);
     }
 
     IntPtr KeyHook(int code, IntPtr message, IntPtr data)
     {
-        if (code >= 0 && !Asking && message.ToInt32() is 0x0100 or 0x0104)
+        if (code >= 0 && !Asking && !_paused && message.ToInt32() is 0x0100 or 0x0104)
         {
             var info = Marshal.PtrToStructure<KBDLLHOOKSTRUCT>(data);
-            if ((info.flags & 0x10) == 0) Dispatcher.BeginInvoke(() => TookOver?.Invoke("You used the keyboard, so I stopped."));
+            if ((info.flags & 0x10) == 0) Dispatcher.BeginInvoke(Pause);
         }
         return CallNextHookEx(IntPtr.Zero, code, message, data);
     }
