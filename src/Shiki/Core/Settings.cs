@@ -96,7 +96,7 @@ public sealed class Settings
     /// <summary>What the person speaks: "en", or "hi-en" (Hindi, English and Hinglish).</summary>
     public string SpeechLanguage { get; set; } = "en";
     /// <summary>How dictated Hindi is typed: "devanagari" (हिंदी) or "roman" (Hinglish, as on WhatsApp).</summary>
-    public string HindiScript { get; set; } = "devanagari";
+    public string HindiScript { get; set; } = "roman";
     /// <summary>The Gmail address connected (for Settings to show); the access itself is in Credential Manager.</summary>
     public string? GmailAccount { get; set; }
     /// <summary>Read the cat's replies aloud: "spoken" (when you spoke to it), "always", or "off".</summary>

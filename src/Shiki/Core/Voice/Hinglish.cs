@@ -52,8 +52,15 @@ public static class Hinglish
         public string After = "";
     }
 
+    // The everyday words, spelled the way people type them (the rules alone give "naheen", "kyaa").
+    static readonly Dictionary<string, string> Common = new()
+    {
+        ["है"] = "hai", ["हैं"] = "hain", ["में"] = "mein", ["मैं"] = "main", ["नहीं"] = "nahi", ["नही"] = "nahi", ["क्या"] = "kya", ["यह"] = "yeh", ["ये"] = "ye", ["वह"] = "woh", ["वो"] = "woh", ["और"] = "aur", ["तो"] = "toh", ["हाँ"] = "haan", ["हां"] = "haan", ["कि"] = "ki", ["की"] = "ki", ["के"] = "ke", ["का"] = "ka", ["को"] = "ko", ["से"] = "se", ["पर"] = "par", ["भी"] = "bhi", ["ही"] = "hi", ["था"] = "tha", ["थी"] = "thi", ["थे"] = "the", ["हूँ"] = "hoon", ["हूं"] = "hoon", ["हो"] = "ho", ["कर"] = "kar", ["करो"] = "karo", ["करना"] = "karna", ["करके"] = "karke", ["ठीक"] = "theek", ["अच्छा"] = "accha", ["बहुत"] = "bahut", ["मुझे"] = "mujhe", ["आप"] = "aap", ["तुम"] = "tum", ["मेरा"] = "mera", ["मेरी"] = "meri", ["मेरे"] = "mere", ["तुम्हारा"] = "tumhara", ["आपका"] = "aapka", ["क्यों"] = "kyun", ["कैसे"] = "kaise", ["कैसा"] = "kaisa", ["कब"] = "kab", ["कहाँ"] = "kahan", ["कहां"] = "kahan", ["अभी"] = "abhi", ["आज"] = "aaj", ["कल"] = "kal", ["भाई"] = "bhai", ["यार"] = "yaar", ["चलो"] = "chalo", ["ज़रा"] = "zara", ["जरा"] = "zara", ["सब"] = "sab", ["कुछ"] = "kuch", ["एक"] = "ek", ["दो"] = "do", ["वाला"] = "wala", ["वाली"] = "wali", ["वाले"] = "wale", ["आवाज़"] = "awaaz", ["आवाज"] = "awaaz", ["खोलो"] = "kholo", ["बंद"] = "band", ["चालू"] = "chalu", ["कम"] = "kam", ["ज़्यादा"] = "zyada", ["ज्यादा"] = "zyada", ["थोड़ा"] = "thoda", ["बताओ"] = "batao", ["बता"] = "bata", ["दे"] = "de", ["देना"] = "dena", ["लो"] = "lo", ["जाओ"] = "jao", ["शुरू"] = "shuru", ["मतलब"] = "matlab", ["प्लीज़"] = "please", ["प्लीज"] = "please", ["धन्यवाद"] = "dhanyavaad", ["शुक्रिया"] = "shukriya", ["बस"] = "bas", ["चाहिए"] = "chahiye", ["सकते"] = "sakte", ["सकता"] = "sakta", ["सकती"] = "sakti", ["रहा"] = "raha", ["रही"] = "rahi", ["रहे"] = "rahe", ["गया"] = "gaya", ["गई"] = "gayi", ["होगा"] = "hoga", ["वाट्सएप"] = "WhatsApp", ["व्हाट्सएप"] = "WhatsApp", ["क्रोम"] = "Chrome", ["जीमेल"] = "Gmail", ["यूट्यूब"] = "YouTube", ["स्पॉटिफाई"] = "Spotify",
+    };
+
     static string Word(string word)
     {
+        if (Common.TryGetValue(word, out var known)) return known;
         var syllables = new List<Syllable>();
         for (int i = 0; i < word.Length; i++)
         {
@@ -93,6 +100,8 @@ public static class Hinglish
             roman.Append(s.Consonant).Append(s.Vowel).Append(after);
         }
         var result = roman.ToString();
+        // व is usually written "w" in Hinglish ("awaaz", "hawa"), but "v" before i and e ("vivek", "ved").
+        result = System.Text.RegularExpressions.Regex.Replace(result, "v(?![ie])", "w");
         // Typed Hinglish ends words in "a" and "i", not "aa" and "ee" ("karna", "nahi").
         if (result.Length > 3 && result.EndsWith("aa")) result = result[..^1];
         if (result.Length > 3 && result.EndsWith("ee")) result = result[..^2] + "i";

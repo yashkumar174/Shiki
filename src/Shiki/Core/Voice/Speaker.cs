@@ -10,6 +10,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 using Shiki.Core.Ai;
 
 namespace Shiki.Core.Voice;
@@ -24,8 +25,15 @@ public sealed class Speaker
 {
     readonly SynchronizationContext _ui = SynchronizationContext.Current ?? new SynchronizationContext();
     CancellationTokenSource? _cancel;
-    WasapiOut? _out;
     TaskCompletionSource? _done;
+
+    // One output kept open while a conversation is going (silence between replies), so the sound
+    // device is awake and a reply starts the moment its first sound arrives. Closed when idle.
+    static readonly WaveFormat Format = WaveFormat.CreateIeeeFloatWaveFormat(24000, 1);
+    readonly object _lineLock = new();
+    WasapiOut? _line;
+    MixingSampleProvider? _mixer;
+    Timer? _idle;
 
     public bool Speaking { get; private set; }
     /// <summary>Reading a whole document (not just a reply): replies shouldn't cut in.</summary>
@@ -84,7 +92,55 @@ public sealed class Speaker
     public void Stop()
     {
         _cancel?.Cancel();
-        _out?.Stop();
+        lock (_lineLock) _mixer?.RemoveAllMixerInputs();
+    }
+
+    /// <summary>
+    /// Wakes the speakers before a reply is due (the person is talking to the cat), so the first
+    /// words aren't lost to a sleeping sound card. Stays awake a little while, then lets go.
+    /// </summary>
+    public void Warm()
+    {
+        try
+        {
+            Line();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Couldn't open the speakers", ex);
+        }
+    }
+
+    MixingSampleProvider Line()
+    {
+        lock (_lineLock)
+        {
+            if (_line == null || _mixer == null)
+            {
+                _mixer = new MixingSampleProvider(Format) { ReadFully = true };
+                _line = new WasapiOut(NAudio.CoreAudioApi.AudioClientShareMode.Shared, 80);
+                _line.Init(_mixer);
+                _line.Play();
+            }
+            _idle ??= new Timer(_ => CloseIfIdle());
+            _idle.Change(TimeSpan.FromSeconds(45), Timeout.InfiniteTimeSpan);
+            return _mixer;
+        }
+    }
+
+    void CloseIfIdle()
+    {
+        lock (_lineLock)
+        {
+            if (Speaking)
+            {
+                _idle?.Change(TimeSpan.FromSeconds(45), Timeout.InfiniteTimeSpan);
+                return;
+            }
+            _line?.Dispose();
+            _line = null;
+            _mixer = null;
+        }
     }
 
     /// <summary>Reads the text aloud with the voice; returns when it's done (or stopped).</summary>
@@ -102,13 +158,16 @@ public sealed class Speaker
         try
         {
             voice = Pick(voice);
-            async Task<byte[]> Render(string piece)
+            var mixer = Line();
+            // Each piece starts streaming at once: Deepgram's sound plays as it arrives, and the
+            // next piece downloads while this one plays. A Windows voice is made whole (it's quick).
+            async Task<Sound> Start(string piece)
             {
                 if (voice.StartsWith("dg:"))
                 {
                     try
                     {
-                        return await Aura(piece, voice[3..], cancel.Token);
+                        return await AuraStream(piece, voice[3..], cancel.Token);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException)
                     {
@@ -117,18 +176,21 @@ public sealed class Speaker
                         voice = "win:";
                     }
                 }
-                return await WindowsVoice(piece, voice[4..]);
+                return Sound.FromWav(await WindowsVoice(piece, voice[4..]));
             }
-            // Deepgram takes up to 2,000 characters at a time; the next piece is made while this one plays.
+            // Deepgram takes up to 2,000 characters at a time.
             var pieces = Pieces(text, 1500);
-            Log.Info($"Speaking {text.Length} characters in {pieces.Count} piece{(pieces.Count == 1 ? "" : "s")} ({voice})");
-            var next = Render(pieces[0]);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var next = Start(pieces[0]);
             for (int i = 0; i < pieces.Count; i++)
             {
-                var wav = await next;
+                var sound = await next;
                 cancel.Token.ThrowIfCancellationRequested();
-                if (i + 1 < pieces.Count) next = Render(pieces[i + 1]);
-                await Play(wav, cancel.Token);
+                if (i == 0) Log.Info($"Speaking {text.Length} characters in {pieces.Count} piece{(pieces.Count == 1 ? "" : "s")} ({voice}), first sound after {clock.ElapsedMilliseconds} ms");
+                lock (_lineLock) mixer.AddMixerInput(sound);
+                if (i + 1 < pieces.Count) next = Start(pieces[i + 1]);
+                using (cancel.Token.Register(() => sound.Done.TrySetResult()))
+                    await sound.Done.Task;
                 cancel.Token.ThrowIfCancellationRequested();
             }
         }
@@ -238,16 +300,113 @@ public sealed class Speaker
         return await response.Content.ReadAsByteArrayAsync(ct);
     }
 
-    async Task Play(byte[] wav, CancellationToken ct)
+    /// <summary>Deepgram's voice as raw sound, handed to the speakers bit by bit as it arrives.</summary>
+    static async Task<Sound> AuraStream(string text, string model, CancellationToken ct)
     {
-        using var reader = new WaveFileReader(new MemoryStream(wav));
-        using var output = _out = new WasapiOut(NAudio.CoreAudioApi.AudioClientShareMode.Shared, 120);
-        var finished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        output.PlaybackStopped += (_, _) => finished.TrySetResult();
-        output.Init(reader);
-        output.Play();
-        using (ct.Register(() => output.Stop()))
-            await finished.Task;
-        _out = null;
+        var key = Deepgram.Key.Read() ?? throw new InvalidOperationException("No Deepgram key.");
+        var request = new HttpRequestMessage(HttpMethod.Post, $"https://api.deepgram.com/v1/speak?model={model}&encoding=linear16&sample_rate=24000&container=none")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(new { text }), Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Token", key);
+        var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(ct);
+            response.Dispose();
+            request.Dispose();
+            throw new DeepgramException(response.StatusCode, body);
+        }
+        Sent?.Invoke(text.Length);
+        var sound = new Sound(new WaveFormat(24000, 16, 1));
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await using var stream = await response.Content.ReadAsStreamAsync(ct);
+                var buffer = new byte[8192];
+                int read, odd = 0;
+                var carry = new byte[1];
+                while ((read = await stream.ReadAsync(buffer, ct)) > 0)
+                {
+                    // Keep whole 16-bit samples together.
+                    int start = 0;
+                    if (odd == 1) { sound.Add([carry[0], buffer[0]], 2); start = 1; odd = 0; }
+                    int whole = (read - start) & ~1;
+                    if (whole > 0) sound.Add(buffer[start..(start + whole)], whole);
+                    if ((read - start) % 2 == 1) { carry[0] = buffer[read - 1]; odd = 1; }
+                }
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or IOException or HttpRequestException)
+            {
+                // Stopped, or the connection dropped: what arrived still plays.
+            }
+            finally
+            {
+                sound.Complete();
+                response.Dispose();
+                request.Dispose();
+            }
+        }, CancellationToken.None);
+        return sound;
+    }
+
+    /// <summary>
+    /// A sound for the speakers, in the shared format: silence while more is on its way, and the
+    /// end (which lets the next piece start) once it has all been played.
+    /// </summary>
+    sealed class Sound : ISampleProvider
+    {
+        readonly BufferedWaveProvider? _buffer;
+        readonly ISampleProvider _samples;
+        volatile bool _complete;
+
+        public TaskCompletionSource Done { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public WaveFormat WaveFormat => Format;
+
+        public Sound(WaveFormat incoming)
+        {
+            _buffer = new BufferedWaveProvider(incoming) { BufferDuration = TimeSpan.FromMinutes(10), ReadFully = false };
+            _samples = Fit(_buffer.ToSampleProvider());
+        }
+
+        Sound(ISampleProvider whole)
+        {
+            _samples = Fit(whole);
+            _complete = true;
+        }
+
+        /// <summary>A whole WAV (a Windows voice).</summary>
+        public static Sound FromWav(byte[] wav)
+        {
+            var reader = new WaveFileReader(new MemoryStream(wav));
+            return new Sound(reader.ToSampleProvider());
+        }
+
+        static ISampleProvider Fit(ISampleProvider source)
+        {
+            if (source.WaveFormat.Channels == 2) source = new StereoToMonoSampleProvider(source);
+            return source.WaveFormat.SampleRate == Format.SampleRate ? source : new WdlResamplingSampleProvider(source, Format.SampleRate);
+        }
+
+        public void Add(byte[] bytes, int count) => _buffer!.AddSamples(bytes, 0, count);
+
+        public void Complete() => _complete = true;
+
+        public int Read(float[] buffer, int offset, int count)
+        {
+            int n = _samples.Read(buffer, offset, count);
+            if (n == count) return n;
+            bool drained = _buffer == null || _buffer.BufferedBytes == 0;
+            if (_complete && drained)
+            {
+                // All played: the mixer drops this sound, and the next piece can start.
+                Done.TrySetResult();
+                return n;
+            }
+            // Waiting for more: silence, so the speakers keep going.
+            Array.Clear(buffer, offset + n, count - n);
+            return count;
+        }
     }
 }

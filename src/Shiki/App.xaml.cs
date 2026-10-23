@@ -299,6 +299,14 @@ public partial class App : Application
             case "run" when args.Length >= 3:
                 Queue(args[1], args[2..]);
                 break;
+            case "say-test" when args.Length >= 2:
+                // Dev aid: the cat says this, the normal way (first-sound time goes to the log).
+                _ = Mouth.Say(string.Join(" ", args[1..]), _settings.TalkVoice);
+                break;
+            case "say-timing":
+                // Dev aid: how long the cat's voice takes, step by step (it plays out loud).
+                _ = SayTiming();
+                break;
             case "cat-menu" when args.Length == 2:
                 // Dev aid: the cat's right-click menu, shown for a moment and saved as a picture.
                 EnterBuddyMode();
@@ -838,6 +846,7 @@ public partial class App : Application
     {
         _pc = new PcWatch();
         Speech.Language = _settings.SpeechLanguage;
+        RefreshKeyTerms();
         Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard;
         // Read the Start menu now, so "open Spotify" is instant later.
         System.Threading.Tasks.Task.Run(Apps.All);
@@ -1189,7 +1198,12 @@ public partial class App : Application
             _voice = new VoiceInput(Chat, _settings, () => CatName) { Commands = VoiceCommand, Quiet = () => Mouth.Quiet(), Interrupt = () => _mouth?.Stop() };
             // The conversation is over: put the bubble away if you're not using it.
             // Attentive eyes while you're talking to it.
-            _voice.Changed += () => _buddy?.Listening(_voice.State is VoiceState.Waiting or VoiceState.Hearing);
+            _voice.Changed += () =>
+            {
+                _buddy?.Listening(_voice.State is VoiceState.Waiting or VoiceState.Hearing);
+                // A reply is coming: wake the speakers now, so its first words aren't lost.
+                if (_voice.State is VoiceState.Hearing or VoiceState.Understanding && _settings.TalkBack != "off") Mouth.Warm();
+            };
             _voice.ConversationEnded += () => Dispatcher.BeginInvoke(() => { if (_bubble is { IsActive: false } bubble) bubble.Close(); },
                 DispatcherPriority.ApplicationIdle);
             return _voice;
@@ -1549,6 +1563,29 @@ public partial class App : Application
         _ = Chat.Send(words);
     }
 
+    /// <summary>
+    /// Words Deepgram should expect from this person: their routine phrases, and the names of
+    /// people they've emailed lately (so "partners at aurea gifts" comes out right).
+    /// </summary>
+    void RefreshKeyTerms()
+    {
+        var terms = Routines.All.SelectMany(r => r.Phrases.Take(2)).ToList();
+        try
+        {
+            // Senders and recipients the cat has seen in Gmail, from the log ("gmail search from:…").
+            var log = File.Exists(AiLog.FilePath) ? File.ReadLines(AiLog.FilePath).TakeLast(2000) : [];
+            foreach (var line in log)
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(line, @"(?:from|to):(\S+)");
+                if (match.Success) terms.Add(match.Groups[1].Value.Split('@')[0].Replace('.', ' '));
+            }
+        }
+        catch (IOException)
+        {
+        }
+        Speech.Extra = terms.Where(t => t.Length > 2).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList();
+    }
+
     // ---- Routines ----
 
     /// <summary>Runs each step of a routine, showing what happened in the chat; returns a summary for Claude.</summary>
@@ -1749,6 +1786,25 @@ public partial class App : Application
         _ = pill.Ask(new AgentQuestion("Send this reply to Rahul: \"Yes, Friday at 1 works for me. See you there!\"?", true));
         DashboardWindow.SaveElement((FrameworkElement)pill.Content, 380, Path.Combine(Path.GetTempPath(), "agent-pill.png"));
         pill.Close();
+    }
+
+    async System.Threading.Tasks.Task SayTiming()
+    {
+        var watch = Stopwatch.StartNew();
+        var wav = await Speaker.Render("Cats can't taste sweetness.", _settings.TalkVoice);
+        var rendered = watch.ElapsedMilliseconds;
+        double seconds;
+        using (var reader = new NAudio.Wave.WaveFileReader(new MemoryStream(wav))) seconds = reader.TotalTime.TotalSeconds;
+        watch.Restart();
+        using (var reader = new NAudio.Wave.WaveFileReader(new MemoryStream(wav)))
+        using (var output = new NAudio.Wave.WasapiOut(NAudio.CoreAudioApi.AudioClientShareMode.Shared, 120))
+        {
+            output.Init(reader);
+            var init = watch.ElapsedMilliseconds;
+            output.Play();
+            while (output.PlaybackState == NAudio.Wave.PlaybackState.Playing) await System.Threading.Tasks.Task.Delay(20);
+            Log.Info($"say-timing: render {rendered} ms, init {init} ms, played {watch.ElapsedMilliseconds} ms for {seconds:0.00} s of sound, {wav.Length / 1024} KB");
+        }
     }
 
     static async System.Threading.Tasks.Task GmailTest()

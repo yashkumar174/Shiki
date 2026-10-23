@@ -79,7 +79,7 @@ public sealed class Deepgram(Func<IEnumerable<string>> keyterms) : ISpeechToText
     {
         // "multi": Nova-3 follows Hindi and English as they mix in a sentence (Hinglish).
         var query = new StringBuilder($"model=nova-3&language={(Speech.Hindi ? "multi" : "en")}&smart_format=true");
-        foreach (var term in terms.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct().Take(20))
+        foreach (var term in terms.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase).Take(60))
             query.Append("&keyterm=").Append(Uri.EscapeDataString(term.Trim()));
         return query.Append(extra).ToString();
     }
@@ -153,9 +153,10 @@ public sealed class DeepgramLive : IAsyncDisposable
     {
         var live = new DeepgramLive(sampleRate);
         live._socket.Options.SetRequestHeader("Authorization", "Token " + key);
-        // Endpointing: 0.9 s of silence ends a phrase; UtteranceEnd: 1.2 s without new words (its minimum is 1 s).
+        // Endpointing: 1.2 s of silence ends a phrase; UtteranceEnd: 1.6 s without new words. A sentence
+        // that clearly isn't finished ("…and", "…my") gets longer still (see Handle).
         var url = "wss://api.deepgram.com/v1/listen?" + Deepgram.Query(terms,
-            $"&encoding=linear16&sample_rate={sampleRate}&channels=1&interim_results=true&endpointing=900&utterance_end_ms=1200");
+            $"&encoding=linear16&sample_rate={sampleRate}&channels=1&interim_results=true&endpointing=1200&utterance_end_ms=1600");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(6));
         await live._socket.ConnectAsync(new Uri(url), timeout.Token);
@@ -240,9 +241,37 @@ public sealed class DeepgramLive : IAsyncDisposable
             }
             else _interim = said;
             Partial?.Invoke((Text + " " + _interim).Trim());
-            if (speechFinal && _finals.Count > 0) End();
+            // New words: a pending "it didn't sound finished" wait starts over.
+            if (said.Length > 0) _waiting?.Cancel();
+            if (speechFinal && _finals.Count > 0) EndUnlessUnfinished();
         }
-        else if (type == "UtteranceEnd" && (_finals.Count > 0 || _interim.Length > 0)) End();
+        else if (type == "UtteranceEnd" && (_finals.Count > 0 || _interim.Length > 0)) EndUnlessUnfinished();
+    }
+
+    CancellationTokenSource? _waiting;
+
+    // Words a sentence doesn't end on: a pause after them is someone thinking, not done.
+    static readonly HashSet<string> Unfinished = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "and", "or", "but", "so", "the", "a", "an", "to", "of", "my", "your", "is", "are", "was", "will", "be", "with", "from", "in", "on",
+        "for", "at", "that", "which", "what", "me", "like", "uh", "um", "if", "then", "also", "can", "could", "please", "this", "these", "some",
+        "there", "about", "into", "by", "it", "i", "ki", "aur", "ko", "ka", "ke", "se", "mein", "toh", "ya", "par", "bhi",
+    };
+
+    void EndUnlessUnfinished()
+    {
+        var text = (Text + " " + _interim).Trim().TrimEnd(',', ' ');
+        var last = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim('.', ',', '?', '!') ?? "";
+        bool unfinished = text.EndsWith(',') || Unfinished.Contains(last) || text.Split(' ').Length < 2;
+        if (!unfinished)
+        {
+            End();
+            return;
+        }
+        // Give them a moment more; new words cancel this and the next pause decides again.
+        _waiting?.Cancel();
+        var waiting = _waiting = new CancellationTokenSource();
+        _ = Task.Delay(2500, waiting.Token).ContinueWith(t => { if (!t.IsCanceled) End(); }, TaskScheduler.Default);
     }
 
     void End()

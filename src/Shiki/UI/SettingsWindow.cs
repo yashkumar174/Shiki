@@ -338,7 +338,7 @@ public sealed class SettingsWindow : Window
         }
         stack.Children.Add(languageRow);
         ShowLanguage();
-        stack.Children.Add(UiKit.Body("Dictation types Hindi as:", 11.5));
+        stack.Children.Add(UiKit.Body("Write Hindi as (what you say, and dictation):", 11.5));
         var scripts = new List<(string Id, Border Chip)>();
         void ShowScript() { foreach (var (id, chip) in scripts) UiKit.Select(chip, ai.GetHindiScript() == id); }
         var scriptRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 6) };

@@ -227,6 +227,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     /// </summary>
     public async Task Use(string text, bool listenAfter = true, bool fromFollowUp = false)
     {
+        // Hindi written the Roman way (Hinglish), if that's how the person writes.
+        if (Speech.Hindi && settings.HindiScript == "roman") text = Hinglish.ToRoman(text);
         // A conversation is turns of you talking to the cat. A long stretch of words while it waited,
         // or turn after turn, is more likely a video or other people: stop rather than keep going.
         _turns = fromFollowUp ? _turns + 1 : 0;
