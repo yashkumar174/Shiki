@@ -349,6 +349,11 @@ public partial class App : Application
                     Log.Info($"routine-test \"{said}\": {Routines.Match(said)?.Name ?? "-"}");
                 foreach (var r in Routines.All) Log.Info($"routine-test saved: {r.Name} [{string.Join(" / ", r.Phrases)}] {string.Join(", ", r.Steps.Select(Routines.Describe))}");
                 break;
+            case "captions-test" when args.Length >= 2:
+                // Dev aid: captions on (translated into args[2] if given), a WAV played through the speakers, then off.
+                EnterBuddyMode();
+                _ = CaptionsTest(args[1], args.Length > 2 ? args[2] : null);
+                break;
             case "habit-test":
                 // Dev aid: what habit would be offered now, and the rules (nothing changes).
                 Log.Info($"habit-test spot: {(Habits.Spot() is { } hs ? $"{hs.Extension} {hs.Action.Id} x{hs.Times}" : "-")}");
@@ -1196,6 +1201,40 @@ public partial class App : Application
         });
     }
 
+    // ---- Live captions ----
+
+    LiveCaptions? _captions;
+    CaptionsWindow? _captionsWindow;
+
+    /// <summary>Captions for whatever the PC plays, translated when a language is given.</summary>
+    void StartCaptions(string? translateTo)
+    {
+        StopCaptions();
+        try
+        {
+            var captions = _captions = new LiveCaptions(translateTo, ClaudeKey.Read, cost =>
+                Dispatcher.BeginInvoke(() => { _settings.AiSpentUsd += cost; _settings.AiRequests++; _settings.Save(); }));
+            var window = _captionsWindow = new CaptionsWindow(captions.Engine, captions.TranslateTo);
+            captions.Partial += text => Dispatcher.BeginInvoke(() => { if (_captions == captions) window.SetPartial(text); });
+            captions.Line += (text, translated) => Dispatcher.BeginInvoke(() => { if (_captions == captions) window.AddLine(text, translated); });
+            window.CloseRequested += StopCaptions;
+            window.Show();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Captions couldn't start", ex);
+            ToastHost.Show(ToastWindow.Message("Captions couldn't start", "Windows didn't let me listen to the speakers. Is a sound device plugged in?"));
+        }
+    }
+
+    void StopCaptions()
+    {
+        if (_captions is { } captions) _ = captions.DisposeAsync().AsTask();
+        _captions = null;
+        _captionsWindow?.Close();
+        _captionsWindow = null;
+    }
+
     // ---- Habits ----
 
     readonly HashSet<string> _habitsOffered = [];
@@ -1402,6 +1441,26 @@ public partial class App : Application
         {
             Log.Error("speak-file failed", ex);
         }
+    }
+
+    async System.Threading.Tasks.Task CaptionsTest(string wav, string? language)
+    {
+        StartCaptions(language);
+        if (_captions is not { } captions) return;
+        captions.Line += (text, translated) => Log.Info($"captions-test line: {text}{(translated != null ? $" => {translated}" : "")}");
+        await System.Threading.Tasks.Task.Delay(1500);
+        using (var reader = new NAudio.Wave.WaveFileReader(wav))
+        using (var output = new NAudio.Wave.WasapiOut(NAudio.CoreAudioApi.AudioClientShareMode.Shared, 100))
+        {
+            output.Init(reader);
+            output.Play();
+            while (output.PlaybackState == NAudio.Wave.PlaybackState.Playing) await System.Threading.Tasks.Task.Delay(200);
+        }
+        await System.Threading.Tasks.Task.Delay(language != null ? 8000 : 4000);
+        _captionsWindow?.Dispatcher.Invoke(() => { });
+        if (_captionsWindow != null) DashboardWindow.SaveElement((FrameworkElement)_captionsWindow.Content, _captionsWindow.ActualWidth, Path.ChangeExtension(wav, ".png"));
+        StopCaptions();
+        Log.Info("captions-test done");
     }
 
     static void PcTest()
@@ -1623,6 +1682,10 @@ public partial class App : Application
             TrySetClipboard(hex);
             return () => Chat.Say(new CatDid("\uE790", $"That's {hex}, {ScreenColour.Name(r, g, b)} (rgb {r}, {g}, {b}). Copied."));
         }
+        if (words is "captions" or "captions on" or "turn on captions" or "live captions" or "show captions" or "subtitles" or "subtitles on" or "turn on subtitles" or "start captions")
+            return () => { StartCaptions(null); Chat.Say(new CatDid("\uE7F0", "Captions on for whatever's playing. Say \"captions off\" to stop.")); };
+        if (words is "captions off" or "turn off captions" or "stop captions" or "hide captions" or "subtitles off" or "turn off subtitles" or "stop subtitles")
+            return () => { StopCaptions(); Chat.Say(new CatDid("\uE7F0", "Captions off.")); };
         // A routine's phrase ("start work mode").
         if (Routines.Match(said) is { } routine)
             return () => RunRoutine(routine, spoken: true);
@@ -1981,6 +2044,8 @@ public partial class App : Application
             case "stop_notes": Dispatcher.BeginInvoke(StopNotes); return true;
             case "open_tasks": Dispatcher.BeginInvoke(() => ShowDashboard(DashPage.Tasks)); return true;
             case "open_meetings": Dispatcher.BeginInvoke(() => ShowDashboard(DashPage.Meetings)); return true;
+            case "captions_on": Dispatcher.BeginInvoke(() => StartCaptions(text)); return true;
+            case "captions_off": Dispatcher.BeginInvoke(StopCaptions); return true;
             default: return false;
         }
     }

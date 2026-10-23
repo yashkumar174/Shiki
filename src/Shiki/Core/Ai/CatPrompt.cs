@@ -71,6 +71,7 @@ static class CatPrompt
             - To let the person point at something themselves: use_app_tool with paw_to_ask.
             - "Copy the text on my screen" or "from this window": look_at_screen, then copy_to_clipboard with the text exactly as written (or offer_table for a table).
             - "What colour is this?" (the pointer is on it): colour_under_pointer. To pick a colour by clicking, use_app_tool pick_colour.
+            - "Turn on captions", "subtitles for this video": use_app_tool captions_on. "Translate this video into English", "subtitles in Hindi": captions_on with text set to the language. "Captions off": captions_off.
             - "Record my screen": use_app_tool record_screen (they choose the area); "stop recording": use_app_tool stop_recording.
 
             Meetings and tasks
@@ -366,8 +367,8 @@ static class CatPrompt
             {
                 Properties = new Dictionary<string, JsonElement>
                 {
-                    ["tool"] = J(new { type = "string", @enum = new[] { "snip", "record_screen", "pick_colour", "make_qr", "paste_clipboard", "open_history", "open_settings", "paw_to_ask", "take_notes", "stop_notes", "open_tasks", "open_meetings", "stop_recording" } }),
-                    ["text"] = J(new { type = "string", description = "For make_qr: the link or text to put in the code." }),
+                    ["tool"] = J(new { type = "string", @enum = new[] { "snip", "record_screen", "pick_colour", "make_qr", "paste_clipboard", "open_history", "open_settings", "paw_to_ask", "take_notes", "stop_notes", "open_tasks", "open_meetings", "stop_recording", "captions_on", "captions_off" } }),
+                    ["text"] = J(new { type = "string", description = "For make_qr: the link or text to put in the code. For captions_on: a language to translate into (leave out for none)." }),
                 },
                 Required = ["tool"],
             },

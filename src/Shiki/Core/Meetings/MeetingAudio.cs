@@ -19,7 +19,8 @@ public sealed class MeetingAudio : IDisposable
 {
     public const int Rate = 16000;
 
-    readonly Source _mic, _speakers;
+    readonly Source? _mic;
+    readonly Source _speakers;
     readonly CancellationTokenSource _stop = new();
     Task? _pump;
     WaveFileWriter? _keep;
@@ -34,16 +35,17 @@ public sealed class MeetingAudio : IDisposable
     public double Seconds { get; private set; }
 
     /// <param name="keepAs">Also write everything to this WAV (when the person keeps recordings).</param>
-    public MeetingAudio(string? keepAs = null)
+    /// <param name="mic">False for only what the PC plays (captions): the left side stays silent and the mic is never opened.</param>
+    public MeetingAudio(string? keepAs = null, bool mic = true)
     {
-        _mic = new Source(new WasapiCapture(new MMDeviceEnumerator().GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications)));
+        if (mic) _mic = new Source(new WasapiCapture(new MMDeviceEnumerator().GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications)));
         _speakers = new Source(new WasapiLoopbackCapture());
         if (keepAs != null) _keep = new WaveFileWriter(keepAs, new WaveFormat(Rate, 16, 2));
     }
 
     public void Start()
     {
-        _mic.Capture.StartRecording();
+        _mic?.Capture.StartRecording();
         _speakers.Capture.StartRecording();
         _pump = Task.Run(Pump);
     }
@@ -60,7 +62,7 @@ public sealed class MeetingAudio : IDisposable
             long due = (long)(clock.Elapsed.TotalSeconds * Rate) - sent;
             if (due <= 0) continue;
             int n = (int)Math.Min(due, Rate);
-            int a = _mic.Read(left, n), b = _speakers.Read(right, n);
+            int a = _mic?.Read(left, n) ?? 0, b = _speakers.Read(right, n);
             var bytes = new byte[n * 4];
             double sumL = 0, sumR = 0;
             for (int i = 0; i < n; i++)
@@ -84,7 +86,7 @@ public sealed class MeetingAudio : IDisposable
     public async Task StopAsync()
     {
         _stop.Cancel();
-        try { _mic.Capture.StopRecording(); } catch (Exception ex) { Log.Error("Stopping the meeting microphone", ex); }
+        try { _mic?.Capture.StopRecording(); } catch (Exception ex) { Log.Error("Stopping the meeting microphone", ex); }
         try { _speakers.Capture.StopRecording(); } catch (Exception ex) { Log.Error("Stopping the meeting sound", ex); }
         if (_pump != null) await _pump;
         _keep?.Dispose();
@@ -94,7 +96,7 @@ public sealed class MeetingAudio : IDisposable
     public void Dispose()
     {
         _stop.Cancel();
-        _mic.Dispose();
+        _mic?.Dispose();
         _speakers.Dispose();
         _keep?.Dispose();
     }

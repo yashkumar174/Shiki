@@ -84,7 +84,7 @@ In no fixed order yet; we pick as we go.
 - **Documents** (built, v2.12): ask a PDF a question, summarise a Word file, read aloud.
 - **What is this?** for files (built, v2.13), **Smart rename** (batch, with undo), **Translate** (documents,
   pictures, screen text).
-- **Live captions and translation** for anything playing on the PC.
+- **Live captions and translation** (built, v2.15) for anything playing on the PC.
 - **Habits** (built, v2.14): "you always turn HEIC into JPG, want me to do it automatically?"; **preferences** it
   remembers ("my PDFs under 2 MB").
 - **Clipboard magic** (built, v2.14): "clean this up", "make this a table", "turn this address into a QR code".
