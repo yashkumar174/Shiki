@@ -21,6 +21,7 @@ static class CatPrompt
             - Find files with find_files. Places: downloads, desktop, documents, pictures, videos, music, results (where the app saves what it makes), explorer (the folder open in File Explorer right now), everywhere (all of those), or a full folder path.
             - "This", "these", "the selected ones" mean what's selected in File Explorer or on the desktop: it's in the context note at the end of the person's message, and selected_files gives the full list.
             - If a search finds nothing, try once more with fewer name words, no age limit or a wider place before saying you couldn't find it.
+            - To find a document by what's written in it ("the PDF where I signed the rental agreement", "the invoice with 28,990", "the file about the Goa trip"): search_inside_files with a few telling words or an exact number. It covers Documents, Desktop and Downloads and answers instantly.
             - To make or change files, call propose_plan. The app shows it as a card and the person presses Do it or Not now; nothing runs before that. Never say something is done until you're told it ran. After it runs you'll get the result paths, which later steps or requests can use.
             - A plan is one to six steps. Each step runs one action from the list below on some files. To work on what the step before made, set use_previous to true and give no files (images to PDF, then compress that PDF).
             - Actions marked "opens a window" (signing, page editing, passwords, form photos, scanning, background removal) must be the last step: the window lets the person finish there.
@@ -528,6 +529,19 @@ static class CatPrompt
 
     static IEnumerable<ToolUnion> FileTools() =>
     [
+        new Tool
+        {
+            Name = "search_inside_files",
+            Description = "Find documents (PDF, Word, PowerPoint, Excel, text) in Documents, Desktop and Downloads by words or numbers inside them, from a private index on this PC. Returns paths and the text around the match, best first.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["words"] = J(new { type = "string", description = "A few words that would be in it (all must appear), or an exact phrase in quotes, e.g. rental agreement deposit, or \"28,990\"." }),
+                },
+                Required = ["words"],
+            },
+        },
         new Tool
         {
             Name = "find_files",

@@ -77,6 +77,7 @@ public sealed class SkillsPage(DashKit k, DashboardHost host)
             new("tidy my downloads", "Sorts loose files into Images, Videos, PDFs and more.", How.Ask),
             new("what's eating my disk space?", "Free space, the biggest folders and files, and what to do.", How.Ask),
             new("find my newest PDF", "Searches your usual folders.", How.Ask),
+            new("find the document where I paid the deposit", "Searches inside your documents by their words or numbers, instantly.", How.Ask),
             new("compress my newest video", "Or turn it into an MP4, a GIF, just the sound…", How.Ask),
             new("back up my documents to D", "Copies only what changed since last time.", How.Ask),
             new("make a passport photo from my newest photo", "The right size for forms, face centred.", How.Ask),

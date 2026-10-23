@@ -34,6 +34,9 @@ public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
 public sealed record RoutineSetting(string CatName, Func<IReadOnlyList<Core.Routine>> All, Action<Core.Routine> Run, Action<string> Remove,
     Func<IReadOnlyList<string>> Remembered, Action<string> Forget, Func<IReadOnlyList<Core.AutoRule>> Automatic, Action<string> StopAutomatic);
 
+/// <summary>The private index of what's inside documents: on or off, how far it's got, and starting over.</summary>
+public sealed record IndexSetting(Func<bool> IsOn, Action Toggle, Func<string> Status, Action Rebuild);
+
 /// <summary>The cat itself: which one (of those unlocked), the look, and how much it moves about.</summary>
 public sealed record CatSetting(Func<IReadOnlyList<(string Id, string Name, ImageSource Head)>> Cats, Func<string> GetCat, Action<string> SetCat,
     Func<string> GetLook, Action<string> SetLook, Func<string> GetMoves, Action<string> SetMoves);
@@ -64,7 +67,7 @@ public sealed class SettingsWindow : Window
     readonly TextBlock _folderPath = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     string _lastFolder;
 
-    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null, RoutineSetting? routines = null, GmailSetting? gmail = null, CatSetting? cat = null)
+    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null, RoutineSetting? routines = null, GmailSetting? gmail = null, CatSetting? cat = null, IndexSetting? index = null)
     {
         _output = output;
         _lastFolder = output.GetFolder() ?? Core.OutputPaths.DefaultFolder;
@@ -115,6 +118,17 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(_folderPart);
         ShowMode();
 
+        if (index != null)
+        {
+            stack.Children.Add(UiKit.Heading("Search inside files"));
+            var status = UiKit.Body(index.Status(), 11.5);
+            stack.Children.Add(Line("Find documents by what's in them", "\"The PDF where I signed the rental agreement\". A private index of Documents, Desktop and Downloads, kept only on this PC.",
+                Toggle(new SettingSwitch("", "", index.IsOn, () => { index.Toggle(); status.Text = index.Status(); }))));
+            stack.Children.Add(status);
+            var rebuild = UiKit.Button("Read everything again", () => { index.Rebuild(); status.Text = index.Status(); });
+            rebuild.Margin = new Thickness(0, 6, 0, 0);
+            stack.Children.Add(rebuild);
+        }
         if (cat != null) AddCat(stack, cat);
         foreach (var setting in On("cat")) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
         stack.Children.Add(UiKit.Heading("Windows"));

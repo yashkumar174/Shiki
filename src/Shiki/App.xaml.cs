@@ -421,6 +421,15 @@ public partial class App : Application
                 EnterBuddyMode();
                 AgentSelfTest();
                 break;
+            case "index-test" when args.Length >= 2:
+                // Dev aid: the index's state and how many documents match (counts and the test file only).
+                if (_index is { } idx)
+                {
+                    var hits = idx.Search(string.Join(" ", args[1..]));
+                    Log.Info($"index-test: {idx.Count} indexed, busy {idx.Indexing}; \"{string.Join(" ", args[1..])}\": {hits.Count} hits" + string.Concat(hits.Where(h => h.Path.Contains("shiki-index-test")).Select(h => $" | {Path.GetFileName(h.Path)}: {h.Snippet}")));
+                }
+                else Log.Info("index-test: no index");
+                break;
             case "google-test":
                 // Dev aid: today's calendar and a contacts search (read-only; nothing goes to Claude).
                 _ = GoogleTest(args.Length > 1 ? args[1] : "a");
@@ -856,6 +865,7 @@ public partial class App : Application
         Speech.Language = _settings.SpeechLanguage;
         RefreshKeyTerms();
         Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard;
+        if (_settings.SearchInsideFiles) StartIndex();
         // Read the Start menu now, so "open Spotify" is instant later.
         System.Threading.Tasks.Task.Run(Apps.All);
         _pc.StateChanged += () => _buddy?.SetPcState(_pc.BatteryLow, _pc.Busy);
@@ -1008,7 +1018,8 @@ public partial class App : Application
                 () => CatSprites.Skins.Where(c => CatLevel.CatUnlocked(c.Id, Level())).Select(c => (c.Id, c.Name, (ImageSource)CatSprites.Head(c))).ToList(),
                 () => _settings.Cat, SetCat,
                 () => _settings.Style, SetStyle,
-                () => _settings.CatLife, life => { _settings.CatLife = life; _settings.Save(); _buddy?.SetLife(life); }));
+                () => _settings.CatLife, life => { _settings.CatLife = life; _settings.Save(); _buddy?.SetLife(life); }),
+            new IndexSetting(() => _settings.SearchInsideFiles, ToggleIndex, IndexStatus, () => { if (_settings.SearchInsideFiles) { _index ??= new ContentIndex(); _index.Rebuild(); } }));
 
     /// <summary>Tries a new shortcut from the settings window; puts the old one back if it's taken.</summary>
     bool ChangeHotkey(string text, Func<string> get, Action<string> set)
@@ -1325,6 +1336,7 @@ public partial class App : Application
         ReadClipboard = ReadClipboardForCat,
         StartAgent = StartAgent,
         SendWhatsApp = SendWhatsApp,
+        SearchContents = (words, max) => _index is { } index ? (index.Search(words, max), index.Count, index.Indexing) : null,
         RunRoutine = name => Routines.Find(name) is { } routine ? RunRoutine(routine, spoken: false) : $"There's no routine called \"{name}\".",
         Replied = (text, spoken) =>
         {
@@ -1350,6 +1362,37 @@ public partial class App : Application
             if (_readingToast == toast) { toast.CloseAnimated(); _readingToast = null; }
         });
     }
+
+    // ---- Search inside files ----
+
+    ContentIndex? _index;
+
+    void StartIndex()
+    {
+        try
+        {
+            _index ??= new ContentIndex();
+            _index.Start();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("The content index couldn't start", ex);
+            _index = null;
+        }
+    }
+
+    void ToggleIndex()
+    {
+        _settings.SearchInsideFiles = !_settings.SearchInsideFiles;
+        _settings.Save();
+        if (_settings.SearchInsideFiles) StartIndex();
+        else _index?.Stop();
+    }
+
+    string IndexStatus() => !_settings.SearchInsideFiles ? "Off: documents are found by name only."
+        : _index == null ? "Starting…"
+        : _index.Indexing ? $"Reading your documents for the first time, quietly in the background: {_index.Count:N0} so far."
+        : $"{_index.Count:N0} documents indexed, kept up to date as they change.";
 
     // ---- WhatsApp ----
 

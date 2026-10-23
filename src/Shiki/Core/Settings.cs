@@ -69,6 +69,8 @@ public sealed class Settings
     public bool Quips { get; set; } = true;
     /// <summary>Hide card numbers, Aadhaar, PAN, passwords and keys in text before it goes to Claude.</summary>
     public bool PrivacyGuard { get; set; } = true;
+    /// <summary>Keep a private index of what's inside documents, so they can be found by their words.</summary>
+    public bool SearchInsideFiles { get; set; } = true;
     /// <summary>What the cat wears (an unlocked accessory id), or null.</summary>
     public string? Accessory { get; set; }
     /// <summary>The level the cat had reached last time, to notice a new one.</summary>
