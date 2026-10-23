@@ -578,7 +578,8 @@ public partial class App : Application
                 // Dev aid: the ask bubble drawn off screen.
                 EnterBuddyMode();
                 var palette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
-                var bubble = new AskBubble(Chat, Voice, palette, CatName, CatSprites.Head(Skin), OpenFile, () => { });
+                var lastSaid = Chat.Items.ToList().FindLastIndex(i => i is YouSaid);
+                var bubble = new AskBubble(Chat, Voice, palette, CatName, CatSprites.Head(Skin), OpenFile, () => { }, lastSaid >= 0 ? lastSaid : null);
                 DashboardWindow.SaveElement((FrameworkElement)bubble.Content, bubble.Width, args[1]);
                 bubble.Close();
                 break;

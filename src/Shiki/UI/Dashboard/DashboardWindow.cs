@@ -531,10 +531,12 @@ public sealed class DashboardWindow : Window
         return bitmap;
     }
 
+    Style ThinScrollBar() => ThinScrollBar(_p);
+
     /// <summary>A slim rounded scrollbar in the palette's colours, instead of the grey system one.</summary>
-    Style ThinScrollBar()
+    public static Style ThinScrollBar(DashPalette p, string margin = "0,18,3,18")
     {
-        var c = DashKit.A(_p.Text, _p.Dark ? (byte)0x40 : (byte)0x30);
+        var c = DashKit.A(p.Text, p.Dark ? (byte)0x40 : (byte)0x30);
         var colour = $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}";
         var xaml = """
             <Style xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
@@ -543,7 +545,7 @@ public sealed class DashboardWindow : Window
               <Setter Property="Template">
                 <Setter.Value>
                   <ControlTemplate TargetType="ScrollBar">
-                    <Grid Background="Transparent" Margin="0,18,3,18">
+                    <Grid Background="Transparent" Margin="MARGIN">
                       <Track x:Name="PART_Track" IsDirectionReversed="True">
                         <Track.Thumb>
                           <Thumb>
@@ -560,7 +562,7 @@ public sealed class DashboardWindow : Window
                 </Setter.Value>
               </Setter>
             </Style>
-            """.Replace("COLOUR", colour);
+            """.Replace("COLOUR", colour).Replace("MARGIN", margin);
         return (Style)System.Windows.Markup.XamlReader.Parse(xaml);
     }
 

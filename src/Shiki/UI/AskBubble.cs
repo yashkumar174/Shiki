@@ -88,6 +88,8 @@ public sealed class AskBubble : Window
         _items.Margin = new Thickness(16, 0, 16, 6);
         // Taller on a taller screen, so a long answer reads without much scrolling.
         _scroll = new ScrollViewer { Content = _items, MaxHeight = ListHeight, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+        // The slim scrollbar, like the dashboard's, not Windows' grey one with arrows.
+        _scroll.Resources.Add(typeof(ScrollBar), DashboardWindow.ThinScrollBar(p, "0,4,2,4"));
 
         // ---- Box ----
         _input = new ChatComposer(_k, catName, voice, text => { if (!_chat.Busy) _ = _chat.Send(text); }, compact: true);

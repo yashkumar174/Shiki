@@ -50,6 +50,7 @@ public sealed class ChatComposer
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalContentAlignment = VerticalAlignment.Center,
         };
+        Box.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), DashboardWindow.ThinScrollBar(P, "0,2,0,2"));
         _placeholder = voice != null ? $"Tell {catName} what to do, or press the mic…" : $"Tell {catName} what to do…";
         _hint = k.Text(_placeholder, size, P.Faint);
         _hint.IsHitTestVisible = false;
