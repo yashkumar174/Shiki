@@ -299,6 +299,25 @@ public partial class App : Application
             case "run" when args.Length >= 3:
                 Queue(args[1], args[2..]);
                 break;
+            case "cat-menu" when args.Length == 2:
+                // Dev aid: the cat's right-click menu, shown for a moment and saved as a picture.
+                EnterBuddyMode();
+                ShowMenu(new Point(900, 300));
+                Dispatcher.BeginInvoke(async () =>
+                {
+                    await System.Threading.Tasks.Task.Delay(900);
+                    if (_menu?.Content is FrameworkElement shown)
+                    {
+                        var dpi = VisualTreeHelper.GetDpi(shown);
+                        var bitmap = new RenderTargetBitmap((int)(shown.ActualWidth * dpi.DpiScaleX), (int)(shown.ActualHeight * dpi.DpiScaleY), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+                        bitmap.Render(shown);
+                        var encoder = new PngBitmapEncoder();
+                        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                        using (var file = File.Create(args[1])) encoder.Save(file);
+                    }
+                    _menu?.Close();
+                });
+                break;
             case "menu" when args.Length >= 2:
                 Queue("menu", args[1..]);
                 break;
@@ -676,33 +695,21 @@ public partial class App : Application
         _menu?.CloseAnimated();
         _menuAnchor = anchorPx;
         bool visible = _buddy?.IsVisible ?? false;
-        _menu = new BroMenu(anchorPx, $"Drop files on me, Shift + drag one, or select files and press {_settings.ConvertHotkey}.",
+        // Just what you'd reach for from the cat itself; the tools are on the dashboard and their keys,
+        // and how the cat looks and moves is in Settings.
+        _menu = new BroMenu(anchorPx, $"Drop files on me, or say \"Hey {CatName}\" and ask.",
         [
+            new MenuEntry("\uE8BD", $"Ask {CatName}…", () => ShowAskBubble()),
             new MenuEntry("\uE80F", "Open Shiki", () => ShowDashboard()),
             new MenuEntry("\uE8E5", "Convert files…", PickFiles),
-            .. (_settings.OutputFolder is { } results ? [new MenuEntry("\uE838", "Open results folder", () => OpenFolder(results))] : Array.Empty<object?>()),
-            new MenuEntry("\uE77F", "Paste from clipboard", PasteToCat),
+            null,
             _settings.WakeVariants.Count > 0
                 ? new MenuEntry("\uE720", $"Listen for \"Hey {CatName}\"", ToggleWake, () => _settings.WakeWord)
-                : new MenuEntry("\uE720", $"Teach me to answer to \"Hey {CatName}\"…", TeachName),
-            new MenuEntry("\uE8B0", $"Paw to ask ({_settings.PawHotkey})", () => StartPaw()),
-            new MenuEntry("\uE783", $"What's this error? ({_settings.ErrorHotkey})", ExplainError),
-            new MenuEntry("\uE8F2", _meeting == null ? $"Take meeting notes ({_settings.NotesHotkey})" : "Stop meeting notes", ToggleNotes),
-            new MenuEntry("\uE924", $"Snip and convert ({_settings.SnipHotkey})", StartSnip),
-            new MenuEntry("\uE714", $"Record the screen ({_settings.RecordHotkey})", StartRecording),
-            new MenuEntry("\uE790", $"Pick a colour ({_settings.ColourHotkey})", StartColourPicker),
-            new MenuEntry("\uED14", "Make a QR code…", () => ShowQr("")),
+                : new MenuEntry("\uE720", $"Teach me my name…", TeachName),
+            .. (_meeting != null ? [new MenuEntry("\uE8F2", "Stop meeting notes", ToggleNotes)] : Array.Empty<object?>()),
             new MenuEntry(visible ? "\uE7B3" : "\uE890", visible ? "Hide the cat" : "Show the cat", () => SetBuddyVisible(!visible)),
             null,
-            new MenuChoice("Cat", CatSprites.Skins.Where(c => CatLevel.CatUnlocked(c.Id, Level())).Select(k => new ChoiceOption(k.Id, $"{k.Name}: {k.Description}", CatSprites.Head(k))).ToList(),
-                () => _settings.Cat, SetCat),
-            new MenuChoice("Look", [new ChoiceOption("arcade", "Arcade", Font: Theme.PixelFont), new ChoiceOption("glass", "Glass", Font: Theme.DisplayFont)],
-                () => _settings.Style, SetStyle),
-            new MenuChoice("Moves", [new ChoiceOption("lively", "Lively"), new ChoiceOption("calm", "Calm"), new ChoiceOption("still", "Still")],
-                () => _settings.CatLife, life => { _settings.CatLife = life; _settings.Save(); _buddy?.SetLife(life); }),
-            null,
             new MenuEntry("\uE713", "Settings…", ShowSettings),
-            new MenuEntry("\uE81C", "Open log folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"\"{Log.DataDir}\"") { UseShellExecute = true })),
             new MenuEntry("\uE711", "Quit", () => Shutdown()),
         ], CatSprites.Head(Skin), Skin.Name, StatsLine());
         _menu.Closed += (_, _) => _menu = null;
@@ -914,12 +921,12 @@ public partial class App : Application
             [
                 new SettingSwitch("Right-click menu in Explorer", "Convert with Shiki, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu),
                 new SettingSwitch("Shift + drag opens the wheel", "Hold Shift while dragging any file.", () => _settings.ShiftDragSummon, ToggleShiftDrag),
-                new SettingSwitch("Glass follows what's behind", "Glass look only. Off shows popups in screen recordings.", () => _settings.LiveGlass, ToggleLiveGlass),
+                new SettingSwitch("Glass follows what's behind", "Glass look only. Off shows popups in screen recordings.", () => _settings.LiveGlass, ToggleLiveGlass, "cat"),
                 new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
                 new SettingSwitch("Offer to take notes when a call starts", "Zoom, Teams, Meet in a browser and other calling apps. Asks once per call.", () => _settings.OfferNotes, () => { _settings.OfferNotes = !_settings.OfferNotes; _settings.Save(); }, "meetings"),
                 new SettingSwitch("Privacy guard", "Card numbers, Aadhaar and PAN numbers, passwords and keys in documents or copied text are hidden on this PC before anything goes to Claude.", () => _settings.PrivacyGuard, () => { _settings.PrivacyGuard = !_settings.PrivacyGuard; Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard; _settings.Save(); }, "ai"),
                 new SettingSwitch("Suggest what to do with downloads", "A HEIC photo, a huge video, an archive: one tap to fix it. Worked out on this PC.", () => _settings.SuggestDownloads, () => { _settings.SuggestDownloads = !_settings.SuggestDownloads; _settings.Save(); }, "automation"),
-                new SettingSwitch($"{CatName} says a word now and then", "Welcome back, what a job saved, your tasks for today. Never over full-screen apps.", () => _settings.Quips, () => { _settings.Quips = !_settings.Quips; _settings.Save(); }),
+                new SettingSwitch($"{CatName} says a word now and then", "Welcome back, what a job saved, your tasks for today. Never over full-screen apps.", () => _settings.Quips, () => { _settings.Quips = !_settings.Quips; _settings.Save(); }, "cat"),
                 new SettingSwitch("Keep meeting recordings", "Also save a meeting's sound (M4A, with your recordings). Off: only the notes and the transcript stay.", () => _settings.KeepMeetingAudio, () => { _settings.KeepMeetingAudio = !_settings.KeepMeetingAudio; _settings.Save(); }, "meetings"),
             ],
             new AiSetting(
@@ -977,7 +984,12 @@ public partial class App : Application
                     _settings.GmailAccount = null;
                     _settings.Save();
                 },
-                url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose()));
+                url => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose()),
+            new CatSetting(
+                () => CatSprites.Skins.Where(c => CatLevel.CatUnlocked(c.Id, Level())).Select(c => (c.Id, c.Name, (ImageSource)CatSprites.Head(c))).ToList(),
+                () => _settings.Cat, SetCat,
+                () => _settings.Style, SetStyle,
+                () => _settings.CatLife, life => { _settings.CatLife = life; _settings.Save(); _buddy?.SetLife(life); }));
 
     /// <summary>Tries a new shortcut from the settings window; puts the old one back if it's taken.</summary>
     bool ChangeHotkey(string text, Func<string> get, Action<string> set)

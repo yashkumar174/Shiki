@@ -34,6 +34,10 @@ public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
 public sealed record RoutineSetting(string CatName, Func<IReadOnlyList<Core.Routine>> All, Action<Core.Routine> Run, Action<string> Remove,
     Func<IReadOnlyList<string>> Remembered, Action<string> Forget, Func<IReadOnlyList<Core.AutoRule>> Automatic, Action<string> StopAutomatic);
 
+/// <summary>The cat itself: which one (of those unlocked), the look, and how much it moves about.</summary>
+public sealed record CatSetting(Func<IReadOnlyList<(string Id, string Name, ImageSource Head)>> Cats, Func<string> GetCat, Action<string> SetCat,
+    Func<string> GetLook, Action<string> SetLook, Func<string> GetMoves, Action<string> SetMoves);
+
 /// <summary>Gmail through Google's API: connected or not, the person's own OAuth client, and connecting.</summary>
 public sealed record GmailSetting(Func<string?> Account, Func<bool> HasClient, Action<string, string> SaveClient,
     Func<System.Threading.Tasks.Task<string>> Connect, Func<System.Threading.Tasks.Task> Disconnect, Action<string> OpenLink);
@@ -59,7 +63,7 @@ public sealed class SettingsWindow : Window
     readonly TextBlock _folderPath = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     string _lastFolder;
 
-    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null, RoutineSetting? routines = null, GmailSetting? gmail = null)
+    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null, RoutineSetting? routines = null, GmailSetting? gmail = null, CatSetting? cat = null)
     {
         _output = output;
         _lastFolder = output.GetFolder() ?? Core.OutputPaths.DefaultFolder;
@@ -110,7 +114,9 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(_folderPart);
         ShowMode();
 
-        stack.Children.Add(UiKit.Heading("The cat and Windows"));
+        if (cat != null) AddCat(stack, cat);
+        foreach (var setting in On("cat")) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+        stack.Children.Add(UiKit.Heading("Windows"));
         foreach (var setting in On("general")) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
 
         // ---- Voice ----
@@ -504,6 +510,39 @@ public sealed class SettingsWindow : Window
         _lastFolder = dialog.FolderName;
         _output.SetFolder(_lastFolder);
         ShowMode();
+    }
+
+    void AddCat(StackPanel stack, CatSetting cat)
+    {
+        stack.Children.Add(UiKit.Heading("The cat"));
+        // A row of chips, one picked.
+        void Choice(string label, string hint, IEnumerable<(string Id, string Label, ImageSource? Icon)> options, Func<string> get, Action<string> set)
+        {
+            stack.Children.Add(Line(label, hint, new Border()));
+            var chips = new List<(string Id, Border Chip)>();
+            void Show() { foreach (var (id, chip) in chips) UiKit.Select(chip, get() == id); }
+            var row = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
+            foreach (var (id, text, icon) in options)
+            {
+                var chip = UiKit.Button(text, () => { set(id); Show(); });
+                if (icon != null && chip.Child is FrameworkElement content)
+                {
+                    // The cat's face beside its name.
+                    var face = new Image { Source = icon, Width = 18, Height = 18, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+                    RenderOptions.SetBitmapScalingMode(face, BitmapScalingMode.NearestNeighbor);
+                    chip.Child = null;
+                    chip.Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { face, content } };
+                }
+                chip.Margin = new Thickness(0, 0, 6, 6);
+                chips.Add((id, chip));
+                row.Children.Add(chip);
+            }
+            stack.Children.Add(row);
+            Show();
+        }
+        Choice("Which cat", "More cats come as it levels up with use.", cat.Cats().Select(c => (c.Id, c.Name, (ImageSource?)c.Head)), cat.GetCat, cat.SetCat);
+        Choice("Look", "Menus and popups: pixel arcade, or liquid glass.", [("arcade", "Arcade", null), ("glass", "Glass", null)], cat.GetLook, cat.SetLook);
+        Choice("Moves", "Lively wanders and stretches; Calm now and then; Still stays put.", [("lively", "Lively", null), ("calm", "Calm", null), ("still", "Still", null)], cat.GetMoves, cat.SetMoves);
     }
 
     void AddGmail(StackPanel stack, GmailSetting gmail)
