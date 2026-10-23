@@ -60,11 +60,15 @@ public sealed class DashboardHost
     public required Func<string> CatName { get; init; }
     /// <summary>Opens a file the way the app does: videos and music in the player, the rest in their usual app.</summary>
     public required Action<string> OpenFile { get; init; }
+    /// <summary>"Try" on the skills page: does what the words say, as if they'd been said.</summary>
+    public Action<string>? TrySaying { get; init; }
+    /// <summary>"Try" for a shortcut: paw, error, snip, record, colour, notes.</summary>
+    public Action<string>? TryTool { get; init; }
     /// <summary>Plays a video or audio file in the dashboard (set by the dashboard itself).</summary>
     public Action<string>? Play { get; set; }
 }
 
-public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks }
+public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks, Skills }
 
 /// <summary>
 /// The main window: a sidebar on the left, one big rounded panel on the right, and a title bar
@@ -406,6 +410,16 @@ public sealed class DashboardWindow : Window
         Content = _root;
     }
 
+    /// <summary>Dev aid: a page's whole length (not just what fits the window), as a PNG.</summary>
+    public void SnapshotWhole(string path, DashPage page)
+    {
+        var shown = _page;
+        _page = page;
+        var holder = new Border { Background = DashKit.B(_k.P.Card), Child = Page() };
+        SaveElement(holder, 1000, path);
+        _page = shown;
+    }
+
     /// <summary>Dev aid: lays out an element that isn't on screen and saves it as a PNG.</summary>
     public static void SaveElement(FrameworkElement element, double width, string path, double? height = null)
     {
@@ -500,6 +514,7 @@ public sealed class DashboardWindow : Window
         DashPage.History => new HistoryPage(_k, _host, _historySearch, s => _historySearch = s, Rebuild).Build(),
         DashPage.Meetings => new MeetingsPage(_k, _host, _meetingId, id => { _meetingId = id; Rebuild(); }, Rebuild).Build(),
         DashPage.Tasks => new TasksPage(_k, _host, Rebuild).Build(),
+        DashPage.Skills => new SkillsPage(_k, _host).Build(),
         _ => new HomePage(_k, _host, () => Show(DashPage.History), () => { _historySearch = ""; Show(DashPage.History); }).Build(),
     };
 
@@ -611,6 +626,7 @@ public sealed class DashboardWindow : Window
         top.Children.Add(Nav("\uE90F", "Tools", DashPage.Tools));
         top.Children.Add(Nav("\uE81C", "History", DashPage.History));
         if (_host.ToggleNotes != null) top.Children.Add(Nav("\uE8F2", "Meetings", DashPage.Meetings));
+        if (_host.Chat != null) top.Children.Add(Nav("\uE897", $"What {_host.CatName()} can do", DashPage.Skills));
         top.Children.Add(Nav("\uE762", Todos.All.Count(t => !t.Done && t.Due is { } d && d.Date <= DateTime.Today) is > 0 and var due ? $"Tasks ({due})" : "Tasks", DashPage.Tasks));
         top.Children.Add(NavItem("\uE713", "Settings", !_onPlayer && _showing != null && _showing == _settingsPage, _host.OpenSettings, null, "Settings"));
         if (!_collapsed && SetupCard() is { } setup) top.Children.Add(setup);

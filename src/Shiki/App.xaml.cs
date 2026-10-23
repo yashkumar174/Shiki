@@ -468,6 +468,16 @@ public partial class App : Application
                 if (_dashboard == null) ShowDashboard(shot, show: false);
                 _dashboard!.Snapshot(args[2], shot);
                 break;
+            case "try-saying" when args.Length >= 2:
+                // Dev aid: what Try on the skills page does with these words.
+                TrySaying(string.Join(" ", args[1..]));
+                break;
+            case "snapshot-whole" when args.Length == 3 && Enum.TryParse<DashPage>(args[1], true, out var wholePage):
+                // Dev aid: a dashboard page from top to bottom.
+                EnterBuddyMode();
+                if (_dashboard == null) ShowDashboard(wholePage, show: false);
+                _dashboard!.SnapshotWhole(args[2], wholePage);
+                break;
             case "snapshot-settings" when args.Length == 2:
                 // Dev aid: the settings drawn off screen, whole.
                 EnterBuddyMode();
@@ -1103,6 +1113,19 @@ public partial class App : Application
                 PickColour = StartColourPicker,
                 Record = StartRecording,
                 Paw = () => StartPaw(),
+                TrySaying = TrySaying,
+                TryTool = tool =>
+                {
+                    switch (tool)
+                    {
+                        case "paw": StartPaw(); break;
+                        case "error": ExplainError(); break;
+                        case "snip": StartSnip(); break;
+                        case "record": StartRecording(); break;
+                        case "colour": StartColourPicker(); break;
+                        case "notes": ToggleNotes(); break;
+                    }
+                },
                 ExplainError = ExplainError,
                 NotesRunning = () => _meeting != null,
                 ToggleNotes = ToggleNotes,
@@ -1495,6 +1518,22 @@ public partial class App : Application
             Log.Error("Could not read the clipboard", ex);
         }
         return (null, null);
+    }
+
+    /// <summary>
+    /// "Try" on the skills page: the plain commands run straight away (as if said); anything else
+    /// goes to the cat on the Ask page.
+    /// </summary>
+    void TrySaying(string words)
+    {
+        ShowDashboard(DashPage.Ask);
+        if (VoiceCommand(words) is { } command)
+        {
+            Chat.Say(new YouSaid(words));
+            command();
+            return;
+        }
+        _ = Chat.Send(words);
     }
 
     // ---- Routines ----
