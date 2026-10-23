@@ -96,8 +96,8 @@ public sealed class CatHands
     public required Func<string, string> RunRoutine { get; init; }
     /// <summary>Documents found by the words inside them (the private index), or null when it's off.</summary>
     public required Func<string, int, (List<ContentHit> Hits, int Indexed, bool Busy)?> SearchContents { get; init; }
-    /// <summary>Opens WhatsApp on the chat with the message ready and sends it; says what happened.</summary>
-    public required Func<string, string, Task<string>> SendWhatsApp { get; init; }
+    /// <summary>Opens WhatsApp (or WhatsApp Web) on the chat with the message ready and sends it; says what happened.</summary>
+    public required Func<string, string, bool, Task<string>> SendWhatsApp { get; init; }
     /// <summary>Starts the agent on a task (it works by itself, with its own pill); says whether it started.</summary>
     public required Func<string, string> StartAgent { get; init; }
     /// <summary>What's on the clipboard: text, or a picture (PNG), or neither.</summary>
@@ -822,8 +822,9 @@ public sealed class CatChat(CatHands hands)
                 var who = Str(input, "name") ?? phone;
                 if (phone.Length < 10) return (null, "WhatsApp needs the number with the country code (91 for India). Ask the person for it once, then remember it.");
                 if (text.Length == 0) return (null, "What should the message say?");
-                var card = new PlanItem($"Send on WhatsApp to {who}", []) { Detail = text };
-                card.Run = () => hands.SendWhatsApp(phone, text);
+                bool web = input.TryGetProperty("web", out var w) && w.ValueKind == JsonValueKind.True;
+                var card = new PlanItem($"Send on WhatsApp{(web ? " Web" : "")} to {who}", []) { Detail = text };
+                card.Run = () => hands.SendWhatsApp(phone, text, web);
                 return (card, null);
             }
             case "gmail_send":

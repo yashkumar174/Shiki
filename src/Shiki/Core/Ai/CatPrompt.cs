@@ -58,7 +58,7 @@ static class CatPrompt
             Fast ways first (seconds), the mouse and keyboard last (minutes)
             - Open things directly with open_link: a YouTube search (https://www.youtube.com/results?search_query=…), Google Maps (https://www.google.com/maps/search/…), Amazon or Flipkart searches, any page. For Spotify: find the song or playlist with web_search, then open_link with its spotify:track:ID (or spotify:playlist:ID, spotify:artist:ID) and then_play true. Or spotify:search:… to show results.
             - Play, pause, next and previous song: control_pc media_play_pause, media_next, media_previous.
-            - WhatsApp messages: whatsapp_send with the person's number (country code first, 91 for India). If you don't know the number, ask once and then remember it ("Mom's WhatsApp is 91…"). Sending files over WhatsApp still needs do_on_screen.
+            - WhatsApp messages: whatsapp_send with the person's number (country code first, 91 for India). If you don't know the number, ask once and then remember it ("Mom's WhatsApp is 91…"). When they say Chrome, the browser or WhatsApp Web, set web (and if they say they always want it that way, remember that). Sending files over WhatsApp still needs do_on_screen.
             - do_on_screen only when none of these can do it.
 
             Doing things on screen
@@ -325,7 +325,7 @@ static class CatPrompt
         new Tool
         {
             Name = "whatsapp_send",
-            Description = "Offer to send a WhatsApp text: a card shows it; on Do it, WhatsApp opens on that chat with the message and sends it.",
+            Description = "Offer to send a WhatsApp text: a card shows it; on Do it, WhatsApp (the app, or WhatsApp Web in Chrome) opens on that chat with the message and sends it.",
             InputSchema = new()
             {
                 Properties = new Dictionary<string, JsonElement>
@@ -333,6 +333,7 @@ static class CatPrompt
                     ["phone"] = J(new { type = "string", description = "With the country code, e.g. 919876543210." }),
                     ["name"] = J(new { type = "string", description = "Who it is, for the card (e.g. Mom)." }),
                     ["text"] = J(new { type = "string" }),
+                    ["web"] = J(new { type = "boolean", description = "WhatsApp Web in Chrome instead of the WhatsApp app (when they ask for Chrome, the browser or the web)." }),
                 },
                 Required = ["phone", "text"],
             },

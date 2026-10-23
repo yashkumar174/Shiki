@@ -343,6 +343,7 @@ public sealed class CatWindow : Window
             _fullScreen = fullScreen;
             if (_stage != null) _stage.Visibility = fullScreen ? Visibility.Hidden : Visibility.Visible;
         }
+        if (!fullScreen) KeepOnTop(front);
 
         // Typing: input keeps arriving but the pointer hasn't moved.
         var info = new LASTINPUTINFO { cbSize = (uint)Marshal.SizeOf<LASTINPUTINFO>() };
@@ -827,6 +828,39 @@ public sealed class CatWindow : Window
 
     [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO info);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+    [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hwnd, uint cmd);
+    [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr hwnd, int index);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
+    int _lifted;
+
+    /// <summary>
+    /// The cat is meant to stay above everything, but Windows sometimes lets a window it brings
+    /// forward (a browser opening a link, say) slip over it while it still says "on top". If the
+    /// window in front is above the cat, lift the cat back.
+    /// </summary>
+    void KeepOnTop(IntPtr front)
+    {
+        var me = new WindowInteropHelper(this).Handle;
+        if (front == IntPtr.Zero || me == IntPtr.Zero || !IsVisible) return;
+        // Only an ordinary window from another app: the Start menu and Shiki's own cards may sit above.
+        if ((GetWindowLong(front, -20) & 0x8) != 0) return;
+        NativeMethods.GetWindowThreadProcessId(front, out uint pid);
+        if (pid == (uint)Environment.ProcessId) return;
+        // Walk up from the cat: meeting the front window means it's above.
+        var w = me;
+        for (int i = 0; i < 2000; i++)
+        {
+            w = GetWindow(w, 3); // the window above
+            if (w == IntPtr.Zero) return;
+            if (w == front) break;
+        }
+        if (w != front) return;
+        const uint NoMove = 0x2, NoSize = 0x1, NoActivate = 0x10, NoOwnerOrder = 0x200;
+        SetWindowPos(me, new IntPtr(-2), 0, 0, 0, 0, NoMove | NoSize | NoActivate | NoOwnerOrder); // not on top
+        SetWindowPos(me, new IntPtr(-1), 0, 0, 0, 0, NoMove | NoSize | NoActivate | NoOwnerOrder); // on top again
+        if (_lifted++ < 5) Log.Info("Cat lifted back on top (a window had slipped over it)");
+    }
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd, System.Text.StringBuilder name, int count);
 
     void Place()

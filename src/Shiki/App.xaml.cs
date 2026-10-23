@@ -1454,8 +1454,9 @@ public partial class App : Application
     /// WhatsApp opens on the chat with the message typed (its own link, no searching), and once
     /// its window is in front, Enter sends it. If it never comes up, the message waits there.
     /// </summary>
-    async System.Threading.Tasks.Task<string> SendWhatsApp(string phone, string text)
+    async System.Threading.Tasks.Task<string> SendWhatsApp(string phone, string text, bool web)
     {
+        if (web) return await SendWhatsAppWeb(phone, text);
         var link = $"whatsapp://send?phone={phone}&text={Uri.EscapeDataString(text)}";
         Process.Start(new ProcessStartInfo(link) { UseShellExecute = true })?.Dispose();
         AiLog.Write("whatsapp", $"to {phone}: {text.Length} characters");
@@ -1475,6 +1476,53 @@ public partial class App : Application
         }
         return "WhatsApp is open with the message ready: press Enter to send it.";
     }
+
+    /// <summary>
+    /// WhatsApp Web in Chrome (or the usual browser if there's no Chrome), on the chat with the
+    /// message typed. Once its tab is in front and has had time to load, Enter sends it.
+    /// </summary>
+    async System.Threading.Tasks.Task<string> SendWhatsAppWeb(string phone, string text)
+    {
+        var link = $"https://web.whatsapp.com/send?phone={phone}&text={Uri.EscapeDataString(text)}";
+        string browser = "Chrome";
+        try { Process.Start(new ProcessStartInfo("chrome", link) { UseShellExecute = true })?.Dispose(); }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            browser = "your browser";
+            Process.Start(new ProcessStartInfo(link) { UseShellExecute = true })?.Dispose();
+        }
+        AiLog.Write("whatsapp", $"web, to {phone}: {text.Length} characters");
+        for (int i = 0; i < 60; i++)
+        {
+            await System.Threading.Tasks.Task.Delay(250);
+            if (!WhatsAppWebInFront()) continue;
+            // The page takes a few seconds to load the chat and put the message in the box.
+            await System.Threading.Tasks.Task.Delay(7000);
+            if (!WhatsAppWebInFront()) break;
+            TypeText.PressEnter();
+            return $"WhatsApp Web is open in {browser} on that chat, and Enter was pressed to send it. If the message is still in the box (the page was slow), press Enter.";
+        }
+        return $"WhatsApp Web is open in {browser} with the message typed: press Enter to send it.";
+    }
+
+    /// <summary>A browser window in front whose tab is WhatsApp.</summary>
+    static bool WhatsAppWebInFront()
+    {
+        var front = NativeMethods.GetForegroundWindow();
+        var title = new System.Text.StringBuilder(256);
+        GetWindowText(front, title, title.Capacity);
+        if (!title.ToString().Contains("WhatsApp", StringComparison.OrdinalIgnoreCase)) return false;
+        NativeMethods.GetWindowThreadProcessId(front, out var pid);
+        try
+        {
+            using var process = Process.GetProcessById((int)pid);
+            return process.ProcessName is "chrome" or "msedge" or "firefox" or "brave" or "opera" or "vivaldi";
+        }
+        catch (ArgumentException) { return false; }
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    static extern int GetWindowText(IntPtr hwnd, System.Text.StringBuilder text, int count);
 
     // ---- The agent: mouse and keyboard ----
 
