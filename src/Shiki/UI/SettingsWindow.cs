@@ -26,6 +26,7 @@ public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
     Func<bool> VoiceAnswers, Action ToggleVoiceAnswers, Func<int> GetFollowUp, Action<int> SetFollowUp,
     Func<bool> WakeOn, Action ToggleWake, Action TeachName,
     Func<bool> VoiceLock, Action ToggleVoiceLock, Func<string> GetVoiceLockLevel, Action<string> SetVoiceLockLevel,
+    Func<string> GetSpeechLanguage, Action<string> SetSpeechLanguage, Func<string> GetHindiScript, Action<string> SetHindiScript,
     Func<string> GetTalkBack, Action<string> SetTalkBack, Func<string> GetTalkVoice, Action<string> SetTalkVoice, Func<string> SpokenUsage,
     Func<string> Spent, Action OpenLog);
 
@@ -239,6 +240,32 @@ public sealed class SettingsWindow : Window
         refresh = Show;
         deepgramKey.Changed += Show;
         Show();
+
+        // Hindi and Hinglish.
+        stack.Children.Add(Line("I speak", "Hindi + English understands Hindi, English and Hinglish, even mixed in one sentence. With Deepgram it's live; Whisper on this PC downloads a 190 MB model for it once.", new Border()));
+        var languages = new List<(string Id, Border Chip)>();
+        void ShowLanguage() { foreach (var (id, chip) in languages) UiKit.Select(chip, ai.GetSpeechLanguage() == id); }
+        var languageRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
+        foreach (var (id, label) in new[] { ("en", "English"), ("hi-en", "Hindi + English (Hinglish)") })
+        {
+            var chip = UiKit.Button(label, () => { ai.SetSpeechLanguage(id); ShowLanguage(); });
+            languages.Add((id, chip));
+            languageRow.Children.Add(chip);
+        }
+        stack.Children.Add(languageRow);
+        ShowLanguage();
+        stack.Children.Add(UiKit.Body("Dictation types Hindi as:", 11.5));
+        var scripts = new List<(string Id, Border Chip)>();
+        void ShowScript() { foreach (var (id, chip) in scripts) UiKit.Select(chip, ai.GetHindiScript() == id); }
+        var scriptRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 6) };
+        foreach (var (id, label) in new[] { ("devanagari", "\u0939\u093F\u0902\u0926\u0940 (Devanagari)"), ("roman", "Roman (aap kaise ho)") })
+        {
+            var chip = UiKit.Button(label, () => { ai.SetHindiScript(id); ShowScript(); });
+            scripts.Add((id, chip));
+            scriptRow.Children.Add(chip);
+        }
+        stack.Children.Add(scriptRow);
+        ShowScript();
 
         stack.Children.Add(Line("Answer plans by voice", "After a spoken request, listen for \"yes\" or \"no\" when a plan card shows.",
             Toggle(new SettingSwitch("", "", ai.VoiceAnswers, ai.ToggleVoiceAnswers))));

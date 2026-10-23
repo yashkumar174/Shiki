@@ -25,7 +25,19 @@ public interface ISpeechToText
 /// <summary>Which engine handles commands, from settings.</summary>
 public static class Speech
 {
-    public static readonly WhisperLocal Whisper = new();
+    /// <summary>English Whisper: the wake word, and commands when only English is spoken.</summary>
+    public static readonly WhisperLocal Whisper = new("ggml-base.en.bin", 147_964_211, "148 MB", "en");
+
+    /// <summary>Multilingual Whisper, for Hindi and Hinglish.</summary>
+    public static readonly WhisperLocal WhisperHindi = new("ggml-small-q5_1.bin", 190_085_487, "190 MB", "auto");
+
+    /// <summary>"en", or "hi-en" for Hindi and Hinglish too; set from settings.</summary>
+    public static string Language { get; set; } = "en";
+
+    public static bool Hindi => Language == "hi-en";
+
+    /// <summary>Whisper for what the person says (not the wake word): multilingual when they speak Hindi.</summary>
+    public static WhisperLocal Local => Hindi ? WhisperHindi : Whisper;
 
     /// <summary>The wake word goes to Deepgram (speech bursts only) rather than Whisper; set from settings.</summary>
     public static bool WakeOnDeepgram { get; set; }
@@ -39,5 +51,5 @@ public static class Speech
     public static ISpeechToText ForCommands(Settings settings, Func<string> catName) =>
         settings.VoiceEngine == "wispr" && WisprFlow.Available && WisprFlow.HasKey ? new WisprFlow()
         : CommandsOnDeepgram(settings) ? new Deepgram(() => KeyTerms(catName()))
-        : Whisper;
+        : Local;
 }

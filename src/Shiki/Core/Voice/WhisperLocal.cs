@@ -10,14 +10,19 @@ using Whisper.net;
 namespace Shiki.Core.Voice;
 
 /// <summary>
-/// OpenAI's Whisper (English "base" model, MIT) through whisper.cpp, on this PC: nothing leaves it.
-/// The model (148 MB) downloads the first time voice is used and is let go after a few idle minutes.
+/// OpenAI's Whisper (MIT) through whisper.cpp, on this PC: nothing leaves it. Two models: English
+/// "base" (148 MB, the wake word and English commands) and multilingual "small" (190 MB, for Hindi
+/// and Hinglish). Each downloads the first time it's needed and is let go after a few idle minutes.
 /// </summary>
-public sealed class WhisperLocal : ISpeechToText
+public sealed class WhisperLocal(string file, long bytes, string size, string language) : ISpeechToText
 {
-    const string ModelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin";
-    const long ModelBytes = 147_964_211;
+    readonly string _url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + file;
+
+    /// <summary>The English model, as everything used it before Hindi came along.</summary>
     public const string DownloadSize = "148 MB";
+
+    /// <summary>This model's download, e.g. "190 MB".</summary>
+    public string Size => size;
 
     readonly SemaphoreSlim _gate = new(1, 1);
     WhisperFactory? _factory;
@@ -31,9 +36,12 @@ public sealed class WhisperLocal : ISpeechToText
     /// <summary>Running on the graphics card (Vulkan or CUDA) rather than the processor; known once the model has loaded.</summary>
     public static bool OnGpu { get; private set; }
 
-    public static string ModelPath => Path.Combine(Log.DataDir, "models", "ggml-base.en.bin");
+    public string ModelPath => Path.Combine(Log.DataDir, "models", file);
 
-    public static bool Downloaded => File.Exists(ModelPath);
+    /// <summary>The English model is on this PC (the wake word's).</summary>
+    public static bool Downloaded => Speech.Whisper.IsDownloaded;
+
+    public bool IsDownloaded => File.Exists(ModelPath);
 
     public async Task Prepare(IProgress<double>? progress, CancellationToken ct)
     {
@@ -42,9 +50,9 @@ public sealed class WhisperLocal : ISpeechToText
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var part = path + ".part";
         using var http = new HttpClient { Timeout = TimeSpan.FromHours(1) };
-        using var response = await http.GetAsync(ModelUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await http.GetAsync(_url, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
-        long total = response.Content.Headers.ContentLength ?? ModelBytes;
+        long total = response.Content.Headers.ContentLength ?? bytes;
         await using (var source = await response.Content.ReadAsStreamAsync(ct))
         await using (var target = File.Create(part))
         {
@@ -84,7 +92,8 @@ public sealed class WhisperLocal : ISpeechToText
                 Log.Info($"Whisper loaded on {library}");
             }
             var builder = _factory.CreateBuilder()
-                .WithLanguage("en")
+                // "auto" for the multilingual model: Hindi, English, or both in one sentence.
+                .WithLanguage(language)
                 .WithNoContext()
                 .WithThreads(threads);
             // No hint for the wake word: a hint with the name in it makes Whisper hear the name everywhere.

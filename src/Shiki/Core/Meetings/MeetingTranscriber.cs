@@ -247,7 +247,7 @@ public sealed class WhisperMeeting : IMeetingTranscriber
             try
             {
                 Partial?.Invoke(side, "…");
-                var text = await Speech.Whisper.Transcribe(samples, "", CancellationToken.None);
+                var text = await Speech.Local.Transcribe(samples, "", CancellationToken.None);
                 Partial?.Invoke(side, "");
                 if (text.Length > 0) Line?.Invoke(new MeetingLine { At = at, Speaker = side == 0 ? "You" : "Speaker 1", Text = text });
             }

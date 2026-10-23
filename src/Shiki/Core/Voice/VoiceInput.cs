@@ -95,7 +95,7 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         bool quiet = false;
         try
         {
-            if (engine is WhisperLocal && !WhisperLocal.Downloaded)
+            if (engine is WhisperLocal local && !local.IsDownloaded)
             {
                 ReadyProgress = 0;
                 Set(VoiceState.GettingReady);
@@ -152,7 +152,7 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
                 if (connecting != null) live = await connecting;
             }
             if (ct.IsCancellationRequested) return;
-            if (engine is Deepgram && live == null) engine = Speech.Whisper;
+            if (engine is Deepgram && live == null) engine = Speech.Local;
             string? streamed = live != null ? await live.Finish() : null;
             if (heard.Kind != HeardKind.Speech && string.IsNullOrWhiteSpace(streamed))
             {
@@ -207,7 +207,7 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         catch (Exception ex) when (engine is not WhisperLocal && ex is System.Net.Http.HttpRequestException or DeepgramException or TaskCanceledException && !ct.IsCancellationRequested)
         {
             Log.Error($"{engine.Name} failed; using Whisper", ex);
-            return await Speech.Whisper.Transcribe(samples, hint, ct);
+            return await Speech.Local.Transcribe(samples, hint, ct);
         }
     }
 
@@ -296,6 +296,7 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     /// <summary>"Thanks", "that's all", "stop listening"… on its own (with "Sky" or "no" around it), not "thanks, now compress it".</summary>
     public static bool IsGoodbye(string text)
     {
+        if (Hinglish.IsGoodbye(text)) return true;
         var words = Regex.Replace(text.ToLowerInvariant(), @"[^a-z' ]", " ");
         var list = words.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList();
         if (list.Count == 0 || list.Count > 6) return false;
@@ -315,6 +316,7 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     /// </summary>
     public static bool? Answer(string text)
     {
+        if (Hinglish.Answer(text) is { } hinglish) return hinglish;
         var words = Regex.Replace(text.ToLowerInvariant(), @"[^a-z' ]", " ");
         words = string.Join(" ", words.Split(' ', StringSplitOptions.RemoveEmptyEntries));
         if (words.Length == 0 || words.Split(' ').Length > 5) return null;

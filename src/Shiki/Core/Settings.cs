@@ -93,6 +93,10 @@ public sealed class Settings
     public bool VoiceLock { get; set; } = true;
     /// <summary>How alike the voice must be: "relaxed", "normal" or "strict".</summary>
     public string VoiceLockLevel { get; set; } = "normal";
+    /// <summary>What the person speaks: "en", or "hi-en" (Hindi, English and Hinglish).</summary>
+    public string SpeechLanguage { get; set; } = "en";
+    /// <summary>How dictated Hindi is typed: "devanagari" (हिंदी) or "roman" (Hinglish, as on WhatsApp).</summary>
+    public string HindiScript { get; set; } = "devanagari";
     /// <summary>Read the cat's replies aloud: "spoken" (when you spoke to it), "always", or "off".</summary>
     public string TalkBack { get; set; } = "spoken";
     /// <summary>The cat's voice: "dg:aura-2-…" (Deepgram) or "win:&lt;id&gt;" (Windows); empty picks one.</summary>

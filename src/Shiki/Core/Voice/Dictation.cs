@@ -40,7 +40,7 @@ public sealed class Dictation(Settings settings, Func<string> catName)
     {
         var ct = _cancel.Token;
         var engine = Speech.ForCommands(settings, catName);
-        if (engine is WhisperLocal && !WhisperLocal.Downloaded)
+        if (engine is WhisperLocal local && !local.IsDownloaded)
         {
             await engine.Prepare(new Progress<double>(p => Post(() => Status = $"Getting my ears ready (one time)… {p:0%}")), ct);
         }
@@ -69,7 +69,7 @@ public sealed class Dictation(Settings settings, Func<string> catName)
                     {
                         Log.Error("Dictation: Deepgram couldn't open; using Whisper", ex);
                         live = null;
-                        engine = Speech.Whisper;
+                        engine = Speech.Local;
                     }
                 }
                 heard = await listening;
@@ -78,8 +78,11 @@ public sealed class Dictation(Settings settings, Func<string> catName)
             var streamed = live != null ? await live.Finish() : null;
             if (heard.Kind != HeardKind.Speech && string.IsNullOrWhiteSpace(streamed)) return null;
             Post(() => Status = "Writing it down…");
-            var text = streamed is { Length: > 0 } ? streamed : await (engine is WhisperLocal ? Speech.Whisper : engine).Transcribe(heard.Samples, "", ct);
-            return string.IsNullOrWhiteSpace(text) ? null : text.Trim();
+            var text = streamed is { Length: > 0 } ? streamed : await (engine is WhisperLocal ? Speech.Local : engine).Transcribe(heard.Samples, "", ct);
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            // Hindi typed the Roman way, if that's how the person writes it (WhatsApp Hinglish).
+            if (settings.HindiScript == "roman") text = Hinglish.ToRoman(text);
+            return text.Trim();
         }
         catch (OperationCanceledException)
         {

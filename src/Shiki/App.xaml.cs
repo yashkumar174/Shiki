@@ -412,6 +412,21 @@ public partial class App : Application
                     Log.Info($"habit-test fake spot: {(Habits.Spot(fake, dl) is { } fs ? $"{fs.Extension} {fs.Action.Id} x{fs.Times}" : "-")}");
                 }
                 break;
+            case "speech-language" when args.Length == 2:
+                // Dev aid: the speech language for this run only (the setting isn't changed).
+                Speech.Language = args[1];
+                Log.Info($"speech-language: {Speech.Language}");
+                break;
+            case "hear-file" when args.Length == 2:
+                // Dev aid: what the command engine writes down from a WAV, and the command it would be (nothing runs).
+                _ = HearFile(args[1]);
+                break;
+            case "hindi-test":
+                // Dev aid: Devanagari to Roman, and Hinglish commands (nothing runs).
+                foreach (var said in new[] { "आवाज़ कम करो", "क्रोम खोलो", "स्पॉटिफाई चलाओ", "आवाज़ बंद करो", "chrome kholo", "क्रोम खोलो", "volume chalis pe kar do", "roshni badhao", "dark mode on karo",
+                    "नोट्स लेना शुरू करो", "captions chalu karo", "ruko", "spotify chala do", "मुझे कल बैंक जाना है", "क्या आप मेरी मदद कर सकते हैं", "समझ नहीं आया", "करना", "संबंध", "हाँ", "नहीं", "शुक्रिया" })
+                    Log.Info($"hindi-test \"{said}\": roman \"{Hinglish.ToRoman(said)}\" -> command \"{WakeMatcher.Normalize(Hinglish.ToCommand(said))}\" pc={PcCommands.Match(WakeMatcher.Normalize(Hinglish.ToCommand(said))) != null} yes/no={Hinglish.Answer(said)} bye={Hinglish.IsGoodbye(said)}");
+                break;
             case "pc-test":
                 // Dev aid: reads the PC's controls, sets each to what it already is, and checks what
                 // phrases and app names would match (nothing is left changed).
@@ -800,6 +815,7 @@ public partial class App : Application
     void WatchPc()
     {
         _pc = new PcWatch();
+        Speech.Language = _settings.SpeechLanguage;
         Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard;
         // Read the Start menu now, so "open Spotify" is instant later.
         System.Threading.Tasks.Task.Run(Apps.All);
@@ -911,6 +927,10 @@ public partial class App : Application
                 () => { _settings.VoiceLock = !_settings.VoiceLock; _settings.Save(); },
                 () => _settings.VoiceLockLevel,
                 level => { _settings.VoiceLockLevel = level; _settings.Save(); },
+                () => _settings.SpeechLanguage,
+                language => { _settings.SpeechLanguage = language; Speech.Language = language; _settings.Save(); },
+                () => _settings.HindiScript,
+                script => { _settings.HindiScript = script; _settings.Save(); },
                 () => _settings.TalkBack,
                 mode => { _settings.TalkBack = mode; _settings.Save(); },
                 () => _settings.TalkVoice,
@@ -1844,7 +1864,8 @@ public partial class App : Application
     /// </summary>
     Action? VoiceCommand(string said)
     {
-        var words = WakeMatcher.Normalize(said);
+        // Hindi and Hinglish ("awaaz kam karo", "chrome kholo") in the English the commands below know.
+        var words = WakeMatcher.Normalize(Speech.Hindi ? Hinglish.ToCommand(said) : said);
         if (words is "take notes" or "take meeting notes" or "start taking notes" or "start notes" or "start the notes" or "take notes please" or "start meeting notes" or "take some notes")
         {
             return () =>
@@ -2184,6 +2205,21 @@ public partial class App : Application
         Log.Info($"wake-file: heard \"{text}\" -> {(hit ? $"wakes, then \"{after}\"" : "no wake")} in {watch.ElapsedMilliseconds} ms");
     }
 
+    async System.Threading.Tasks.Task HearFile(string wav)
+    {
+        try
+        {
+            var engine = Speech.ForCommands(_settings, () => CatName);
+            var text = await engine.Transcribe(ReadWav(wav), "", default);
+            var command = WakeMatcher.Normalize(Speech.Hindi ? Hinglish.ToCommand(text) : text);
+            Log.Info($"hear-file ({engine.Name}, {Speech.Language}): \"{text}\" -> \"{command}\" pc={PcCommands.Match(command) != null}");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("hear-file failed", ex);
+        }
+    }
+
     /// <summary>Dev aid for voice without a microphone: transcribe a WAV and use it like speech.</summary>
     async System.Threading.Tasks.Task SayFile(string wav)
     {
@@ -2191,7 +2227,8 @@ public partial class App : Application
         {
             var samples = ReadWav(wav);
             var watch = Stopwatch.StartNew();
-            var text = await Speech.Whisper.Transcribe(samples, $"{CatName}. Convert, merge, compress, PDF, JPG, Downloads.", default);
+            // The engine commands use (Deepgram when chosen), in the language set.
+            var text = await Speech.ForCommands(_settings, () => CatName).Transcribe(samples, $"{CatName}. Convert, merge, compress, PDF, JPG, Downloads.", default);
             Log.Info($"say-file: heard \"{text}\" in {watch.ElapsedMilliseconds} ms ({samples.Length / 16000.0:0.0} s of audio)");
             await Voice.Use(text, listenAfter: false);
         }

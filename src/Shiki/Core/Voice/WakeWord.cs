@@ -323,7 +323,7 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
     {
         // Deepgram already wrote the whole burst down; only the capped Whisper check needs a second pass.
         if (Speech.WakeOnDeepgram && Deepgram.HasKey) return quickRest;
-        var full = await Speech.Whisper.Transcribe(samples, $"Hey {name}. Convert, merge, compress, PDF, JPG, Downloads, Desktop.", ct);
+        var full = await Speech.Local.Transcribe(samples, $"Hey {name}. Convert, merge, compress, PDF, JPG, Downloads, Desktop.", ct);
         var (hit, rest) = WakeMatcher.Match(full, name, learned);
         return hit && rest.Length >= quickRest.Length ? rest : quickRest;
     }
