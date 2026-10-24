@@ -316,6 +316,12 @@ public partial class App : Application
                     Log.Info($"lookup-test \"{string.Join(" ", args[1..])}\": {(found == null ? "nothing" : $"{found.Label} {found.Uri}")} in {watch.ElapsedMilliseconds} ms");
                 });
                 break;
+            case "script-test":
+                // Dev aid: what different scripts become in English letters (answers go to the log).
+                foreach (var heardText in new[] { "కేక్ నంబర్ వై", "نمسطو ته বাই seedhe maut",
+                    "भाई, जाना ही ले रहा है?", "Can you open Spotify and play Kesariya?", "نمسطو ته" })
+                    Log.Info($"script-test \"{heardText}\" -> \"{Hinglish.LatinOnly(heardText)}\"");
+                break;
             case "deepgram-warm":
                 // Dev aid: opens the Deepgram connection, as speech starting does for "Hey Sky".
                 Deepgram.Warm();
@@ -2506,6 +2512,13 @@ public partial class App : Application
     {
         // Hindi and Hinglish ("awaaz kam karo", "chrome kholo") in the English the commands below know.
         var words = WakeMatcher.Normalize(Speech.Hindi ? Hinglish.ToCommand(said) : said);
+        // Two things in one go ("play Kesariya and turn the volume down"): the chat does both, rather
+        // than an instant command doing one part and dropping the rest. "Open Spotify and play…" is one thing.
+        var asSaid = WakeMatcher.Normalize(said);
+        if (System.Text.RegularExpressions.Regex.IsMatch(asSaid, @"\b(and|aur|then|phir|also|plus)\b")
+            && !System.Text.RegularExpressions.Regex.IsMatch(asSaid, @"^(can you |could you |please )?(open spotify and |spotify (pe|par) )")
+            && asSaid.Split(' ').Length > 3)
+            return null;
         if (words is "take notes" or "take meeting notes" or "start taking notes" or "start notes" or "start the notes" or "take notes please" or "start meeting notes" or "take some notes")
         {
             return () =>

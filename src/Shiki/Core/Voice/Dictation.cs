@@ -81,7 +81,7 @@ public sealed class Dictation(Settings settings, Func<string> catName)
             var text = streamed is { Length: > 0 } ? streamed : await (engine is WhisperLocal ? Speech.Local : engine).Transcribe(heard.Samples, "", ct);
             if (string.IsNullOrWhiteSpace(text)) return null;
             // Hindi typed the Roman way, if that's how the person writes it (WhatsApp Hinglish).
-            if (settings.HindiScript == "roman") text = Hinglish.ToRoman(text);
+            if (settings.HindiScript == "roman") text = Hinglish.LatinOnly(text);
             return text.Trim();
         }
         catch (OperationCanceledException)

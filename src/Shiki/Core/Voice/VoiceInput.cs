@@ -272,7 +272,20 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     async Task UseText(string text, bool listenAfter, bool fromFollowUp)
     {
         // Hindi written the Roman way (Hinglish), if that's how the person writes.
-        if (Speech.Hindi && settings.HindiScript == "roman") text = Hinglish.ToRoman(text);
+        if (settings.HindiScript == "roman")
+        {
+            // English letters only: Hindi (and other Indian scripts) spelled out, any other script dropped.
+            var latin = Hinglish.LatinOnly(text);
+            if (latin.Count(char.IsLetter) < 2 && text.Count(char.IsLetter) >= 2)
+            {
+                // All of it was in another script: almost always noise, or a mishearing.
+                AiLog.Write("ignored", $"not in English letters: {text}");
+                chat.Say(new CatDid("\uE720", "I couldn't make that out. Say it again?"));
+                if (listenAfter) Continue();
+                return;
+            }
+            text = latin;
+        }
         // A conversation is turns of you talking to the cat. A long stretch of words while it waited,
         // or turn after turn, is more likely a video or other people: stop rather than keep going.
         _turns = fromFollowUp ? _turns + 1 : 0;

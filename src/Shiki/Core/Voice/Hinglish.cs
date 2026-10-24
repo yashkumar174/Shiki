@@ -36,11 +36,48 @@ public static class Hinglish
 
     public static bool HasDevanagari(string text) => text.Any(c => c is >= 'ऀ' and <= 'ॿ');
 
-    /// <summary>Devanagari in Roman letters, the way Hinglish is usually typed; everything else is left alone.</summary>
+    /// <summary>
+    /// Devanagari (and the other Indian scripts) in Roman letters, the way Hinglish is usually typed;
+    /// everything else is left alone.
+    /// </summary>
     public static string ToRoman(string text)
     {
+        text = OtherIndianToDevanagari(text);
         if (!HasDevanagari(text)) return text;
         return Regex.Replace(text, @"[ऀ-ॿ]+", m => Word(m.Value));
+    }
+
+    /// <summary>
+    /// Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada and Malayalam are laid out like
+    /// Devanagari, 128 places apart each, so a letter moves across by its place (close enough to
+    /// spell a misheard word in Roman letters afterwards).
+    /// </summary>
+    static string OtherIndianToDevanagari(string text)
+    {
+        if (!text.Any(c => c is >= '\u0980' and <= '\u0D7F')) return text;
+        var moved = new System.Text.StringBuilder(text.Length);
+        foreach (char c in text)
+        {
+            if (c is >= '\u0980' and <= '\u0D7F')
+            {
+                char devanagari = (char)(0x0900 + (c - 0x0980) % 0x80);
+                moved.Append(char.IsLetter(devanagari) || char.GetUnicodeCategory(devanagari) is System.Globalization.UnicodeCategory.NonSpacingMark or System.Globalization.UnicodeCategory.SpacingCombiningMark ? devanagari : c);
+            }
+            else moved.Append(c);
+        }
+        return moved.ToString();
+    }
+
+    /// <summary>
+    /// Only English letters: Indian scripts become Roman letters, and words in any other script
+    /// (Urdu, Chinese…, which the speech engine sometimes "hears" in noise) are dropped.
+    /// </summary>
+    public static string LatinOnly(string text)
+    {
+        text = ToRoman(text);
+        if (!text.Any(c => char.IsLetter(c) && c > '\u024F')) return text;
+        var kept = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(w => !w.Any(c => char.IsLetter(c) && c > '\u024F'));
+        return Regex.Replace(string.Join(" ", kept), @"\s+([,.?!])", "$1").Trim(' ', ',', '.');
     }
 
     // One syllable: its consonants (maybe none) and its vowel; Schwa is the "a" every consonant carries until something else follows.
