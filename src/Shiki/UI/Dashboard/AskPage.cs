@@ -252,7 +252,10 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
             small.Margin = new Thickness(0, 10, 0, 0);
             stack.Children.Add(small);
         }
-        var footer = PlanFooter(plan);
+        // Someone new: their number or email, typed (or said) right here.
+        Action<bool>? addressReady = null;
+        if (plan is { Ask: { } ask, State: PlanState.Waiting }) stack.Children.Add(AddressBox(plan, ask, ready => addressReady?.Invoke(ready)));
+        var footer = PlanFooter(plan, ready => addressReady = ready);
         if (footer is FrameworkElement spaced && plan.Steps.Count == 0) spaced.Margin = new Thickness(spaced.Margin.Left, Math.Max(spaced.Margin.Top, 14), spaced.Margin.Right, spaced.Margin.Bottom);
         stack.Children.Add(footer);
 
@@ -263,7 +266,65 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         return card;
     }
 
-    UIElement PlanFooter(PlanItem plan)
+    /// <summary>"Tausif's WhatsApp number" with a box (+91 already in it), and what's still missing under it.</summary>
+    UIElement AddressBox(PlanItem plan, AddressAsk ask, Action<bool> ready)
+    {
+        var stack = new StackPanel { Margin = new Thickness(0, 14, 0, 0) };
+        var label = k.Text(ask.Kind == AddressKind.Phone ? $"{ask.Name}'s WhatsApp number" : $"{ask.Name}'s email", compact ? 12.5 : 13, P.Muted, FontWeights.SemiBold);
+        label.Margin = new Thickness(0, 0, 0, 6);
+        stack.Children.Add(label);
+        var box = new TextBox
+        {
+            Text = plan.Address,
+            FontFamily = DashKit.Sans,
+            FontSize = compact ? 14.5 : 15.5,
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Foreground = DashKit.B(P.Text),
+            CaretBrush = DashKit.B(P.Text),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            InputScope = new InputScope { Names = { new InputScopeName(ask.Kind == AddressKind.Phone ? InputScopeNameValue.TelephoneNumber : InputScopeNameValue.EmailSmtpAddress) } },
+        };
+        var field = new Border
+        {
+            Background = DashKit.B(P.Hover),
+            BorderBrush = DashKit.B(P.AccentEdge),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Padding = new Thickness(12, 7, 12, 8),
+            Child = box,
+        };
+        stack.Children.Add(field);
+        var hint = k.Text("", compact ? 11.5 : 12, P.Faint, wrap: true);
+        hint.Margin = new Thickness(0, 6, 0, 0);
+        stack.Children.Add(hint);
+        void Check()
+        {
+            // Kept on the card, not the chat: the chat redraws itself, and this survives it.
+            plan.Address = box.Text;
+            var problem = Addresses.Problem(ask.Kind, box.Text);
+            hint.Text = problem ?? "I'll remember it, so next time just say the name.";
+            hint.Foreground = DashKit.B(problem == null ? P.Muted : P.Faint);
+            ready(problem == null);
+        }
+        Check();
+        box.TextChanged += (_, _) => Check();
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key != Key.Enter) return;
+            e.Handled = true;
+            if (plan.AddressReady) _ = chat.Confirm(plan);
+        };
+        // Ready to type straight away, after what's already there.
+        box.Loaded += (_, _) =>
+        {
+            box.Focus();
+            box.CaretIndex = box.Text.Length;
+        };
+        return stack;
+    }
+
+    UIElement PlanFooter(PlanItem plan, Action<Action<bool>>? addressReady = null)
     {
         var footer = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
         switch (plan.State)
@@ -289,8 +350,19 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
             }
             case PlanState.Waiting:
             {
-                var go = k.Button("Do it", () => _ = chat.Confirm(plan), DashKit.Pill.Accent, size: 13.5);
+                var go = k.Button(plan.Ask != null ? "Save and send" : "Do it", () => _ = chat.Confirm(plan), DashKit.Pill.Accent, size: 13.5);
                 go.Margin = new Thickness(0, 0, 8, 0);
+                if (plan.Ask != null)
+                {
+                    // Greyed out until the box holds a number (or email) that will do.
+                    void Ready(bool ready)
+                    {
+                        go.IsEnabled = ready;
+                        go.Opacity = ready ? 1 : 0.45;
+                    }
+                    Ready(plan.AddressReady);
+                    addressReady?.Invoke(Ready);
+                }
                 footer.Children.Add(go);
                 footer.Children.Add(k.Button("Not now", () => chat.Decline(plan), DashKit.Pill.Quiet, size: 13.5));
                 break;

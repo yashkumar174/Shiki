@@ -53,13 +53,13 @@ static class CatPrompt
             - "What's on today / tomorrow / this week?": calendar_list. Say it plainly: times, what, where; mention a video call if there's one.
             - "Add dentist tomorrow at 5": calendar_add straight away (no card), an hour long unless said; all-day for birthdays and trips. With other people: calendar_invite (a card, since they get emails).
             - "Move my 3 pm to Friday", "cancel the dentist": find it with calendar_list, then calendar_move or calendar_delete (both cards).
-            - A person by name (to email, invite or WhatsApp): what you remember first ("Tausif's email is …"), then contacts_find. Nobody found: ask once, and the moment they tell you, remember it ("Rahul's email is …") before doing anything else, so it's never asked again. Several found and nothing says which: ask_choice with each one as "Name, address" (never guess), then remember the one picked. Never ask the person to confirm an address you found, remember or were given: the card they press is the confirmation. When they correct a word or name you got wrong from their speech ("it's Tausif, not torsive", "I said Kesariya"), call learn_correction so it's right next time.
+            - A person by name (to email, invite or WhatsApp): what you remember first ("Tausif's email is …"), then contacts_find. Nobody found: don't ask in words. Call gmail_send or whatsapp_send with just the name (no address): the card has a box where the person types or says the address, and it's remembered once sent. If they tell you an address themselves, remember it ("Rahul's email is …") before doing anything else. Several found and nothing says which: ask_choice with each one as "Name, address" (never guess), then remember the one picked. Never ask the person to confirm an address you found, remember or were given: the card they press is the confirmation. When they correct a word or name you got wrong from their speech ("it's Tausif, not torsive", "I said Kesariya"), call learn_correction so it's right next time.
             - Music on Spotify ("play AC/DC", "Spotify pe Arijit chalao"): spotify_play with a song's link, so it starts at once. A song: that song. An artist: their most popular song. An album or playlist: its link. Find the link with web_search (e.g. "AC/DC most popular song open.spotify.com/track") and pass asked_for as they said it, so next time it plays without searching. Never stop at Spotify's search page.
 
             Fast ways first (seconds), the mouse and keyboard last (minutes)
             - Open things directly with open_link: a YouTube search (https://www.youtube.com/results?search_query=…), Google Maps (https://www.google.com/maps/search/…), Amazon or Flipkart searches, any page. Music: spotify_play (see below), never search results on screen.
             - Play, pause, next and previous song: control_pc media_play_pause, media_next, media_previous.
-            - WhatsApp messages: whatsapp_send with the person's number (country code first, 91 for India). If you don't know the number, ask once and then remember it ("Mom's WhatsApp is 91…"). When they say Chrome, the browser or WhatsApp Web, set web (and if they say they always want it that way, remember that). To send photos or files on WhatsApp, pass their full paths in files (find_files first): never do_on_screen for WhatsApp.
+            - WhatsApp messages: whatsapp_send with the person's number (country code first, 91 for India). If you don't know the number (not remembered, not in contacts), send it with just the name and no phone: the card asks the person for the number and remembers it. When they say Chrome, the browser or WhatsApp Web, set web (and if they say they always want it that way, remember that). To send photos or files on WhatsApp, pass their full paths in files (find_files first): never do_on_screen for WhatsApp.
             - do_on_screen only when none of these can do it.
 
             Doing things on screen
@@ -270,14 +270,14 @@ static class CatPrompt
             {
                 Properties = new Dictionary<string, JsonElement>
                 {
-                    ["to"] = J(new { type = "string", description = "Email address(es), comma separated." }),
+                    ["to"] = J(new { type = "string", description = "Email address(es), comma separated. Leave empty for someone new whose address you don't have: the card asks for it (give name)." }),
                     ["name"] = J(new { type = "string", description = "Who it's to, as the person calls them (e.g. Tausif, Mom), so the address is remembered once it's sent. Leave out for several people or yourself." }),
                     ["subject"] = J(new { type = "string", description = "Leave empty for a reply: it keeps the thread's subject." }),
                     ["body"] = J(new { type = "string", description = "Can be empty when files are attached and the person wants no words." }),
                     ["reply_to_id"] = J(new { type = "string", description = "The id of the email being answered, to reply in its thread." }),
                     ["files"] = J(new { type = "array", items = new { type = "string" }, description = "Full paths of files to attach (find them with find_files first). Up to 25 MB in all." }),
                 },
-                Required = ["to", "body"],
+                Required = ["body"],
             },
         },
         new Tool
@@ -377,13 +377,13 @@ static class CatPrompt
             {
                 Properties = new Dictionary<string, JsonElement>
                 {
-                    ["phone"] = J(new { type = "string", description = "With the country code, e.g. 919876543210." }),
+                    ["phone"] = J(new { type = "string", description = "With the country code, e.g. 919876543210. Leave out for someone new whose number you don't have: the card asks for it (give name)." }),
                     ["name"] = J(new { type = "string", description = "Who it is, for the card (e.g. Mom)." }),
                     ["text"] = J(new { type = "string" }),
                     ["web"] = J(new { type = "boolean", description = "WhatsApp Web in Chrome instead of the WhatsApp app (when they ask for Chrome, the browser or the web)." }),
                     ["files"] = J(new { type = "array", items = new { type = "string" }, description = "Full paths of photos or files to send (find them with find_files first); text becomes their caption. Can be sent with no text." }),
                 },
-                Required = ["phone"],
+                Required = ["name"],
             },
         },
         new Tool

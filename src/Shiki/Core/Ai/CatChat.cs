@@ -50,6 +50,9 @@ public sealed class ChatProblem(string text, bool needsKey = false) : ChatItem
 
 public sealed record PlanStep(BroAction Action, IReadOnlyList<string> Files, bool UsePrevious);
 
+/// <summary>Whose address the card asks for, and what kind.</summary>
+public sealed record AddressAsk(AddressKind Kind, string Name);
+
 public enum PlanState { Waiting, Running, Done, Failed, Declined, Skipped }
 
 /// <summary>Something the cat wants to do to files. Nothing runs until the person presses Do it.</summary>
@@ -82,6 +85,12 @@ public sealed class PlanItem(string summary, IReadOnlyList<PlanStep> steps) : Ch
     public bool Countdown { get; init; }
     /// <summary>When the countdown ends (set once the card is up).</summary>
     public DateTime? SendsAt { get; internal set; }
+    /// <summary>To someone new: a box for their number or email, which is remembered once it's sent.</summary>
+    public AddressAsk? Ask { get; init; }
+    /// <summary>What's in that box (typed, or said).</summary>
+    public string Address { get; internal set; } = "";
+    /// <summary>The box holds a number or an email that will do.</summary>
+    public bool AddressReady => Ask is not { } ask || Addresses.Clean(ask.Kind, Address) != null;
     public IReadOnlyList<PlanStep> Steps { get; } = steps;
     public PlanState State { get; internal set; } = PlanState.Waiting;
     /// <summary>The step running now (0-based) while Running.</summary>
@@ -692,7 +701,7 @@ public sealed class CatChat(CatHands hands)
     /// <summary>The person pressed Do it: run each step, feeding one step's results to the next.</summary>
     public async Task Confirm(PlanItem plan)
     {
-        if (plan.State != PlanState.Waiting || plan != _plan) return;
+        if (plan.State != PlanState.Waiting || plan != _plan || !plan.AddressReady) return;
         plan.State = PlanState.Running;
         AiLog.Write("confirmed", plan.Summary);
         Notify();
@@ -880,8 +889,11 @@ public sealed class CatChat(CatHands hands)
             {
                 var phone = new string((Str(input, "phone") ?? "").Where(char.IsDigit).ToArray());
                 var text = (Str(input, "text") ?? "").Trim();
-                var who = Str(input, "name") ?? phone;
-                if (phone.Length < 10) return (null, "WhatsApp needs the number with the country code (91 for India). Ask the person for it once, then remember it.");
+                var person = (Str(input, "name") ?? "").Trim();
+                var who = person.Length > 0 ? person : phone;
+                // Someone new: the card asks for the number (no number and no name: nothing to go on).
+                var ask = phone.Length < 10 && person.Length > 0 ? new AddressAsk(AddressKind.Phone, person) : null;
+                if (phone.Length < 10 && ask == null) return (null, "WhatsApp needs the number with the country code (91 for India), or the person's name so the card can ask for it.");
                 var (files, problem) = Attachments(input);
                 if (problem != null) return (null, problem.Replace("Gmail takes up to 25 MB in one email", "that's a lot to send at once"));
                 if (text.Length == 0 && files.Count == 0) return (null, "What should the message say?");
@@ -890,9 +902,18 @@ public sealed class CatChat(CatHands hands)
                 {
                     Detail = text.Length > 0 ? text : null,
                     Attached = files,
-                    Countdown = hands.CountdownSends?.Invoke() == true && People.Known(phone),
+                    Ask = ask,
+                    Countdown = ask == null && hands.CountdownSends?.Invoke() == true && People.Known(phone),
                 };
-                card.Run = () => hands.SendWhatsApp(phone, text, web, files);
+                if (ask != null) card.Address = Addresses.Start(AddressKind.Phone);
+                card.Run = async () =>
+                {
+                    if (ask == null) return await hands.SendWhatsApp(phone, text, web, files);
+                    // Saved first: it was typed on purpose, even if WhatsApp then needs a hand.
+                    var number = Addresses.Phone(card.Address)!;
+                    RememberAddress(ask, number);
+                    return $"{await hands.SendWhatsApp(number, text, web, files)} Saved {person}'s number ({number}) for next time.";
+                };
                 return (card, null);
             }
             case "gmail_send":
@@ -900,18 +921,28 @@ public sealed class CatChat(CatHands hands)
                 if (!Mail.Gmail.Connected) return (null, "Gmail isn't connected. Tell the person to connect it in Settings, under Gmail.");
                 var (files, problem) = Attachments(input);
                 if (problem != null) return (null, problem);
-                var draft = new Mail.Gmail.Draft(Str(input, "to") ?? "", Str(input, "subject") ?? "", Str(input, "body") ?? "", Str(input, "reply_to_id"), files);
-                if (draft.To.Length == 0 || draft.Body.Trim().Length == 0 && files.Count == 0) return (null, "An email needs a recipient and some words (or files).");
-                var lines = (draft.Subject.Length > 0 ? $"Subject: {draft.Subject}\n" : draft.ReplyToId != null ? "A reply in the same thread\n" : "") + draft.Body.Trim();
+                var draft = new Mail.Gmail.Draft((Str(input, "to") ?? "").Trim(), Str(input, "subject") ?? "", Str(input, "body") ?? "", Str(input, "reply_to_id"), files);
                 var person = (Str(input, "name") ?? "").Trim();
-                var card = new PlanItem($"Send an email to {draft.To}", [])
+                // Someone new (a name, no address): the card asks for it.
+                var ask = !draft.To.Contains('@') && person.Length > 0 ? new AddressAsk(AddressKind.Email, person) : null;
+                if (!draft.To.Contains('@') && ask == null || draft.Body.Trim().Length == 0 && files.Count == 0) return (null, "An email needs a recipient (an address, or the person's name so the card can ask for it) and some words (or files).");
+                var lines = (draft.Subject.Length > 0 ? $"Subject: {draft.Subject}\n" : draft.ReplyToId != null ? "A reply in the same thread\n" : "") + draft.Body.Trim();
+                var card = new PlanItem($"Send an email to {(ask != null ? person : draft.To)}", [])
                 {
                     Detail = lines.Trim().Length > 0 ? lines.Trim() : null,
                     Attached = files,
-                    Countdown = hands.CountdownSends?.Invoke() == true && People.Known(draft.To),
+                    Ask = ask,
+                    Countdown = ask == null && hands.CountdownSends?.Invoke() == true && People.Known(draft.To),
                 };
                 card.Run = async () =>
                 {
+                    if (ask != null)
+                    {
+                        var address = Addresses.Email(card.Address)!;
+                        RememberAddress(ask, address);
+                        await Mail.Gmail.Send(draft with { To = address }, CancellationToken.None);
+                        return $"Sent to {person} ({address}). Saved the address for next time.";
+                    }
                     await Mail.Gmail.Send(draft, CancellationToken.None);
                     // Sent once, known from now on: next time it isn't asked for.
                     if (person.Length > 0 && !draft.To.Contains(',') && !Preferences.All.Any(f => f.Contains(draft.To, StringComparison.OrdinalIgnoreCase)))
@@ -1050,6 +1081,23 @@ public sealed class CatChat(CatHands hands)
             if (DateTime.Now >= plan.SendsAt && !Busy) break;
         }
         if (plan.State == PlanState.Waiting && plan == _plan) await Confirm(plan);
+    }
+
+    /// <summary>A number or email said aloud for the waiting card: it goes in the box, for a yes.</summary>
+    public void FillAddress(PlanItem plan, string address)
+    {
+        if (plan.State != PlanState.Waiting || plan.Ask == null) return;
+        plan.Address = address;
+        AiLog.Write("address", address);
+        Notify();
+    }
+
+    /// <summary>Remembers a new person's number or email (the card's box), so it's never asked again.</summary>
+    static void RememberAddress(AddressAsk ask, string address)
+    {
+        var fact = ask.Kind == AddressKind.Phone ? $"{ask.Name}'s WhatsApp is {address}" : $"{ask.Name}'s email is {address}";
+        Preferences.Add(fact);
+        AiLog.Write("remembered", fact);
     }
 
     public void Decline(PlanItem plan)

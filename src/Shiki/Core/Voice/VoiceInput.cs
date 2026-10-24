@@ -328,9 +328,26 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             return;
         }
 
+        // A card asking for someone new's number or email: said aloud, it goes in the box, then a yes sends.
+        if (chat.WaitingPlan is { Ask: { } ask } asking && Addresses.FromSpeech(ask.Kind, text) is { } address)
+        {
+            chat.Say(new YouSaid(text, spoken: true));
+            chat.FillAddress(asking, address);
+            if (!asking.AddressReady)
+                chat.Say(new CatDid("", $"{Addresses.Problem(ask.Kind, address)}. Say it again, or type it in the box."));
+            if (listenAfter) Continue();
+            return;
+        }
+
         if (chat.WaitingPlan is { } plan && Answer(text) is { } yes)
         {
             chat.Say(new YouSaid(text, spoken: true));
+            if (yes && !plan.AddressReady)
+            {
+                chat.Say(new CatDid("", plan.Ask!.Kind == AddressKind.Phone ? "I need the number first: say it, or type it in the box." : "I need the email first: say it, or type it in the box."));
+                if (listenAfter) Continue();
+                return;
+            }
             if (yes) await chat.Confirm(plan);
             else chat.Decline(plan);
             if (IsGoodbye(text)) { EndConversation(); return; }

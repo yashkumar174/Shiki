@@ -614,6 +614,29 @@ public partial class App : Application
                 _dashboard!.SelectMeeting(args[1]);
                 _dashboard.Snapshot(args[2], DashPage.Meetings);
                 break;
+            case "address-test" when args.Length >= 3 && args[1] is "phone" or "email":
+            {
+                // Dev aid: how a typed or spoken number / email is read (nothing is sent).
+                var kind = args[1] == "phone" ? AddressKind.Phone : AddressKind.Email;
+                var typed = string.Join(" ", args.Skip(2));
+                Log.Info($"address-test {args[1]} \"{typed}\": clean={Addresses.Clean(kind, typed) ?? "-"} | problem={Addresses.Problem(kind, typed) ?? "-"} | spoken={Addresses.FromSpeech(kind, typed) ?? "-"}");
+                break;
+            }
+            case "address-card-demo" when args.Length >= 3 && args[1] is "phone" or "email":
+            {
+                // Dev aid: a pretend new-person card in the chat (it can't send: Claude didn't make it), for snapshot-bubble.
+                var kind = args[1] == "phone" ? AddressKind.Phone : AddressKind.Email;
+                var demo = new PlanItem(kind == AddressKind.Phone ? $"Send on WhatsApp to {args[2]}" : $"Send an email to {args[2]}", [])
+                {
+                    Detail = kind == AddressKind.Phone ? "Reached home, will call you in 10 minutes." : "Subject: Logo photos\nHere are the logo photos we talked about.",
+                    Ask = new AddressAsk(kind, args[2]),
+                };
+                demo.Address = args.Length > 3 ? string.Join(" ", args.Skip(3)) : Addresses.Start(kind);
+                Chat.Say(new YouSaid(kind == AddressKind.Phone ? $"WhatsApp {args[2]} that I reached home" : $"Email the logo photos to {args[2]}", spoken: true));
+                Chat.Say(new CatSaid($"I don't have {args[2]}'s {(kind == AddressKind.Phone ? "number" : "email")} yet. Type it in, or say it."));
+                Chat.Say(demo);
+                break;
+            }
             case "snapshot-bubble" when args.Length == 2:
                 // Dev aid: the ask bubble drawn off screen.
                 EnterBuddyMode();
