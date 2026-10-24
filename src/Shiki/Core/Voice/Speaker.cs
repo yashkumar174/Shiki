@@ -16,9 +16,10 @@ using Shiki.Core.Ai;
 namespace Shiki.Core.Voice;
 
 /// <summary>
-/// The cat's own voice: replies read aloud with a Windows voice (free, on this PC) or a Deepgram
-/// Aura voice (natural, with the person's key). While it talks the microphones stand aside, so it
-/// never hears itself; pressing the mic or the shortcut cuts it off.
+/// The cat's own voice: replies read aloud with a Windows voice (free, on this PC), a Deepgram
+/// Aura voice or an ElevenLabs voice (natural, with the person's key). If ElevenLabs fails, Aura
+/// carries on, then Windows. While it talks the microphones stand aside, so it never hears
+/// itself; pressing the mic or the shortcut cuts it off.
 /// Raises Changed on the thread it was made on (the UI thread).
 /// </summary>
 public sealed class Speaker
@@ -55,7 +56,7 @@ public sealed class Speaker
         ("aura-2-apollo-en", "Apollo"), ("aura-2-arcas-en", "Arcas"), ("aura-2-luna-en", "Luna"),
     ];
 
-    /// <summary>The voices to choose from: Windows' own (English first), and Deepgram's when there's a key.</summary>
+    /// <summary>The voices to choose from: ElevenLabs' and Deepgram's when there's a key, then Windows' own (English first).</summary>
     public static List<Voice> Voices()
     {
         var list = new List<Voice>();
@@ -70,12 +71,14 @@ public sealed class Speaker
             Log.Error("Could not list the Windows voices", ex);
         }
         if (Deepgram.HasKey) list.InsertRange(0, AuraVoices.Select(a => new Voice("dg:" + a.Model, $"{a.Label} (natural)")));
+        if (ElevenLabs.HasKey) list.InsertRange(0, ElevenLabs.Voices.Select(v => new Voice("el:" + v.Id, $"{v.Name} (ElevenLabs)")));
         return list;
     }
 
     /// <summary>The voice to use: the one chosen if it's still there, else Deepgram's Thalia with a key, else Windows' default.</summary>
     public static string Pick(string chosen)
     {
+        if (chosen.StartsWith("el:") && ElevenLabs.HasKey) return chosen;
         if (chosen.StartsWith("dg:") && Deepgram.HasKey) return chosen;
         if (chosen.StartsWith("win:") && Voices().Any(v => v.Id == chosen)) return chosen;
         return Deepgram.HasKey ? "dg:" + AuraVoices[0].Model : "win:";
@@ -179,6 +182,19 @@ public sealed class Speaker
             // next piece downloads while this one plays. A Windows voice is made whole (it's quick).
             async Task<Sound> Start(string piece)
             {
+                if (voice.StartsWith("el:"))
+                {
+                    try
+                    {
+                        return Play(await ElevenLabs.Stream(piece, voice[3..], cancel.Token), cancel.Token);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        // Offline, out of credit or the voice is gone: Deepgram's voice carries on, else Windows'.
+                        Log.Error($"ElevenLabs' voice failed; using {(Deepgram.HasKey ? "Deepgram's" : "a Windows voice")}", ex);
+                        voice = Deepgram.HasKey ? "dg:" + AuraVoices[0].Model : "win:";
+                    }
+                }
                 if (voice.StartsWith("dg:"))
                 {
                     try
@@ -299,7 +315,8 @@ public sealed class Speaker
     {
         voice = Pick(voice);
         text = Readable(text);
-        return voice.StartsWith("dg:") ? Aura(text, voice[3..], CancellationToken.None) : WindowsVoice(text, voice[4..]);
+        return voice.StartsWith("el:") ? ElevenLabs.Wav(text, voice[3..], CancellationToken.None)
+            : voice.StartsWith("dg:") ? Aura(text, voice[3..], CancellationToken.None) : WindowsVoice(text, voice[4..]);
     }
 
     static async Task<byte[]> WindowsVoice(string text, string id)
@@ -348,6 +365,13 @@ public sealed class Speaker
             throw new DeepgramException(response.StatusCode, body);
         }
         Sent?.Invoke(text.Length);
+        return Play((request, response), ct);
+    }
+
+    /// <summary>Raw 16-bit sound at 24 kHz from a streaming answer (Aura's or ElevenLabs'), played as it arrives.</summary>
+    static Sound Play((HttpRequestMessage Request, HttpResponseMessage Response) stream, CancellationToken ct)
+    {
+        var (request, response) = stream;
         var sound = new Sound(new WaveFormat(24000, 16, 1));
         _ = Task.Run(async () =>
         {

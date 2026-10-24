@@ -428,18 +428,51 @@ public sealed class SettingsWindow : Window
         var current = Core.Voice.Speaker.Pick(ai.GetTalkVoice());
         void ShowVoice() { foreach (var (id, chip) in voices) UiKit.Select(chip, current == id); }
         var voiceRow = new WrapPanel { Margin = new Thickness(0, 4, 0, 6) };
-        foreach (var voice in Core.Voice.Speaker.Voices())
+        var voiceNote = UiKit.Body("", 11.5);
+        // The chips, again whenever the ElevenLabs key or its voice list changes.
+        void FillVoices()
         {
-            var chip = UiKit.Button(voice.Label, () => { current = voice.Id; ai.SetTalkVoice(voice.Id); ShowVoice(); });
-            chip.Margin = new Thickness(0, 0, 6, 6);
-            voices.Add((voice.Id, chip));
-            voiceRow.Children.Add(chip);
+            voiceRow.Children.Clear();
+            voices.Clear();
+            foreach (var voice in Core.Voice.Speaker.Voices())
+            {
+                var chip = UiKit.Button(voice.Label, () => { current = voice.Id; ai.SetTalkVoice(voice.Id); ShowVoice(); });
+                chip.Margin = new Thickness(0, 0, 6, 6);
+                voices.Add((voice.Id, chip));
+                voiceRow.Children.Add(chip);
+            }
+            ShowVoice();
+            var notes = new List<string>();
+            if (Core.Voice.ElevenLabs.HasKey) notes.Add($"ElevenLabs voices (Flash v2.5, Hindi too) use your ElevenLabs credit; if it runs out or can't be reached, {(Core.Voice.Deepgram.HasKey ? "Deepgram's voice carries on" : "a Windows voice carries on")}.");
+            if (Core.Voice.Deepgram.HasKey) notes.Add("Deepgram's voices sound natural and cost about $0.03 per 1,000 characters (a short reply is a fraction of a cent).");
+            notes.Add("Windows voices are free and stay on this PC.");
+            if (!Core.Voice.Deepgram.HasKey && !Core.Voice.ElevenLabs.HasKey) notes.Add("With a Deepgram key (above) or an ElevenLabs key (below), natural voices are offered too.");
+            if (Core.Voice.Deepgram.HasKey && ai.SpokenUsage() is { Length: > 0 } spoken) notes.Add(spoken);
+            voiceNote.Text = string.Join(" ", notes);
         }
+        FillVoices();
         stack.Children.Add(voiceRow);
-        ShowVoice();
-        stack.Children.Add(UiKit.Body(Core.Voice.Deepgram.HasKey
-            ? "Deepgram's voices sound natural and cost about $0.03 per 1,000 characters (a short reply is a fraction of a cent). Windows voices are free and stay on this PC." + (ai.SpokenUsage() is { Length: > 0 } spoken ? " " + spoken : "")
-            : "Windows voices are free and stay on this PC. With a Deepgram key (above), natural voices are offered too.", 11.5));
+        stack.Children.Add(voiceNote);
+
+        // ElevenLabs: only for the cat's voice (listening stays as chosen above).
+        var elevenKey = KeyPart("ElevenLabs", Core.Voice.ElevenLabs.Key, Core.Voice.ElevenLabs.TestKey, () =>
+        {
+            // A new key: try its first voice straight away (it plays, so you hear it).
+            if (!ai.GetTalkVoice().StartsWith("el:") && Core.Voice.ElevenLabs.Voices.FirstOrDefault() is { } first)
+            {
+                current = "el:" + first.Id;
+                ai.SetTalkVoice(current);
+            }
+        }, "For your ElevenLabs voices: elevenlabs.io, Developers, API keys (with Text to Speech and Voices read access).");
+        elevenKey.Changed += () =>
+        {
+            current = Core.Voice.Speaker.Pick(ai.GetTalkVoice());
+            FillVoices();
+        };
+        stack.Children.Add(elevenKey.Root);
+        // Voices added on the website show up the next time Settings opens.
+        if (Core.Voice.ElevenLabs.HasKey)
+            _ = Core.Voice.ElevenLabs.Refresh().ContinueWith(_ => Dispatcher.BeginInvoke(FillVoices), System.Threading.Tasks.TaskScheduler.Default);
     }
 
     sealed class KeyBox
