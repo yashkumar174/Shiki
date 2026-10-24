@@ -312,7 +312,8 @@ public sealed class CatChat(CatHands hands)
     };
     bool _stopped;
 
-    public async Task Send(string text, bool spoken = false)
+    /// <param name="shown">False when the words are already on screen (an instant try that fell through).</param>
+    public async Task Send(string text, bool spoken = false, bool shown = true)
     {
         text = text.Trim();
         if (text.Length == 0 || Busy) return;
@@ -322,14 +323,14 @@ public sealed class CatChat(CatHands hands)
         // Whatever comes next answers a waiting choice (a button, or words).
         foreach (var open in _items.OfType<ChoiceItem>().Where(c => c.Picked == null)) open.Picked = text;
         // Typed, and something the app does by itself: done here, no round trip to Claude.
-        if (!spoken && picture == null && hands.Quick?.Invoke(text) is { } quick)
+        if (!spoken && shown && picture == null && hands.Quick?.Invoke(text) is { } quick)
         {
             _items.Add(new YouSaid(text));
             Notify();
             quick();
             return;
         }
-        _items.Add(new YouSaid(text, spoken, picture));
+        if (shown) _items.Add(new YouSaid(text, spoken, picture));
         _spokenTurn = spoken;
         _saidThisTurn = false;
         if (key == null)

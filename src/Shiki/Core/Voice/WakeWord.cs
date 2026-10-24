@@ -229,6 +229,8 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
             _loudFrames = loud ? _loudFrames + 1 : 0;
             if (_loudFrames >= 3)
             {
+                // Someone's talking: get the connection ready, so "Hey Sky" is checked the moment they pause.
+                if (Speech.WakeOnDeepgram && Deepgram.HasKey) Deepgram.Warm();
                 _inSpeech = true;
                 _talking = _loudFrames * FrameSeconds;
                 _quiet = 0;

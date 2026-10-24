@@ -307,6 +307,19 @@ public partial class App : Application
                 // Dev aid: the cat says this, the normal way (first-sound time goes to the log).
                 _ = Mouth.Say(string.Join(" ", args[1..]), _settings.TalkVoice);
                 break;
+            case "lookup-test" when args.Length >= 2:
+                // Dev aid: finds a song's Spotify link the quick way (nothing plays); the answer goes to the log.
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    var watch = Stopwatch.StartNew();
+                    var found = await Spotify.Lookup(string.Join(" ", args[1..]), default);
+                    Log.Info($"lookup-test \"{string.Join(" ", args[1..])}\": {(found == null ? "nothing" : $"{found.Label} {found.Uri}")} in {watch.ElapsedMilliseconds} ms");
+                });
+                break;
+            case "deepgram-warm":
+                // Dev aid: opens the Deepgram connection, as speech starting does for "Hey Sky".
+                Deepgram.Warm();
+                break;
             case "eleven-warm":
                 // Dev aid: opens the ElevenLabs connection, as starting to talk does.
                 ElevenLabs.Warm();
@@ -1965,6 +1978,13 @@ public partial class App : Application
         var music = rx(words, @"^(open spotify and |on spotify |spotify pe |spotify par )?(play|bajao|chalao|laga do|lagao|put on) (?<q>.+?)( on spotify| spotify pe| spotify par)?$|^(?<q>.+?) (bajao|chalao|laga do|lagao)$");
         if (music.Success && Spotify.Find(music.Groups["q"].Value) is { } pick)
             return () => _ = PlayRemembered(pick);
+        // The first time: found on this PC's side in a couple of seconds, without the whole chat.
+        if (music.Success && ClaudeKey.Exists)
+        {
+            var asked = music.Groups["q"].Value;
+            var said = words;
+            return () => _ = FindAndPlay(asked, said);
+        }
         var google = rx(words, @"^(google|search google for|google search) (?<q>.+)$");
         if (google.Success)
         {
@@ -1972,6 +1992,21 @@ public partial class App : Application
             return () => { OpenWebsite(new Uri($"https://www.google.com/search?q={Uri.EscapeDataString(query)}")); Tell("\uE774", $"Searching Google for {query}."); };
         }
         return null;
+    }
+
+    async System.Threading.Tasks.Task FindAndPlay(string asked, string said)
+    {
+        Chat.Say(new CatDid("\uE768", $"Finding {asked} on Spotify…"));
+        var pick = await Spotify.Lookup(asked, default);
+        if (pick == null)
+        {
+            // Not clearly a song or artist (a mood, a playlist): the chat works it out.
+            _ = Chat.Send(said, spoken: _voice is { } v && v.Active, shown: false);
+            return;
+        }
+        var playing = await Spotify.Play(pick.Uri, pick.Label);
+        if (playing.StartsWith("Playing")) Spotify.Remember(asked, pick.Uri, pick.Label);
+        Tell("\uE768", playing);
     }
 
     async System.Threading.Tasks.Task PlayRemembered(Spotify.Pick pick)

@@ -52,6 +52,31 @@ public sealed class Deepgram(Func<IEnumerable<string>> keyterms) : ISpeechToText
         return json.RootElement.GetProperty("results").GetProperty("channels")[0].GetProperty("alternatives")[0].GetProperty("transcript").GetString()?.Trim() ?? "";
     }
 
+    static DateTime _warmed;
+
+    /// <summary>
+    /// Opens the connection while someone is still talking, so the short clip that follows doesn't
+    /// wait for it (a cold start is about a second slower). A free request; nothing is listened to.
+    /// </summary>
+    public static void Warm()
+    {
+        if (DateTime.UtcNow - _warmed < TimeSpan.FromSeconds(30) || Key.Read() is not { } key) return;
+        _warmed = DateTime.UtcNow;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.deepgram.com/v1/projects");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Token", key);
+                using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                // Offline: the check itself will say so, and Whisper takes over.
+            }
+        });
+    }
+
     /// <summary>Checks a key with half a second of silence. Null when it works.</summary>
     public static async Task<string?> TestKey(string key)
     {
@@ -156,7 +181,7 @@ public sealed class DeepgramLive : IAsyncDisposable
         // Endpointing: 0.8 s of silence ends a phrase; UtteranceEnd: 1.2 s without new words. A sentence
         // that clearly isn't finished ("…and", "…my") gets 2.5 s more (see Handle).
         var url = "wss://api.deepgram.com/v1/listen?" + Deepgram.Query(terms,
-            $"&encoding=linear16&sample_rate={sampleRate}&channels=1&interim_results=true&endpointing=800&utterance_end_ms=1200");
+            $"&encoding=linear16&sample_rate={sampleRate}&channels=1&interim_results=true&endpointing=500&utterance_end_ms=1200");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(6));
         await live._socket.ConnectAsync(new Uri(url), timeout.Token);
@@ -250,19 +275,32 @@ public sealed class DeepgramLive : IAsyncDisposable
 
     CancellationTokenSource? _waiting;
 
-    // Words a sentence doesn't end on: a pause after them is someone thinking, not done.
-    static readonly HashSet<string> Unfinished = new(StringComparer.OrdinalIgnoreCase)
+    // Words a sentence never ends on: a pause after them is someone thinking, not done.
+    static readonly HashSet<string> Dangling = new(StringComparer.OrdinalIgnoreCase)
     {
-        "and", "or", "but", "so", "the", "a", "an", "to", "of", "my", "your", "is", "are", "was", "will", "be", "with", "from", "in", "on",
-        "for", "at", "that", "which", "what", "me", "like", "uh", "um", "if", "then", "also", "can", "could", "please", "this", "these", "some",
-        "there", "about", "into", "by", "it", "i", "ki", "aur", "ko", "ka", "ke", "se", "mein", "toh", "ya", "par", "bhi",
+        "and", "or", "but", "so", "the", "a", "an", "to", "of", "my", "your", "with", "from", "in", "on", "at", "that", "which",
+        "like", "uh", "um", "if", "then", "also", "into", "about", "by", "ki", "aur", "ko", "ka", "ke", "se", "mein", "toh", "ya", "par", "bhi",
+        // A request that hasn't said what yet: "open Spotify and play…", "send it to…".
+        "play", "open", "send", "call", "email", "message", "text", "tell", "show", "find", "search", "set", "remind", "add", "put", "make", "turn", "start",
+    };
+
+    // Words a sentence can end on ("…for me.", "…do it please."): unfinished only when Deepgram
+    // didn't close the sentence (no full stop or question mark).
+    static readonly HashSet<string> Soft = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "me", "it", "this", "these", "please", "is", "are", "was", "will", "be", "for", "what", "there", "some", "i", "can", "could",
     };
 
     void EndUnlessUnfinished()
     {
         var text = (Text + " " + _interim).Trim().TrimEnd(',', ' ');
-        var last = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault()?.Trim('.', ',', '?', '!') ?? "";
-        bool unfinished = text.EndsWith(',') || Unfinished.Contains(last) || text.Split(' ').Length < 2;
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var last = words.LastOrDefault()?.Trim('.', ',', '?', '!') ?? "";
+        var lastTwo = words.Length >= 2 ? $"{words[^2].Trim('.', ',', '?', '!')} {last}".ToLowerInvariant() : "";
+        bool closed = text.EndsWith('.') || text.EndsWith('?') || text.EndsWith('!');
+        bool unfinished = text.EndsWith(',') || words.Length < 2 || Dangling.Contains(last)
+            || lastTwo is "can you" or "could you" or "will you" or "would you" or "do you"
+            || Soft.Contains(last) && !closed;
         if (!unfinished)
         {
             End();
