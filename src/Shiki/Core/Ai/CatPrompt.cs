@@ -53,10 +53,11 @@ static class CatPrompt
             - "What's on today / tomorrow / this week?": calendar_list. Say it plainly: times, what, where; mention a video call if there's one.
             - "Add dentist tomorrow at 5": calendar_add straight away (no card), an hour long unless said; all-day for birthdays and trips. With other people: calendar_invite (a card, since they get emails).
             - "Move my 3 pm to Friday", "cancel the dentist": find it with calendar_list, then calendar_move or calendar_delete (both cards).
-            - A person by name (to email, invite or WhatsApp): what you remember first ("Tausif's email is …"), then contacts_find; ask only if it finds nobody, or several and you can't tell which, then remember the answer. Never ask the person to confirm an address you found, remember or were given: the card they press is the confirmation. WhatsApp numbers: use the phone with the country code, digits only.
+            - A person by name (to email, invite or WhatsApp): what you remember first ("Tausif's email is …"), then contacts_find. Nobody found: ask once, and the moment they tell you, remember it ("Rahul's email is …") before doing anything else, so it's never asked again. Several found and nothing says which: ask_choice with each one as "Name, address" (never guess), then remember the one picked. Never ask the person to confirm an address you found, remember or were given: the card they press is the confirmation.
+            - Music on Spotify ("play AC/DC", "Spotify pe Arijit chalao"): spotify_play with a song's link, so it starts at once. A song: that song. An artist: their most popular song. An album or playlist: its link. Find the link with web_search (e.g. "AC/DC most popular song open.spotify.com/track") and pass asked_for as they said it, so next time it plays without searching. Never stop at Spotify's search page.
 
             Fast ways first (seconds), the mouse and keyboard last (minutes)
-            - Open things directly with open_link: a YouTube search (https://www.youtube.com/results?search_query=…), Google Maps (https://www.google.com/maps/search/…), Amazon or Flipkart searches, any page. For Spotify: find the song or playlist with web_search, then open_link with its spotify:track:ID (or spotify:playlist:ID, spotify:artist:ID) and then_play true. Or spotify:search:… to show results.
+            - Open things directly with open_link: a YouTube search (https://www.youtube.com/results?search_query=…), Google Maps (https://www.google.com/maps/search/…), Amazon or Flipkart searches, any page. Music: spotify_play (see below), never search results on screen.
             - Play, pause, next and previous song: control_pc media_play_pause, media_next, media_previous.
             - WhatsApp messages: whatsapp_send with the person's number (country code first, 91 for India). If you don't know the number, ask once and then remember it ("Mom's WhatsApp is 91…"). When they say Chrome, the browser or WhatsApp Web, set web (and if they say they always want it that way, remember that). To send photos or files on WhatsApp, pass their full paths in files (find_files first): never do_on_screen for WhatsApp.
             - do_on_screen only when none of these can do it.
@@ -313,6 +314,35 @@ static class CatPrompt
         },
         new Tool
         {
+            Name = "spotify_play",
+            Description = "Play a song, album or playlist in the Spotify app straight away (no searching on screen), and say what's really playing. For an artist, pass their most popular song.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["uri"] = J(new { type = "string", description = "spotify:track:ID (or spotify:album:ID, spotify:playlist:ID), or its open.spotify.com link." }),
+                    ["label"] = J(new { type = "string", description = "What it is, e.g. \"Highway to Hell by AC/DC\"." }),
+                    ["asked_for"] = J(new { type = "string", description = "What the person asked to hear, as said (\"AC/DC\", \"some Arijit\"), remembered for next time." }),
+                },
+                Required = ["uri", "label"],
+            },
+        },
+        new Tool
+        {
+            Name = "ask_choice",
+            Description = "Ask the person to pick one of a few options (several contacts with the same name, two files that could be meant): a card with a button for each. Their pick comes back as their next message.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["question"] = J(new { type = "string", description = "Short, e.g. \"Which Yash?\"" }),
+                    ["options"] = J(new { type = "array", items = new { type = "string" }, description = "2 to 6 options, each enough to tell them apart, e.g. \"Yash Kumar, yash.k@gmail.com\"." }),
+                },
+                Required = ["question", "options"],
+            },
+        },
+        new Tool
+        {
             Name = "open_link",
             Description = "Open a web address in the browser, or an app link (spotify:track:…, spotify:search:…, mailto:, ms-settings:, zoommtg:, msteams:). Instant; use it instead of do_on_screen whenever a link does the job.",
             InputSchema = new()
@@ -320,7 +350,7 @@ static class CatPrompt
                 Properties = new Dictionary<string, JsonElement>
                 {
                     ["url"] = J(new { type = "string" }),
-                    ["then_play"] = J(new { type = "boolean", description = "Press play once it's open (a Spotify song or playlist)." }),
+                    ["then_play"] = J(new { type = "boolean", description = "Spotify only: start it and check it's playing (spotify_play is better)." }),
                 },
                 Required = ["url"],
             },

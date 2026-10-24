@@ -53,6 +53,15 @@ public sealed record PlanStep(BroAction Action, IReadOnlyList<string> Files, boo
 public enum PlanState { Waiting, Running, Done, Failed, Declined, Skipped }
 
 /// <summary>Something the cat wants to do to files. Nothing runs until the person presses Do it.</summary>
+/// <summary>"Which Yash?": the options as buttons; the pick goes back as the person's answer.</summary>
+public sealed class ChoiceItem(string question, IReadOnlyList<string> options) : ChatItem
+{
+    public string Question { get; } = question;
+    public IReadOnlyList<string> Options { get; } = options;
+    /// <summary>What was picked (or said instead); null while it waits.</summary>
+    public string? Picked { get; internal set; }
+}
+
 public sealed class PlanItem(string summary, IReadOnlyList<PlanStep> steps) : ChatItem
 {
     public string Summary { get; } = summary;
@@ -102,6 +111,12 @@ public sealed class CatHands
     public required Func<string, string> RunRoutine { get; init; }
     /// <summary>Documents found by the words inside them (the private index), or null when it's off.</summary>
     public required Func<string, int, (List<ContentHit> Hits, int Indexed, bool Busy)?> SearchContents { get; init; }
+    /// <summary>
+    /// Things the app does at once without Claude ("play AC/DC" again, "what time is it", "volume
+    /// 40"): for a typed message, what to do instead of asking Claude. (Spoken ones are caught earlier.)
+    /// </summary>
+    public Func<string, Action?>? Quick { get; init; }
+
     /// <summary>Opens WhatsApp (or WhatsApp Web) on the chat with the message (and files) ready and sends it; says what happened.</summary>
     public required Func<string, string, bool, IReadOnlyList<string>, Task<string>> SendWhatsApp { get; init; }
     /// <summary>Starts the agent on a task (it works by itself, with its own pill); says whether it started.</summary>
@@ -217,6 +232,16 @@ public sealed class CatChat(CatHands hands)
     public static string TableText(TableItem table) => string.Join("\r\n", table.Rows.Select(r => string.Join("\t", r)));
 
     /// <summary>The plan card waiting for Do it or Not now, if any.</summary>
+    /// <summary>A choice card still waiting for a pick.</summary>
+    public ChoiceItem? WaitingChoice => _items.OfType<ChoiceItem>().LastOrDefault(c => c.Picked == null);
+
+    /// <summary>A button on a choice card: that option is the person's answer.</summary>
+    public void Choose(ChoiceItem choice, string option)
+    {
+        if (choice.Picked != null || Busy) return;
+        _ = Send(option);
+    }
+
     public PlanItem? WaitingPlan => _plan is { State: PlanState.Waiting } plan && _planToolId != null ? plan : null;
 
     /// <summary>Adds a line to the chat without asking Claude (voice notes, a spoken yes).</summary>
@@ -266,7 +291,7 @@ public sealed class CatChat(CatHands hands)
     static bool Settles(string name, JsonElement input) => name switch
     {
         "control_pc" => Str(input, "action") is not ("status" or "list_sound_outputs" or "open_apps"),
-        "open_app" or "open_link" or "calendar_add" or "add_task" or "copy_to_clipboard" or "use_app_tool" or "remember" or "forget"
+        "open_app" or "open_link" or "spotify_play" or "calendar_add" or "add_task" or "copy_to_clipboard" or "use_app_tool" or "remember" or "forget"
             or "gmail_mark" or "gmail_draft" or "run_routine" or "gmail_save_attachments" => true,
         _ => false,
     };
@@ -278,7 +303,7 @@ public sealed class CatChat(CatHands hands)
     /// <summary>A few words to say after a simple action ("Volume 40%", "Opened Spotify").</summary>
     static string Spoken(string name, string output) => name switch
     {
-        "control_pc" or "open_app" => output.TrimEnd('.'),
+        "control_pc" or "open_app" or "spotify_play" => output.TrimEnd('.'),
         "open_link" => output.Contains("play") ? "Playing it." : "Opening it.",
         "calendar_add" => "Added to your calendar.",
         "add_task" => "Added to your tasks.",
@@ -294,6 +319,16 @@ public sealed class CatChat(CatHands hands)
         var key = ClaudeKey.Read();
         var picture = _picture;
         var pictureWhere = _pictureWhere;
+        // Whatever comes next answers a waiting choice (a button, or words).
+        foreach (var open in _items.OfType<ChoiceItem>().Where(c => c.Picked == null)) open.Picked = text;
+        // Typed, and something the app does by itself: done here, no round trip to Claude.
+        if (!spoken && picture == null && hands.Quick?.Invoke(text) is { } quick)
+        {
+            _items.Add(new YouSaid(text));
+            Notify();
+            quick();
+            return;
+        }
         _items.Add(new YouSaid(text, spoken, picture));
         _spokenTurn = spoken;
         _saidThisTurn = false;
@@ -1351,14 +1386,37 @@ public sealed class CatChat(CatHands hands)
                 var label = link.Scheme is "https" or "http" ? link.Host.Replace("www.", "") : link.Scheme;
                 _items.Add(new CatDid("\uE774", $"Opened {label}"));
                 AiLog.Write("link", url);
-                if (input.TryGetProperty("then_play", out var play) && play.ValueKind == JsonValueKind.True)
-                {
-                    // Spotify opens on the song; the play key starts it once the app is up.
-                    await Task.Delay(3500);
-                    Shell.PcControl.Media("play");
-                    return "Opened, and pressed play.";
-                }
+                if (input.TryGetProperty("then_play", out var play) && play.ValueKind == JsonValueKind.True && link.Scheme == "spotify")
+                    // Started properly (and checked), not with the play/pause key.
+                    return await Spotify.Play(link.OriginalString, "it");
                 return "Opened.";
+            }
+            case "spotify_play":
+            {
+                var uri = (Str(input, "uri") ?? "").Trim();
+                // A web link to the same thing becomes the app's own link.
+                var web = System.Text.RegularExpressions.Regex.Match(uri, @"open\.spotify\.com/(?:intl-[a-z]+/)?(track|album|playlist|artist)/([A-Za-z0-9]+)");
+                if (web.Success) uri = $"spotify:{web.Groups[1].Value}:{web.Groups[2].Value}";
+                if (!System.Text.RegularExpressions.Regex.IsMatch(uri, @"^spotify:(track|album|playlist|artist):[A-Za-z0-9]+$"))
+                    return "That isn't a Spotify song, album or playlist link (spotify:track:ID). Find one with web_search first.";
+                var label = (Str(input, "label") ?? "").Trim();
+                if (label.Length == 0) label = "it";
+                if (uri.StartsWith("spotify:artist:"))
+                    return "An artist page doesn't start playing by itself: play the artist's most popular song instead (its spotify:track: link).";
+                var playing = await Spotify.Play(uri, label);
+                _items.Add(new CatDid("\uE768", playing.StartsWith("Playing") ? playing.TrimEnd('.') : $"Opened {label} in Spotify"));
+                // Remembered as it was asked for, so next time it plays at once.
+                if (playing.StartsWith("Playing") && Str(input, "asked_for") is { Length: > 0 } asked) Spotify.Remember(asked, uri, label);
+                return playing;
+            }
+            case "ask_choice":
+            {
+                var question = (Str(input, "question") ?? "").Trim();
+                var options = input.TryGetProperty("options", out var list) && list.ValueKind == JsonValueKind.Array
+                    ? list.EnumerateArray().Select(o => (o.GetString() ?? "").Trim()).Where(o => o.Length > 0).Distinct().Take(6).ToList() : [];
+                if (question.Length == 0 || options.Count < 2) return "A choice needs a question and at least two options.";
+                _items.Add(new ChoiceItem(question, options));
+                return "The options are on a card with a button each. Ask the question in one short line without listing the options again (e.g. \"Which Yash?\"), and stop: their pick (or what they say) comes as their next message.";
             }
             case "gmail_mark":
             {

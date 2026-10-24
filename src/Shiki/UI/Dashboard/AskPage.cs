@@ -32,6 +32,7 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         CatDid did => Did(did.Glyph, did.Text),
         ChatProblem problem => Problem(problem),
         PlanItem plan => Plan(plan),
+        ChoiceItem choice => Choice(choice),
         _ => new Border(),
     };
 
@@ -112,6 +113,45 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
             stack.Children.Add(settings);
         }
         return stack;
+    }
+
+    /// <summary>"Which Yash?": a button per option; once answered, the pick is shown.</summary>
+    UIElement Choice(ChoiceItem choice)
+    {
+        var stack = new StackPanel();
+        stack.Children.Add(k.Text(choice.Question, compact ? 14.5 : 16, weight: FontWeights.SemiBold, wrap: true));
+        var options = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+        foreach (var option in choice.Options)
+        {
+            bool picked = choice.Picked == option;
+            if (choice.Picked == null)
+            {
+                var button = k.Button(option, () => chat.Choose(choice, option), DashKit.Pill.Quiet, size: compact ? 13 : 13.5);
+                button.HorizontalAlignment = HorizontalAlignment.Left;
+                button.Margin = new Thickness(0, 0, 0, 6);
+                options.Children.Add(button);
+            }
+            else
+            {
+                var row = new DockPanel { Margin = new Thickness(0, 0, 0, 4) };
+                var mark = k.Icon(picked ? "\uE73E" : "\uE738", 11, picked ? P.Text : P.Faint);
+                mark.Margin = new Thickness(0, 2, 8, 0);
+                DockPanel.SetDock(mark, Dock.Left);
+                row.Children.Add(mark);
+                row.Children.Add(k.Text(option, compact ? 13 : 13.5, picked ? P.Text : P.Faint, wrap: true));
+                options.Children.Add(row);
+            }
+        }
+        stack.Children.Add(options);
+        if (choice.Picked == null)
+        {
+            var hint = k.Text("Or say it: \"the first one\", or the name.", compact ? 11.5 : 12, P.Faint);
+            hint.Margin = new Thickness(0, 4, 0, 0);
+            stack.Children.Add(hint);
+        }
+        var card = k.Card(stack, compact ? new Thickness(16, 14, 16, 14) : new Thickness(20, 18, 20, 18), 16);
+        card.Margin = new Thickness(compact ? 30 : 36, 10, 0, 4);
+        return card;
     }
 
     UIElement Plan(PlanItem plan)

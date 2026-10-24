@@ -184,7 +184,7 @@ public sealed class VoicePill : Window
         if (_closing) return;
         // Something needs the whole chat: a card to answer, a table, a problem, or a long answer.
         var since = _chat.Items.Skip(Start).ToList();
-        if (since.Any(i => i is PlanItem { State: PlanState.Waiting } or TableItem or ChatProblem)
+        if (since.Any(i => i is PlanItem { State: PlanState.Waiting } or ChoiceItem { Picked: null } or TableItem or ChatProblem)
             || since.OfType<CatSaid>().LastOrDefault() is { } long_ && !_chat.Busy && Long(long_.Text))
         {
             Expand();

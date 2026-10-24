@@ -720,6 +720,11 @@ public partial class App : Application
                 EnterBuddyMode();
                 _ = Chat.Send(string.Join(" ", args[1..]));
                 break;
+            case "ask-choose" when args.Length == 2 && int.TryParse(args[1], out var pickNumber):
+                // Dev aid: press option N (from 1) on the waiting choice card.
+                if (Chat.WaitingChoice is { } waitingChoice && pickNumber >= 1 && pickNumber <= waitingChoice.Options.Count)
+                    Chat.Choose(waitingChoice, waitingChoice.Options[pickNumber - 1]);
+                break;
             case "ask-decline":
                 // Dev aid: press Not now on the waiting plan.
                 if (Chat.Items.OfType<PlanItem>().LastOrDefault(x => x.State == PlanState.Waiting) is { } declined) Chat.Decline(declined);
@@ -1447,6 +1452,7 @@ public partial class App : Application
         ReadClipboard = ReadClipboardForCat,
         StartAgent = StartAgent,
         SendWhatsApp = SendWhatsApp,
+        Quick = VoiceCommand,
         SearchContents = (words, max) => _index is { } index ? (index.Search(words, max), index.Count, index.Indexing) : null,
         RunRoutine = name => Routines.Find(name) is { } routine ? RunRoutine(routine, spoken: false) : $"There's no routine called \"{name}\".",
         Replied = (sentence, spoken, first) =>
@@ -1955,6 +1961,10 @@ public partial class App : Application
             var query = youtube.Groups["q"].Value.Replace("play ", "");
             return () => { OpenWebsite(new Uri($"https://www.youtube.com/results?search_query={Uri.EscapeDataString(query)}")); Tell("\uE774", $"Searching YouTube for {query}."); };
         }
+        // "Play AC/DC" again: the song found last time, at once.
+        var music = rx(words, @"^(open spotify and |on spotify |spotify pe |spotify par )?(play|bajao|chalao|laga do|lagao|put on) (?<q>.+?)( on spotify| spotify pe| spotify par)?$|^(?<q>.+?) (bajao|chalao|laga do|lagao)$");
+        if (music.Success && Spotify.Find(music.Groups["q"].Value) is { } pick)
+            return () => _ = PlayRemembered(pick);
         var google = rx(words, @"^(google|search google for|google search) (?<q>.+)$");
         if (google.Success)
         {
@@ -1962,6 +1972,12 @@ public partial class App : Application
             return () => { OpenWebsite(new Uri($"https://www.google.com/search?q={Uri.EscapeDataString(query)}")); Tell("\uE774", $"Searching Google for {query}."); };
         }
         return null;
+    }
+
+    async System.Threading.Tasks.Task PlayRemembered(Spotify.Pick pick)
+    {
+        var playing = await Spotify.Play(pick.Uri, pick.Label);
+        Tell("\uE768", playing);
     }
 
     /// <summary>An instant answer: shown in the chat and, when the cat talks back, said aloud.</summary>

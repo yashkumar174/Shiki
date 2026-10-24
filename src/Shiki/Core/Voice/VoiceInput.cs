@@ -32,6 +32,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     public double ReadyProgress { get; private set; }
     /// <summary>True while listening for the answer to a plan card.</summary>
     public bool Answering { get; private set; }
+    /// <summary>Listening for a pick on a choice card ("the first one", a name), not a yes or no.</summary>
+    public bool Choosing => Answering && chat.WaitingPlan == null && chat.WaitingChoice != null;
     /// <summary>True while waiting for a follow-up in a conversation (no "Hey Sky" needed).</summary>
     public bool FollowingUp { get; private set; }
     /// <summary>The words so far, while Deepgram writes them down live.</summary>
@@ -242,8 +244,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
 
     // A spoken turn is being handled (it listens for the card's answer itself, in Continue).
     bool _using;
-    // The card already listened for, so a card is asked about once.
-    PlanItem? _askedFor;
+    // The card already listened for (a plan, or a choice), so a card is asked about once.
+    object? _askedFor;
 
     /// <summary>
     /// Whenever a card waits for an OK (however it came: typed, the dashboard, a spoken request),
@@ -252,17 +254,18 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     public void AnswerCardsAloud() => chat.Changed += () =>
     {
         if (_using || Active || !settings.VoiceAnswers) return;
-        if (chat.WaitingPlan is not { } plan || plan == _askedFor) return;
-        _askedFor = plan;
-        ListenForAnswer(plan);
+        object? card = (object?)chat.WaitingPlan ?? chat.WaitingChoice;
+        if (card == null || card == _askedFor) return;
+        _askedFor = card;
+        ListenForAnswer(card);
     };
 
-    async void ListenForAnswer(PlanItem plan)
+    async void ListenForAnswer(object card)
     {
         // The card arrives mid-reply: wait for the reply to finish, and to be read aloud.
         for (int i = 0; i < 150 && chat.Busy; i++) await Task.Delay(200);
         if (Quiet != null) await Quiet();
-        if (Active || chat.Busy || chat.WaitingPlan != plan || !Microphone.Present()) return;
+        if (Active || chat.Busy || ((object?)chat.WaitingPlan ?? chat.WaitingChoice) != card || !Microphone.Present()) return;
         _ = Listen(answering: true);
     }
 
@@ -332,9 +335,9 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         // Listening while the reply is read aloud would hear the cat itself.
         if (Quiet != null) await Quiet();
         if (Active || chat.Busy) return;
-        if (settings.VoiceAnswers && chat.WaitingPlan != null)
+        if (settings.VoiceAnswers && ((object?)chat.WaitingPlan ?? chat.WaitingChoice) is { } card)
         {
-            _askedFor = chat.WaitingPlan;
+            _askedFor = card;
             _ = Listen(answering: true);
         }
         else if (settings.FollowUpSeconds > 0) _ = Listen(followUp: true);
