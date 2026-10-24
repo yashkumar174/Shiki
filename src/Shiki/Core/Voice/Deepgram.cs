@@ -104,7 +104,7 @@ public sealed class Deepgram(Func<IEnumerable<string>> keyterms) : ISpeechToText
     {
         // "multi": Nova-3 follows Hindi and English as they mix in a sentence (Hinglish).
         var query = new StringBuilder($"model=nova-3&language={(Speech.Hindi ? "multi" : "en")}&smart_format=true");
-        foreach (var term in terms.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase).Take(60))
+        foreach (var term in terms.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase).Take(90))
             query.Append("&keyterm=").Append(Uri.EscapeDataString(term.Trim()));
         return query.Append(extra).ToString();
     }

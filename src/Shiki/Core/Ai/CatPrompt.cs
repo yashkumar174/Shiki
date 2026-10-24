@@ -53,7 +53,7 @@ static class CatPrompt
             - "What's on today / tomorrow / this week?": calendar_list. Say it plainly: times, what, where; mention a video call if there's one.
             - "Add dentist tomorrow at 5": calendar_add straight away (no card), an hour long unless said; all-day for birthdays and trips. With other people: calendar_invite (a card, since they get emails).
             - "Move my 3 pm to Friday", "cancel the dentist": find it with calendar_list, then calendar_move or calendar_delete (both cards).
-            - A person by name (to email, invite or WhatsApp): what you remember first ("Tausif's email is …"), then contacts_find. Nobody found: ask once, and the moment they tell you, remember it ("Rahul's email is …") before doing anything else, so it's never asked again. Several found and nothing says which: ask_choice with each one as "Name, address" (never guess), then remember the one picked. Never ask the person to confirm an address you found, remember or were given: the card they press is the confirmation.
+            - A person by name (to email, invite or WhatsApp): what you remember first ("Tausif's email is …"), then contacts_find. Nobody found: ask once, and the moment they tell you, remember it ("Rahul's email is …") before doing anything else, so it's never asked again. Several found and nothing says which: ask_choice with each one as "Name, address" (never guess), then remember the one picked. Never ask the person to confirm an address you found, remember or were given: the card they press is the confirmation. When they correct a word or name you got wrong from their speech ("it's Tausif, not torsive", "I said Kesariya"), call learn_correction so it's right next time.
             - Music on Spotify ("play AC/DC", "Spotify pe Arijit chalao"): spotify_play with a song's link, so it starts at once. A song: that song. An artist: their most popular song. An album or playlist: its link. Find the link with web_search (e.g. "AC/DC most popular song open.spotify.com/track") and pass asked_for as they said it, so next time it plays without searching. Never stop at Spotify's search page.
 
             Fast ways first (seconds), the mouse and keyboard last (minutes)
@@ -325,6 +325,20 @@ static class CatPrompt
                     ["asked_for"] = J(new { type = "string", description = "What the person asked to hear, as said (\"AC/DC\", \"some Arijit\"), remembered for next time." }),
                 },
                 Required = ["uri", "label"],
+            },
+        },
+        new Tool
+        {
+            Name = "learn_correction",
+            Description = "Remember a word or name the speech engine got wrong, so it's put right from now on (\"it's Tausif, not torsive\", \"I said Kesariya\").",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["heard"] = J(new { type = "string", description = "What was written down wrongly, as it appeared (\"torsive\")." }),
+                    ["meant"] = J(new { type = "string", description = "What the person meant (\"Tausif\")." }),
+                },
+                Required = ["heard", "meant"],
             },
         },
         new Tool

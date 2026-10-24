@@ -316,6 +316,19 @@ public partial class App : Application
                     Log.Info($"lookup-test \"{string.Join(" ", args[1..])}\": {(found == null ? "nothing" : $"{found.Label} {found.Uri}")} in {watch.ElapsedMilliseconds} ms");
                 });
                 break;
+            case "names-test":
+                // Dev aid: contact names fetched, the words Deepgram is given, sounds-like and corrections (read-only, except "learn").
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    await People.RefreshContacts(force: true);
+                    Log.Info("names-test: for speech: " + string.Join(", ", People.ForSpeech(30)));
+                    foreach (var heardName in new[] { "torsive", "Tosef", "Tauzif", "yesh", "mommy", "kumar" })
+                        Log.Info($"names-test: \"{heardName}\" sounds like: {string.Join(" | ", People.SoundsLike(heardName))}");
+                    if (args.Length > 2 && args[1] == "learn") People.Learn(args[2], args[3]);
+                    Log.Info($"names-test: fix \"send the photos to torsive\" -> \"{People.Fix("send the photos to torsive")}\"");
+                    Log.Info($"names-test: known tausif@example.com={People.Known("tausif@example.com")} 919000000001={People.Known("919000000001")} someone@new.com={People.Known("someone@new.com")}");
+                });
+                break;
             case "script-test":
                 // Dev aid: what different scripts become in English letters (answers go to the log).
                 foreach (var heardText in new[] { "కేక్ నంబర్ వై", "نمسطو ته বাই seedhe maut",
@@ -1082,6 +1095,7 @@ public partial class App : Application
                 new SettingSwitch("Glass follows what's behind", "Glass look only. Off shows popups in screen recordings.", () => _settings.LiveGlass, ToggleLiveGlass, "cat"),
                 new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
                 new SettingSwitch("Offer to take notes when a call starts", "Zoom, Teams, Meet in a browser and other calling apps. Asks once per call.", () => _settings.OfferNotes, () => { _settings.OfferNotes = !_settings.OfferNotes; _settings.Save(); }, "meetings"),
+                new SettingSwitch("Send to people I know after a countdown", "A WhatsApp or email to someone you've written to before goes after 5 seconds (say \"stop\" or press Stop) instead of asking first. New people still get a card.", () => _settings.CountdownSends, () => { _settings.CountdownSends = !_settings.CountdownSends; _settings.Save(); }, "ai"),
                 new SettingSwitch("Privacy guard", "Card numbers, Aadhaar and PAN numbers, passwords and keys in documents or copied text are hidden on this PC before anything goes to Claude.", () => _settings.PrivacyGuard, () => { _settings.PrivacyGuard = !_settings.PrivacyGuard; Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard; _settings.Save(); }, "ai"),
                 new SettingSwitch("Suggest what to do with downloads", "A HEIC photo, a huge video, an archive: one tap to fix it. Worked out on this PC.", () => _settings.SuggestDownloads, () => { _settings.SuggestDownloads = !_settings.SuggestDownloads; _settings.Save(); }, "automation"),
                 new SettingSwitch($"{CatName} says a word now and then", "Welcome back, what a job saved, your tasks for today. Never over full-screen apps.", () => _settings.Quips, () => { _settings.Quips = !_settings.Quips; _settings.Save(); }, "cat"),
@@ -1472,6 +1486,8 @@ public partial class App : Application
         StartAgent = StartAgent,
         SendWhatsApp = SendWhatsApp,
         Quick = VoiceCommand,
+        CountdownSends = () => _settings.CountdownSends,
+        PersonTalking = () => _voice is { State: VoiceState.Hearing or VoiceState.Understanding } || _mouth?.Speaking == true,
         SearchContents = (words, max) => _index is { } index ? (index.Search(words, max), index.Count, index.Indexing) : null,
         RunRoutine = name => Routines.Find(name) is { } routine ? RunRoutine(routine, spoken: false) : $"There's no routine called \"{name}\".",
         Replied = (sentence, spoken, first) =>
@@ -1913,6 +1929,8 @@ public partial class App : Application
     /// </summary>
     void RefreshKeyTerms()
     {
+        // The contacts' names, for the speech engine (once a day, in the background).
+        _ = People.RefreshContacts();
         var terms = Routines.All.SelectMany(r => r.Phrases.Take(2)).ToList();
         try
         {

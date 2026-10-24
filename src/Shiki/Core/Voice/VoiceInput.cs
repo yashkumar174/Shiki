@@ -34,6 +34,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
     public bool Answering { get; private set; }
     /// <summary>Listening for a pick on a choice card ("the first one", a name), not a yes or no.</summary>
     public bool Choosing => Answering && chat.WaitingPlan == null && chat.WaitingChoice != null;
+    /// <summary>Listening while a send counts down: "stop" cancels it.</summary>
+    public bool CountingDown => Answering && chat.WaitingPlan is { SendsAt: not null };
     /// <summary>True while waiting for a follow-up in a conversation (no "Hey Sky" needed).</summary>
     public bool FollowingUp { get; private set; }
     /// <summary>The words so far, while Deepgram writes them down live.</summary>
@@ -286,6 +288,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             }
             text = latin;
         }
+        // Mishearings it was told about ("torsive" is Tausif) put right.
+        text = People.Fix(text);
         // A conversation is turns of you talking to the cat. A long stretch of words while it waited,
         // or turn after turn, is more likely a video or other people: stop rather than keep going.
         _turns = fromFollowUp ? _turns + 1 : 0;
@@ -382,7 +386,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
 
     static readonly string[] Yes = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "do it", "go ahead", "go for it", "please do", "confirm", "sounds good", "alright", "all right", "correct", "perfect", "great", "do that", "send", "send it", "send it now", "send that", "go"];
     static readonly string[] YesStarts = ["yes ", "yeah ", "yep ", "yup ", "sure ", "ok ", "okay ", "do it ", "go ahead ", "go for it ", "send it "];
-    static readonly string[] No = ["no", "nope", "nah", "not now", "cancel", "stop", "don't", "dont", "no thanks", "no thank you", "never mind", "nevermind", "not yet"];
+    static readonly string[] No = ["no", "nope", "nah", "not now", "cancel", "stop", "don't", "dont", "no thanks", "no thank you", "never mind", "nevermind", "not yet",
+        "wait", "hold on", "stop it", "don't send", "dont send", "don't send it", "dont send it", "ruko", "ruk", "ruk jao", "mat bhejo", "rehne do"];
 
     /// <summary>
     /// True for a yes, false for a no, null when it's something else. "No, make it a JPG" is null:

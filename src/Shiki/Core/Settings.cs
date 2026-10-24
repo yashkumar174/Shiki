@@ -85,6 +85,8 @@ public sealed class Settings
     public double DeepgramSeconds { get; set; }
     /// <summary>After a spoken request, listen for "yes" or "no" when the cat shows a plan.</summary>
     public bool VoiceAnswers { get; set; } = true;
+    /// <summary>A message or email to someone already written to goes after a 5-second countdown, not a card.</summary>
+    public bool CountdownSends { get; set; } = true;
     /// <summary>After a spoken request and the cat's reply, keep listening this many seconds for the next one (0: off).</summary>
     public int FollowUpSeconds { get; set; } = 8;
     /// <summary>Listen all the time (on this PC) for "Hey &lt;cat name&gt;".</summary>

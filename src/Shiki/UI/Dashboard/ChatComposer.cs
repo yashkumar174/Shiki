@@ -134,11 +134,12 @@ public sealed class ChatComposer
         {
             VoiceState.GettingReady => $"Getting my ears ready (one time, {Speech.Local.Size})… {voice.ReadyProgress:0%}",
             VoiceState.Waiting => voice.Partial.Length > 0 ? voice.Partial
+                : voice.CountingDown ? "Say \"stop\" to cancel…"
                 : voice.Choosing ? "Say which one…"
                 : voice.Answering ? "Say yes or no…"
                 : voice.FollowingUp ? "Still listening… say what's next, or \"thanks\" to stop"
                 : "Listening…",
-            VoiceState.Hearing => voice.Partial.Length > 0 ? voice.Partial : voice.Choosing ? "Listening for your pick…" : voice.Answering ? "Listening for yes or no…" : "Listening… pause when you're done",
+            VoiceState.Hearing => voice.Partial.Length > 0 ? voice.Partial : voice.CountingDown ? "Listening for \"stop\"…" : voice.Choosing ? "Listening for your pick…" : voice.Answering ? "Listening for yes or no…" : "Listening… pause when you're done",
             VoiceState.Understanding => "Writing down what you said…",
             _ => "",
         };

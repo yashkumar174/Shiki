@@ -44,9 +44,9 @@ public static class Speech
 
     public static bool CommandsOnDeepgram(Settings settings) => settings.VoiceEngine == "deepgram" && Deepgram.HasKey;
 
-    /// <summary>Words Deepgram should expect: the cat's name and the app's vocabulary.</summary>
+    /// <summary>Words Deepgram should expect: the cat's name, the person's people, and the app's vocabulary.</summary>
     public static IEnumerable<string> KeyTerms(string catName) =>
-        [catName, $"Hey {catName}", "Shiki", .. Extra, "PDF", "JPG", "PNG", "WEBP", "MP4", "MP3", "GIF", "Downloads", "zip",
+        [catName, $"Hey {catName}", "Shiki", .. People.ForSpeech(30), .. Extra, "PDF", "JPG", "PNG", "WEBP", "MP4", "MP3", "GIF", "Downloads", "zip",
             "Spotify", "WhatsApp", "Chrome", "Gmail", "YouTube", "Instagram", "Excel", "PowerPoint", "Word", "Teams", "Zoom", "Notepad",
             "File Explorer", "Desktop", "Documents", "C drive", "D drive", "disk space", "dark mode", "do not disturb", "captions", "screenshot"];
 

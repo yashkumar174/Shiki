@@ -268,6 +268,25 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         var footer = new WrapPanel { Margin = new Thickness(0, 4, 0, 0) };
         switch (plan.State)
         {
+            case PlanState.Waiting when plan.SendsAt is { } sendsAt:
+            {
+                // Someone already written to: it goes by itself, unless stopped.
+                var left = k.Text("", 13.5, P.Text, FontWeights.SemiBold);
+                left.VerticalAlignment = VerticalAlignment.Center;
+                left.Margin = new Thickness(0, 0, 12, 0);
+                void Tick() => left.Text = $"Sending in {Math.Max(1, (int)Math.Ceiling((sendsAt - DateTime.Now).TotalSeconds))}… say \"stop\" to cancel";
+                Tick();
+                var clock = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+                clock.Tick += (_, _) => { if (plan.SendsAt is { } at) { sendsAt = at; Tick(); } };
+                left.Loaded += (_, _) => clock.Start();
+                left.Unloaded += (_, _) => clock.Stop();
+                var now = k.Button("Send now", () => _ = chat.Confirm(plan), DashKit.Pill.Accent, size: 13.5);
+                now.Margin = new Thickness(0, 0, 8, 0);
+                footer.Children.Add(left);
+                footer.Children.Add(now);
+                footer.Children.Add(k.Button("Stop", () => chat.Decline(plan), DashKit.Pill.Quiet, size: 13.5));
+                break;
+            }
             case PlanState.Waiting:
             {
                 var go = k.Button("Do it", () => _ = chat.Confirm(plan), DashKit.Pill.Accent, size: 13.5);

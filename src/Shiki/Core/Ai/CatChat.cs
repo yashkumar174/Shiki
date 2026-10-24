@@ -78,6 +78,10 @@ public sealed class PlanItem(string summary, IReadOnlyList<PlanStep> steps) : Ch
     public string? More { get; init; }
     /// <summary>Small print at the bottom: what it will and won't do.</summary>
     public string? Fine { get; init; }
+    /// <summary>To someone already written to: it goes by itself after a short countdown unless stopped.</summary>
+    public bool Countdown { get; init; }
+    /// <summary>When the countdown ends (set once the card is up).</summary>
+    public DateTime? SendsAt { get; internal set; }
     public IReadOnlyList<PlanStep> Steps { get; } = steps;
     public PlanState State { get; internal set; } = PlanState.Waiting;
     /// <summary>The step running now (0-based) while Running.</summary>
@@ -116,6 +120,12 @@ public sealed class CatHands
     /// 40"): for a typed message, what to do instead of asking Claude. (Spoken ones are caught earlier.)
     /// </summary>
     public Func<string, Action?>? Quick { get; init; }
+
+    /// <summary>Sends to people already written to after a countdown instead of a card (a setting).</summary>
+    public Func<bool>? CountdownSends { get; init; }
+
+    /// <summary>The person (or the cat itself) is talking right now: a countdown waits for that to finish.</summary>
+    public Func<bool>? PersonTalking { get; init; }
 
     /// <summary>Opens WhatsApp (or WhatsApp Web) on the chat with the message (and files) ready and sends it; says what happened.</summary>
     public required Func<string, string, bool, IReadOnlyList<string>, Task<string>> SendWhatsApp { get; init; }
@@ -291,7 +301,7 @@ public sealed class CatChat(CatHands hands)
     static bool Settles(string name, JsonElement input) => name switch
     {
         "control_pc" => Str(input, "action") is not ("status" or "list_sound_outputs" or "open_apps"),
-        "open_app" or "open_link" or "spotify_play" or "calendar_add" or "add_task" or "copy_to_clipboard" or "use_app_tool" or "remember" or "forget"
+        "open_app" or "open_link" or "spotify_play" or "learn_correction" or "calendar_add" or "add_task" or "copy_to_clipboard" or "use_app_tool" or "remember" or "forget"
             or "gmail_mark" or "gmail_draft" or "run_routine" or "gmail_save_attachments" => true,
         _ => false,
     };
@@ -667,8 +677,9 @@ public sealed class CatChat(CatHands hands)
 
             if (waitForPerson)
             {
-                // The plan's own result comes when the person answers the card.
+                // The plan's own result comes when the person answers the card (or its countdown ends).
                 _pending = results;
+                if (_plan is { Countdown: true } counting) StartCountdown(counting);
                 return;
             }
             _messages.Add(new UserMessageParam { Content = results });
@@ -875,7 +886,12 @@ public sealed class CatChat(CatHands hands)
                 if (problem != null) return (null, problem.Replace("Gmail takes up to 25 MB in one email", "that's a lot to send at once"));
                 if (text.Length == 0 && files.Count == 0) return (null, "What should the message say?");
                 bool web = input.TryGetProperty("web", out var w) && w.ValueKind == JsonValueKind.True;
-                var card = new PlanItem($"Send on WhatsApp{(web ? " Web" : "")} to {who}", []) { Detail = text.Length > 0 ? text : null, Attached = files };
+                var card = new PlanItem($"Send on WhatsApp{(web ? " Web" : "")} to {who}", [])
+                {
+                    Detail = text.Length > 0 ? text : null,
+                    Attached = files,
+                    Countdown = hands.CountdownSends?.Invoke() == true && People.Known(phone),
+                };
                 card.Run = () => hands.SendWhatsApp(phone, text, web, files);
                 return (card, null);
             }
@@ -892,6 +908,7 @@ public sealed class CatChat(CatHands hands)
                 {
                     Detail = lines.Trim().Length > 0 ? lines.Trim() : null,
                     Attached = files,
+                    Countdown = hands.CountdownSends?.Invoke() == true && People.Known(draft.To),
                 };
                 card.Run = async () =>
                 {
@@ -1008,6 +1025,31 @@ public sealed class CatChat(CatHands hands)
                 return (card, null);
             }
         }
+    }
+
+    public const int CountdownSeconds = 5;
+
+    void StartCountdown(PlanItem plan)
+    {
+        plan.SendsAt = DateTime.Now.AddSeconds(CountdownSeconds);
+        AiLog.Write("countdown", plan.Summary);
+        Notify();
+        _ = CountDown(plan);
+    }
+
+    /// <summary>Goes ahead when the countdown ends, unless it was stopped (Stop, "stop", "wait") or sent already.</summary>
+    async Task CountDown(PlanItem plan)
+    {
+        while (plan.State == PlanState.Waiting && plan == _plan)
+        {
+            await Task.Delay(200);
+            // Someone talking might be saying "wait", and while the cat reads the card out the mic is
+            // shut: either way, a few seconds are left once it's quiet.
+            if (hands.PersonTalking?.Invoke() == true && plan.SendsAt is { } at && at - DateTime.Now < TimeSpan.FromSeconds(3))
+                plan.SendsAt = DateTime.Now.AddSeconds(3);
+            if (DateTime.Now >= plan.SendsAt && !Busy) break;
+        }
+        if (plan.State == PlanState.Waiting && plan == _plan) await Confirm(plan);
     }
 
     public void Decline(PlanItem plan)
@@ -1350,9 +1392,25 @@ public sealed class CatChat(CatHands hands)
                 if (!Mail.Gmail.HasContacts) return NoGoogle("Contacts");
                 var who = Str(input, "name") ?? "";
                 var people = await Mail.Contacts.Find(who, CancellationToken.None);
-                _items.Add(new CatDid("\uE77B", $"Looked up \"{who}\" in your contacts: {(people.Count == 0 ? "nobody" : people.Count.ToString())}"));
-                return people.Count == 0 ? $"Nobody called \"{who}\" in the contacts or among people emailed. Ask the person (and remember the answer)."
-                    : string.Join("\n", people.Take(8).Select(p => $"- {p.Name}: {(p.Emails.Count > 0 ? string.Join(", ", p.Emails) : "no email")}; {(p.Phones.Count > 0 ? string.Join(", ", p.Phones) : "no phone")}"));
+                static string Line(Mail.Contact p) => $"- {p.Name}: {(p.Emails.Count > 0 ? string.Join(", ", p.Emails) : "no email")}; {(p.Phones.Count > 0 ? string.Join(", ", p.Phones) : "no phone")}";
+                if (people.Count > 0)
+                {
+                    _items.Add(new CatDid("\uE77B", $"Looked up \"{who}\" in your contacts: {people.Count}"));
+                    return string.Join("\n", people.Take(8).Select(Line));
+                }
+                // Nobody by that spelling: maybe it was misheard. Names that sound like it ("Tosef" is Tausif).
+                var alike = People.SoundsLike(who);
+                var lines = new List<string>();
+                foreach (var soundsLike in alike)
+                {
+                    lines.AddRange(Preferences.All.Where(f => f.StartsWith(soundsLike + "'s", StringComparison.OrdinalIgnoreCase)).Select(f => "- (remembered) " + f));
+                    lines.AddRange((await Mail.Contacts.Find(soundsLike, CancellationToken.None)).Take(3).Select(Line));
+                }
+                lines = lines.Distinct().ToList();
+                _items.Add(new CatDid("\uE77B", lines.Count > 0 ? $"Nobody called \"{who}\"; it sounds like {string.Join(" or ", alike)}" : $"Looked up \"{who}\" in your contacts: nobody"));
+                return lines.Count == 0
+                    ? $"Nobody called \"{who}\" in the contacts or among people emailed. Ask the person (and remember the answer)."
+                    : $"Nobody spelled \"{who}\", but these sound like it (probably misheard):\n{string.Join("\n", lines.Take(8))}\nIf one is clearly meant, use it and call learn_correction (heard \"{who}\", meant the name); if several could be, ask_choice.";
             }
             case "gmail_save_attachments":
             {
@@ -1409,6 +1467,15 @@ public sealed class CatChat(CatHands hands)
                 // Remembered as it was asked for, so next time it plays at once.
                 if (playing.StartsWith("Playing") && Str(input, "asked_for") is { Length: > 0 } asked) Spotify.Remember(asked, uri, label);
                 return playing;
+            }
+            case "learn_correction":
+            {
+                var heard = (Str(input, "heard") ?? "").Trim();
+                var meant = (Str(input, "meant") ?? "").Trim();
+                if (heard.Length < 2 || meant.Length < 2) return "Say what was heard and what was meant.";
+                People.Learn(heard, meant);
+                _items.Add(new CatDid("\uE734", $"Learned: \"{heard}\" means {meant}"));
+                return $"Learned: \"{heard}\" will be taken as \"{meant}\" from now on.";
             }
             case "ask_choice":
             {

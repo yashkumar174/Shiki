@@ -82,6 +82,7 @@ public sealed class Dictation(Settings settings, Func<string> catName)
             if (string.IsNullOrWhiteSpace(text)) return null;
             // Hindi typed the Roman way, if that's how the person writes it (WhatsApp Hinglish).
             if (settings.HindiScript == "roman") text = Hinglish.LatinOnly(text);
+            text = People.Fix(text);
             return text.Trim();
         }
         catch (OperationCanceledException)
