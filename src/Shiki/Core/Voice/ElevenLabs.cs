@@ -124,6 +124,31 @@ public static class ElevenLabs
         }
     }
 
+    static DateTime _lastUsed;
+
+    /// <summary>
+    /// Opens the connection ahead of a reply (the person has started talking), so the first words
+    /// don't wait for it: a cold start is about 1.5 s slower. A free request; nothing is spoken.
+    /// </summary>
+    public static void Warm()
+    {
+        if (DateTime.UtcNow - _lastUsed < TimeSpan.FromSeconds(45) || Key.Read() is not { } key) return;
+        _lastUsed = DateTime.UtcNow;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, Api + "v1/models");
+                request.Headers.Add("xi-api-key", key);
+                using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                // Offline: the reply will say so (and fall back) when it comes.
+            }
+        });
+    }
+
     /// <summary>Starts the speech for this text: the response streams raw 16-bit sound at 24 kHz.</summary>
     internal static async Task<(HttpRequestMessage Request, HttpResponseMessage Response)> Stream(string text, string voiceId, CancellationToken ct)
     {
@@ -134,6 +159,7 @@ public static class ElevenLabs
         };
         request.Headers.Add("xi-api-key", key);
         var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        _lastUsed = DateTime.UtcNow;
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct);

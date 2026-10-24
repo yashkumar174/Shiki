@@ -307,6 +307,14 @@ public partial class App : Application
                 // Dev aid: the cat says this, the normal way (first-sound time goes to the log).
                 _ = Mouth.Say(string.Join(" ", args[1..]), _settings.TalkVoice);
                 break;
+            case "eleven-warm":
+                // Dev aid: opens the ElevenLabs connection, as starting to talk does.
+                ElevenLabs.Warm();
+                break;
+            case "say-with" when args.Length >= 3:
+                // Dev aid: the cat says this with a given voice id (e.g. a broken one, to see the fallback).
+                _ = Mouth.Say(string.Join(" ", args[2..]), args[1]);
+                break;
             case "say-timing":
                 // Dev aid: how long the cat's voice takes, step by step (it plays out loud).
                 _ = SayTiming();
@@ -1323,7 +1331,11 @@ public partial class App : Application
             {
                 _buddy?.Listening(_voice.State is VoiceState.Waiting or VoiceState.Hearing);
                 // A reply is coming: wake the speakers now, so its first words aren't lost.
-                if (_voice.State is VoiceState.Hearing or VoiceState.Understanding && _settings.TalkBack != "off") Mouth.Warm();
+                if (_voice.State is VoiceState.Hearing or VoiceState.Understanding && _settings.TalkBack != "off")
+                {
+                    Mouth.Warm();
+                    if (_settings.TalkVoice.StartsWith("el:")) ElevenLabs.Warm();
+                }
             };
             _voice.ConversationEnded += () => Dispatcher.BeginInvoke(() => { if (_bubble is { IsActive: false } bubble) bubble.Close(); },
                 DispatcherPriority.ApplicationIdle);
