@@ -319,7 +319,7 @@ public sealed class CatChat(CatHands hands)
     static bool Settles(string name, JsonElement input) => name switch
     {
         "control_pc" => Str(input, "action") is not ("status" or "list_sound_outputs" or "open_apps"),
-        "open_app" or "open_link" or "spotify_play" or "learn_correction" or "calendar_add" or "add_task" or "copy_to_clipboard" or "use_app_tool" or "remember" or "forget"
+        "open_app" or "open_link" or "spotify_play" or "learn_correction" or "learn_habit" or "calendar_add" or "add_task" or "copy_to_clipboard" or "use_app_tool" or "remember" or "forget"
             or "gmail_mark" or "gmail_draft" or "run_routine" or "gmail_save_attachments" => true,
         _ => false,
     };
@@ -336,6 +336,7 @@ public sealed class CatChat(CatHands hands)
         "calendar_add" => "Added to your calendar.",
         "add_task" => "Added to your tasks.",
         "remember" => "I'll remember that.",
+        "learn_habit" => "Got it, I'll do it that way from now on.",
         _ => "Done.",
     };
     bool _stopped;
@@ -1649,6 +1650,16 @@ public sealed class CatChat(CatHands hands)
                 People.Learn(heard, meant);
                 _items.Add(new CatDid("\uE734", $"Learned: \"{heard}\" means {meant}"));
                 return $"Learned: \"{heard}\" will be taken as \"{meant}\" from now on.";
+            }
+            case "learn_habit":
+            {
+                var habit = (Str(input, "habit") ?? "").Trim();
+                var learned = Learned.Set(habit, Str(input, "value") ?? "", Strings(input, "paths").ToList());
+                if (learned == null)
+                    return habit == "means" ? "No habit kept: means needs the phrase and the full paths of files that exist." : "No such habit. For anything else, use remember.";
+                _items.Add(new CatDid("\uE734", $"Learned: {learned}"));
+                AiLog.Write("habit", learned);
+                return $"Kept: {learned}. It's in your instructions from now on.";
             }
             case "ask_choice":
             {

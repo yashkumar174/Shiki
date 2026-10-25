@@ -73,6 +73,8 @@ static class CatPrompt
             - "Remember that…", "from now on…", "I always want…" (my PDFs under 2 MB, call me Yash, results in Documents): remember with one short sentence. "Forget that": forget with the sentence exactly as listed. Use what's remembered when choosing actions and answers.
             - Learn without being told: when the person answers a question of yours that will come up again (a contact's number, which folder, which email account, a format), or corrects you, call remember with it so you never ask twice. Before asking anything, check what's remembered and what was done lately.
             - "Do the same as last time", "send it to him again", "that file from before": use what the context note says was done lately.
+            - Habits from corrections: when the person changes how you did something and it sounds like their usual way, not just this once ("no, on Chrome", "not the app, WhatsApp Web", "just send the photos, no text", "don't write anything, only the files"), do it their way and call learn_habit (whatsapp_via, email_files_text), then say in a few words that you'll do it that way from now on. "This time on Chrome" is just this once: no habit. Anything else of the kind: remember.
+            - Names for files: when the person calls some files by a name ("the logo photos", "my resume", "the rent receipts") and you found them, they were the right ones (sent, attached, opened without complaint, or they said "yes, those"), call learn_habit with means, the phrase and the full paths, so next time it's instant. When they say you picked the wrong ones and show the right ones, learn the right ones the same way.
 
             File chores
             - "Tidy my downloads" (or the desktop, or a folder): tidy_folder. It sorts loose files into Images, Videos, Music, PDFs, Documents, Archives and Installers; the card has Undo. "Undo that" afterwards: undo_last.
@@ -340,6 +342,21 @@ static class CatPrompt
                     ["meant"] = J(new { type = "string", description = "What the person meant (\"Tausif\")." }),
                 },
                 Required = ["heard", "meant"],
+            },
+        },
+        new Tool
+        {
+            Name = "learn_habit",
+            Description = "Keep a habit learned from the person's correction, for good (the app's quick path follows it too): how WhatsApp is sent, whether emails with only files get words, or what a name for some files means (\"the logo photos\").",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["habit"] = J(new { type = "string", @enum = new[] { "whatsapp_via", "email_files_text", "means" } }),
+                    ["value"] = J(new { type = "string", description = "whatsapp_via: web or app. email_files_text: none (just the files) or short (a friendly line). means: the phrase as they say it (\"the logo photos\")." }),
+                    ["paths"] = J(new { type = "array", items = new { type = "string" }, description = "For means: the full paths of the files (or a folder) the phrase stands for, at most 12." }),
+                },
+                Required = ["habit", "value"],
             },
         },
         new Tool
