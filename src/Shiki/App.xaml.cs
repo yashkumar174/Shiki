@@ -614,6 +614,41 @@ public partial class App : Application
                 _dashboard!.SelectMeeting(args[1]);
                 _dashboard.Snapshot(args[2], DashPage.Meetings);
                 break;
+            case "task-remove" when args.Length >= 2:
+                // Dev aid: takes a test task back off the list (by its exact words).
+                foreach (var test in Todos.All.Where(t => t.Text == string.Join(" ", args.Skip(1))).ToList()) Todos.Remove(test);
+                break;
+            case "bundle-demo":
+            {
+                // Dev aid: a pretend two-things card in the chat (it can't run: it isn't offered), for snapshot-bubble.
+                var parts = new List<PlanItem>
+                {
+                    new("Send on WhatsApp to Mummy", []) { Detail = "I'm on my way, reaching in 20 minutes." },
+                    new("Send an email to you", []) { Detail = "Subject: Logo photos", Attached = [@"D:\Designs\shiki-logo-1.png", @"D:\Designs\shiki-logo-2.png", @"D:\Designs\shiki-logo-3.png"] },
+                };
+                Chat.Say(new YouSaid("WhatsApp Mummy that I'm on my way and email these to me", spoken: true));
+                Chat.Say(new CatSaid("Okay to send?"));
+                Chat.Say(Chat.Bundle(parts));
+                break;
+            }
+            case "quick-test" when args.Length >= 2:
+            {
+                // Dev aid: how the quick path reads a request, and who it would go to (nothing is sent or set).
+                var request = string.Join(" ", args.Skip(1));
+                var plan = QuickPath.Plan(request, DateTime.Now);
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    var who = new List<string>();
+                    foreach (var item in plan ?? [])
+                    {
+                        if (item is QuickPath.Message m) who.Add($"{m.Name} -> {await FindPhone(m.Name)}");
+                        if (item is QuickPath.Files { Email: true } f) who.Add($"{f.Who} -> {(f.Who == "me" ? QuickPath.RememberedEmail("me")?.ToString() : (await FindEmail(f.Who)).ToString())}");
+                        if (item is QuickPath.Files { Email: false } w) who.Add($"{w.Who} -> {await FindPhone(w.Who)}");
+                    }
+                    Log.Info($"quick-test \"{request}\": {(plan == null ? "to Claude" : string.Join(" + ", plan))}{(who.Count > 0 ? " | " + string.Join(" | ", who) : "")}");
+                });
+                break;
+            }
             case "address-test" when args.Length >= 3 && args[1] is "phone" or "email":
             {
                 // Dev aid: how a typed or spoken number / email is read (nothing is sent).
@@ -1119,6 +1154,7 @@ public partial class App : Application
                 new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
                 new SettingSwitch("Offer to take notes when a call starts", "Zoom, Teams, Meet in a browser and other calling apps. Asks once per call.", () => _settings.OfferNotes, () => { _settings.OfferNotes = !_settings.OfferNotes; _settings.Save(); }, "meetings"),
                 new SettingSwitch("Send to people I know after a countdown", "A WhatsApp or email to someone you've written to before goes after 5 seconds (say \"stop\" or press Stop) instead of asking first. New people still get a card.", () => _settings.CountdownSends, () => { _settings.CountdownSends = !_settings.CountdownSends; _settings.Save(); }, "ai"),
+                new SettingSwitch("Quick sends and reminders", "\"WhatsApp Mummy that I'm on my way\", \"email this to me\", \"remind me at 5 to call the bank\": done in a second on this PC, without waiting for Claude. Anything unclear still goes to Claude.", () => _settings.QuickPath, () => { _settings.QuickPath = !_settings.QuickPath; _settings.Save(); }, "ai"),
                 new SettingSwitch("Privacy guard", "Card numbers, Aadhaar and PAN numbers, passwords and keys in documents or copied text are hidden on this PC before anything goes to Claude.", () => _settings.PrivacyGuard, () => { _settings.PrivacyGuard = !_settings.PrivacyGuard; Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard; _settings.Save(); }, "ai"),
                 new SettingSwitch("Suggest what to do with downloads", "A HEIC photo, a huge video, an archive: one tap to fix it. Worked out on this PC.", () => _settings.SuggestDownloads, () => { _settings.SuggestDownloads = !_settings.SuggestDownloads; _settings.Save(); }, "automation"),
                 new SettingSwitch($"{CatName} says a word now and then", "Welcome back, what a job saved, your tasks for today. Never over full-screen apps.", () => _settings.Quips, () => { _settings.Quips = !_settings.Quips; _settings.Save(); }, "cat"),
@@ -2062,6 +2098,158 @@ public partial class App : Application
         Tell("\uE768", playing);
     }
 
+    // ---- The quick path ----
+
+    /// <summary>
+    /// Sends and reminders worked out on this PC ("WhatsApp Mummy that\u2026", "email this to me",
+    /// "remind me at 5 to\u2026"): who's who from what the cat remembers, then Google contacts. Sends
+    /// still go on a card (or a countdown for people already written to); reminders are set at once.
+    /// Anything unclear (two contacts with that name, nothing selected) goes to Claude after all.
+    /// </summary>
+    async System.Threading.Tasks.Task RunQuick(List<QuickPath.Item> items, string said)
+    {
+        bool spoken = _voice is { } v && v.Active;
+        // What was selected when the bubble was opened, if it was (else what's in front now).
+        var screen = Chat.NextScreen;
+        Chat.NextScreen = null;
+        async System.Threading.Tasks.Task ToClaude(string why)
+        {
+            AiLog.Write("quick", $"left to Claude: {why}");
+            Chat.NextScreen = screen;
+            await Chat.Send(said, spoken, shown: false);
+        }
+        var cards = new List<PlanItem>();
+        try
+        {
+            foreach (var item in items)
+            {
+                PlanItem? card = null;
+                switch (item)
+                {
+                    case QuickPath.Message message:
+                    {
+                        var (name, phone, unsure) = await FindPhone(message.Name);
+                        if (unsure) { await ToClaude($"more than one number for {message.Name}"); return; }
+                        var input = new Dictionary<string, object> { ["name"] = name, ["text"] = message.Text };
+                        if (phone != null) input["phone"] = phone;
+                        if (message.Web) input["web"] = true;
+                        card = await Chat.Card("whatsapp_send", input);
+                        break;
+                    }
+                    case QuickPath.Files send:
+                    {
+                        var files = (QuickPath.IsSelection(send.What)
+                            ? screen?.Selected ?? ExplorerSelection.Frontmost()?.Selected ?? []
+                            : Learned.Means(send.What) ?? []).ToList();
+                        if (files.Count == 0 || !files.All(File.Exists)) { await ToClaude(files.Count == 0 ? "nothing selected" : "a folder is selected"); return; }
+                        if (send.Email)
+                        {
+                            var (name, to, unsure) = send.Who == "me"
+                                ? (QuickPath.RememberedEmail("me") is { } own ? ("me", own.Email, false) : ("me", null, true))
+                                : await FindEmail(send.Who);
+                            if (unsure) { await ToClaude($"which email for {send.Who}"); return; }
+                            var input = new Dictionary<string, object>
+                            {
+                                ["to"] = to ?? "",
+                                ["subject"] = files.Count == 1 ? Path.GetFileNameWithoutExtension(files[0]) : $"{files.Count} files",
+                                // No words unless they've asked for a line with files.
+                                ["body"] = Learned.TextWithFiles ? (files.Count == 1 ? "Here's the file." : "Here are the files.") : "",
+                                ["files"] = files,
+                            };
+                            if (name != "me") input["name"] = name;
+                            card = await Chat.Card("gmail_send", input);
+                        }
+                        else
+                        {
+                            var (name, phone, unsure) = await FindPhone(send.Who);
+                            if (unsure) { await ToClaude($"more than one number for {send.Who}"); return; }
+                            var input = new Dictionary<string, object> { ["name"] = name, ["text"] = "", ["files"] = files };
+                            if (phone != null) input["phone"] = phone;
+                            card = await Chat.Card("whatsapp_send", input);
+                        }
+                        break;
+                    }
+                }
+                if (item is QuickPath.Reminder) continue;
+                if (card == null) { await ToClaude("no card"); return; }
+                cards.Add(card);
+            }
+            // A new person's address goes on a card of its own: with other things too, Claude sorts out the order.
+            if (cards.Count > 1 && cards.Any(c => c.Ask != null)) { await ToClaude("a new person among several sends"); return; }
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Quick path failed", ex);
+            await ToClaude(ex.Message);
+            return;
+        }
+
+        // Worked out: reminders are set now (nothing to confirm), sends go on one card.
+        var reminded = new List<string>();
+        foreach (var reminder in items.OfType<QuickPath.Reminder>())
+        {
+            var todo = Todos.Add(reminder.Text, reminder.Due, hasTime: true);
+            AiLog.Write("task", $"{reminder.Text} {reminder.Due:yyyy-MM-dd HH:mm} (quick)");
+            Chat.Note($"the person said \"{said}\", so it set a reminder \"{reminder.Text}\" for {reminder.Due:dddd d MMM, HH:mm}");
+            reminded.Add($"{char.ToLowerInvariant(reminder.Text[0])}{reminder.Text[1..]} {todo.DueText().Replace(", ", " at ")}");
+        }
+        string? remind = reminded.Count == 0 ? null : $"I'll remind you to {string.Join(", and to ", reminded)}.";
+        if (cards.Count == 0)
+        {
+            Tell("\uE762", remind!);
+            return;
+        }
+        var offer = cards.Count == 1 ? cards[0] : Chat.Bundle(cards);
+        var ask = offer.Ask is { } a
+            ? $"I don't have {a.Name}'s {(a.Kind == AddressKind.Phone ? "number" : "email")} yet. Type it in, or say it."
+            : offer.Countdown ? "Sending in 5 seconds. Say stop to cancel." : "Okay to send?";
+        Tell(offer.Ask != null ? "\uE77B" : "\uE724", remind == null ? ask : $"{remind} {ask}");
+        Chat.Offer(offer, said);
+    }
+
+    /// <summary>
+    /// Whether a contact is the one named: the whole name, the first name, or a first name that
+    /// sounds the same ("Raj" isn't "Rajesh").
+    /// </summary>
+    static bool Named(Core.Mail.Contact contact, string name) =>
+        contact.Name.Equals(name, StringComparison.OrdinalIgnoreCase)
+        || contact.Name.Split(' ')[0].Equals(name, StringComparison.OrdinalIgnoreCase)
+        || People.Sound(contact.Name.Split(' ')[0]) == People.Sound(name);
+
+    /// <summary>A WhatsApp number for a name: remembered, else the one in Google contacts; Unsure when there's a choice to make.</summary>
+    static async System.Threading.Tasks.Task<(string Name, string? Phone, bool Unsure)> FindPhone(string name)
+    {
+        if (QuickPath.RememberedPhone(name) is { } known) return (known.Name, known.Phone, false);
+        if (!Core.Mail.Gmail.HasContacts) return (name, null, false);
+        var phones = (await Core.Mail.Contacts.Find(name, default))
+            .Where(c => Named(c, name))
+            .SelectMany(c => c.Phones.Select(p => (c.Name, Phone: Addresses.Phone(p))))
+            .Where(x => x.Phone != null).DistinctBy(x => x.Phone).ToList();
+        return phones.Count switch
+        {
+            1 => (phones[0].Name, phones[0].Phone, false),
+            0 => (name, null, false),
+            _ => (name, null, true),
+        };
+    }
+
+    /// <summary>An email address for a name: remembered, else the one in Google contacts; Unsure when there's a choice to make.</summary>
+    static async System.Threading.Tasks.Task<(string Name, string? Email, bool Unsure)> FindEmail(string name)
+    {
+        if (QuickPath.RememberedEmail(name) is { } known) return (known.Name, known.Email, false);
+        if (!Core.Mail.Gmail.HasContacts) return (name, null, false);
+        var emails = (await Core.Mail.Contacts.Find(name, default))
+            .Where(c => Named(c, name))
+            .SelectMany(c => c.Emails.Select(e => (c.Name, Email: e.ToLowerInvariant())))
+            .DistinctBy(x => x.Email).ToList();
+        return emails.Count switch
+        {
+            1 => (emails[0].Name, emails[0].Email, false),
+            0 => (name, null, false),
+            _ => (name, null, true),
+        };
+    }
+
     /// <summary>An instant answer: shown in the chat and, when the cat talks back, said aloud.</summary>
     void Tell(string glyph, string text)
     {
@@ -2553,6 +2741,12 @@ public partial class App : Application
     {
         // Hindi and Hinglish ("awaaz kam karo", "chrome kholo") in the English the commands below know.
         var words = WakeMatcher.Normalize(Speech.Hindi ? Hinglish.ToCommand(said) : said);
+        // Everyday sends and reminders, alone or two or three joined by "and": worked out here, no waiting for Claude.
+        if (_settings.QuickPath && QuickPath.Plan(said, DateTime.Now) is { } quick)
+        {
+            AiLog.Write("quick", string.Join("; ", quick.Select(i => i.ToString())));
+            return () => _ = RunQuick(quick, said);
+        }
         // Two things in one go ("play Kesariya and turn the volume down"): the chat does both, rather
         // than an instant command doing one part and dropping the rest. "Open Spotify and play…" is one thing.
         var asSaid = WakeMatcher.Normalize(said);

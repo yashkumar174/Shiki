@@ -208,6 +208,7 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
             stack.Children.Add(line);
         }
         else if (plan.Steps.Count > 0) stack.Children.Add(steps);
+        else if (plan.Parts.Count > 0) stack.Children.Add(Parts(plan));
         // Attached files, one per line, by name.
         if (plan.Attached.Count > 0)
         {
@@ -264,6 +265,63 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         card.HorizontalAlignment = HorizontalAlignment.Stretch;
         if (plan.State == PlanState.Waiting) card.BorderBrush = DashKit.B(P.AccentEdge);
         return card;
+    }
+
+    /// <summary>Several things on one card: each numbered, with what it says and sends, and how it went.</summary>
+    UIElement Parts(PlanItem plan)
+    {
+        var list = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
+        for (int i = 0; i < plan.Parts.Count; i++)
+        {
+            var part = plan.Parts[i];
+            var row = new DockPanel { Margin = new Thickness(0, 0, 0, i == plan.Parts.Count - 1 ? 2 : 12) };
+            bool running = part.State == PlanState.Running, done = part.State == PlanState.Done, failed = part.State == PlanState.Failed;
+            var number = new Border
+            {
+                Width = 22,
+                Height = 22,
+                CornerRadius = new CornerRadius(11),
+                Background = DashKit.B(running ? P.Accent : done ? P.Selected : P.Hover),
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, 0, 12, 0),
+                Child = done || failed ? k.Icon(done ? "" : "", 11, failed ? P.Danger : P.Text) : new TextBlock
+                {
+                    Text = (i + 1).ToString(),
+                    FontFamily = DashKit.Sans,
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold,
+                    Foreground = DashKit.B(running ? P.AccentText : P.Muted),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+            DockPanel.SetDock(number, Dock.Left);
+            row.Children.Add(number);
+            var what = new StackPanel();
+            what.Children.Add(k.Text(part.Summary, compact ? 13.5 : 14.5, weight: FontWeights.SemiBold, wrap: true));
+            // What it says (an email's subject on its own line, then a line or two of the words), and the files going with it.
+            var lines = (part.Detail ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+            string? subject = lines.Count > 1 && lines[0].StartsWith("Subject:") ? lines[0] : null;
+            var said = string.Join(" ", subject != null ? lines.Skip(1) : lines);
+            if (said.Length > 140) said = said[..140].TrimEnd() + "…";
+            var files = part.Attached.Count switch
+            {
+                0 => null,
+                1 => Path.GetFileName(part.Attached[0]),
+                2 => $"{Path.GetFileName(part.Attached[0])}, {Path.GetFileName(part.Attached[1])}",
+                var n => $"{Path.GetFileName(part.Attached[0])} and {n - 1} more",
+            };
+            foreach (var line in new[] { subject, said, files is null ? null : $"With {files}", part.State is PlanState.Done or PlanState.Failed ? part.Outcome : null })
+            {
+                if (line is not { Length: > 0 }) continue;
+                var text = k.Text(line, compact ? 12.5 : 13, failed && line == part.Outcome ? P.Danger : P.Muted, wrap: true);
+                text.Margin = new Thickness(0, 2, 0, 0);
+                what.Children.Add(text);
+            }
+            row.Children.Add(what);
+            list.Children.Add(row);
+        }
+        return list;
     }
 
     /// <summary>"Tausif's WhatsApp number" with a box (+91 already in it), and what's still missing under it.</summary>
@@ -368,7 +426,10 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
                 break;
             }
             case PlanState.Running:
-                footer.Children.Add(Pulse(k.Text(plan.Steps.Count == 1 ? "Working on it…" : $"Working on step {plan.Current + 1} of {plan.Steps.Count}…", 13.5, P.Muted)));
+            {
+                int count = plan.Parts.Count > 0 ? plan.Parts.Count : plan.Steps.Count;
+                footer.Children.Add(Pulse(k.Text(count <= 1 ? "Working on it…" : $"Working on {(plan.Parts.Count > 0 ? "" : "step ")}{plan.Current + 1} of {count}…", 13.5, P.Muted)));
+            }
                 break;
             case PlanState.Done:
             {

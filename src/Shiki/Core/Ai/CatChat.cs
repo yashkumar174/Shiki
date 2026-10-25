@@ -93,6 +93,8 @@ public sealed class PlanItem(string summary, IReadOnlyList<PlanStep> steps) : Ch
     public bool AddressReady => Ask is not { } ask || Addresses.Clean(ask.Kind, Address) != null;
     public IReadOnlyList<PlanStep> Steps { get; } = steps;
     public PlanState State { get; internal set; } = PlanState.Waiting;
+    /// <summary>Several things on one card ("email Tausif and WhatsApp Mummy"): each with its own summary, state and outcome.</summary>
+    public IReadOnlyList<PlanItem> Parts { get; init; } = [];
     /// <summary>The step running now (0-based) while Running.</summary>
     public int Current { get; internal set; }
     public string? Outcome { get; internal set; }
@@ -170,7 +172,13 @@ public sealed class CatChat(CatHands hands)
     // tool calls made alongside it) is only known once they press Do it or Not now.
     List<ContentBlockParam> _pending = [];
     string? _planToolId;
+    // A card with several things on it: the other tool calls it answers.
+    readonly List<string> _moreToolIds = [];
     PlanItem? _plan;
+    // A card the app put up itself (the quick path), not Claude: Claude hears how it went as a note,
+    // with what the person said for it.
+    bool _localPlan;
+    string? _localSaid;
     AnthropicClient? _client;
     string? _clientKey;
     CancellationTokenSource? _cancel;
@@ -261,7 +269,7 @@ public sealed class CatChat(CatHands hands)
         _ = Send(option);
     }
 
-    public PlanItem? WaitingPlan => _plan is { State: PlanState.Waiting } plan && _planToolId != null ? plan : null;
+    public PlanItem? WaitingPlan => _plan is { State: PlanState.Waiting } plan && (_planToolId != null || _localPlan) ? plan : null;
 
     /// <summary>Adds a line to the chat without asking Claude (voice notes, a spoken yes).</summary>
     public void Say(ChatItem item)
@@ -279,8 +287,9 @@ public sealed class CatChat(CatHands hands)
         _items.Clear();
         _messages.Clear();
         _pending = [];
-        _planToolId = null;
+        ForgetPlanTools();
         _plan = null;
+        _localPlan = false;
         Cost = 0;
         Busy = false;
         Notify();
@@ -369,11 +378,10 @@ public sealed class CatChat(CatHands hands)
         }
 
         var content = new List<ContentBlockParam>(_pending);
-        if (_planToolId != null)
+        if (_planToolId != null || _localPlan && _plan is { State: PlanState.Waiting })
         {
             if (_plan is { State: PlanState.Waiting } waiting) waiting.State = PlanState.Skipped;
-            content.Add(Result(_planToolId, "The person didn't answer the plan and said something else instead (below). The plan was not run."));
-            _planToolId = null;
+            content.AddRange(PlanAnswers("The person didn't answer the plan and said something else instead (below). The plan was not run."));
         }
         int carried = content.Count;
         var said = text;
@@ -396,6 +404,8 @@ public sealed class CatChat(CatHands hands)
             NextNote = null;
         }
         content.Add(new TextBlockParam { Text = said + ScreenNote(spoken) });
+        // Tool results go first in a message, before any notes.
+        content = content.OrderBy(b => b.TryPickToolResult(out _) ? 0 : 1).ToList();
         int before = _messages.Count, generation = _generation;
         _pending = [];
         _messages.Add(new UserMessageParam { Content = content });
@@ -417,7 +427,7 @@ public sealed class CatChat(CatHands hands)
             // The picture wasn't seen yet: keep it for the next try.
             if (picture != null) { _picture = picture; _pictureWhere = pictureWhere; }
             if (context != null) _context = context;
-            _planToolId = null;
+            ForgetPlanTools();
             var (message, needsKey) = Explain(ex);
             if (ex is OperationCanceledException) message = _stopped ? null : "Claude took too long to answer. Try again?";
             if (message != null) _items.Add(new ChatProblem(message, needsKey));
@@ -513,7 +523,7 @@ public sealed class CatChat(CatHands hands)
                 _items.Add(new CatSaid("I can't help with that one."));
                 _messages.Clear();
                 _pending = [];
-                _planToolId = null;
+                ForgetPlanTools();
                 AiLog.Write("refused", "");
                 return;
             }
@@ -612,22 +622,46 @@ public sealed class CatChat(CatHands hands)
                     AiLog.Write("plan", card.Summary);
                     continue;
                 }
-                if (use.Name is "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app" or "do_on_screen" or "gmail_send" or "whatsapp_send" or "calendar_invite" or "calendar_move" or "calendar_delete" && !waitForPerson)
+                if (use.Name is "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app" or "do_on_screen" or "gmail_send" or "whatsapp_send" or "calendar_invite" or "calendar_move" or "calendar_delete")
                 {
+                    if (waitForPerson && _plan is not { Steps.Count: 0, Run: not null, Ask: null })
+                    {
+                        results.Add(Result(use.ID, "Only one plan at a time; this one was ignored.", error: true));
+                        continue;
+                    }
                     var (card, problem) = await ChoreCard(use.Name, input);
                     if (card == null)
                     {
                         results.Add(Result(use.ID, problem!, error: problem!.StartsWith("Nothing") ? false : true));
                         continue;
                     }
-                    _plan = card;
-                    _planToolId = use.ID;
-                    _items.Add(card);
-                    waitForPerson = true;
-                    AiLog.Write("plan", $"{card.Summary}: {card.Detail}");
+                    if (!waitForPerson)
+                    {
+                        _plan = card;
+                        _planToolId = use.ID;
+                        _localPlan = false;
+                        _items.Add(card);
+                        waitForPerson = true;
+                        AiLog.Write("plan", $"{card.Summary}: {card.Detail}");
+                        continue;
+                    }
+                    // A second (or third) thing for the same request: onto the same card, one yes for all.
+                    if (card.Ask != null || _plan!.Parts.Count >= 4)
+                    {
+                        results.Add(Result(use.ID, card.Ask != null
+                            ? "Not offered yet: this one needs a new person's address, which goes on a card of its own. Offer it again once the person has answered the card on screen."
+                            : "At most 4 things on one card; offer this one after.", error: true));
+                        continue;
+                    }
+                    var first = _plan;
+                    var bundle = Bundle(first.Parts.Count > 0 ? [.. first.Parts, card] : [first, card]);
+                    _items[_items.IndexOf(first)] = bundle;
+                    _plan = bundle;
+                    _moreToolIds.Add(use.ID);
+                    AiLog.Write("plan", $"also: {card.Summary}: {card.Detail}");
                     continue;
                 }
-                if (use.Name is "propose_plan" or "pc_power" or "tidy_folder" or "backup_folder" or "copy_files" or "rename_files" or "translate_document" or "close_app" or "do_on_screen" or "gmail_send" or "whatsapp_send" or "calendar_invite" or "calendar_move" or "calendar_delete")
+                if (use.Name is "propose_plan" or "pc_power")
                 {
                     results.Add(Result(use.ID, "Only one plan at a time; this one was ignored.", error: true));
                     continue;
@@ -897,7 +931,8 @@ public sealed class CatChat(CatHands hands)
                 var (files, problem) = Attachments(input);
                 if (problem != null) return (null, problem.Replace("Gmail takes up to 25 MB in one email", "that's a lot to send at once"));
                 if (text.Length == 0 && files.Count == 0) return (null, "What should the message say?");
-                bool web = input.TryGetProperty("web", out var w) && w.ValueKind == JsonValueKind.True;
+                // Chrome or the app: as asked, else as they've taught the cat.
+                bool web = input.TryGetProperty("web", out var w) && w.ValueKind is JsonValueKind.True or JsonValueKind.False ? w.ValueKind == JsonValueKind.True : Learned.WhatsAppWeb;
                 var card = new PlanItem($"Send on WhatsApp{(web ? " Web" : "")} to {who}", [])
                 {
                     Detail = text.Length > 0 ? text : null,
@@ -1111,8 +1146,98 @@ public sealed class CatChat(CatHands hands)
     void Finish(PlanItem plan, string result)
     {
         AiLog.Write(plan.State.ToString().ToLowerInvariant(), $"{plan.Summary}: {plan.Outcome ?? result}");
-        if (_planToolId != null) _pending.Add(Result(_planToolId, result));
+        _pending.AddRange(PlanAnswers(result));
+    }
+
+    void ForgetPlanTools()
+    {
         _planToolId = null;
+        _moreToolIds.Clear();
+    }
+
+    /// <summary>The answer to the card on screen, for Claude: a result for each of its tool calls, or a note for the app's own card.</summary>
+    List<ContentBlockParam> PlanAnswers(string text)
+    {
+        var blocks = new List<ContentBlockParam>();
+        if (_planToolId != null) blocks.Add(Result(_planToolId, text));
+        blocks.AddRange(_moreToolIds.Select(id => (ContentBlockParam)Result(id, text)));
+        if (_localPlan && _plan != null)
+        {
+            var parts = (_plan.Parts.Count > 0 ? _plan.Parts : [_plan]).Select(p => p.Summary + (p.Detail is { } d ? $" (\"{d.Replace('\n', ' ')}\")" : "") + (p.Attached.Count > 0 ? $" with {string.Join(", ", p.Attached.Select(Path.GetFileName))}" : ""));
+            blocks.Add(new TextBlockParam { Text = $"[The person said \"{_localSaid}\" and the app handled it by itself (the quick path, not you) with a card: {string.Join("; ", parts)}. {text}]" });
+        }
+        ForgetPlanTools();
+        _localPlan = false;
+        return blocks;
+    }
+
+    // ---- The quick path's own cards ----
+
+    /// <summary>A send card made the way Claude's are (gmail_send, whatsapp_send…), or null with the reason logged.</summary>
+    public async Task<PlanItem?> Card(string tool, object input)
+    {
+        var (card, problem) = await ChoreCard(tool, JsonSerializer.SerializeToElement(input));
+        if (card == null) AiLog.Write("quick", $"no card for {tool}: {problem}");
+        return card;
+    }
+
+    /// <summary>A card the app put up itself (the quick path): answered like Claude's; Claude hears how it went with the next message.</summary>
+    public void Offer(PlanItem card, string said)
+    {
+        if (_plan is { State: PlanState.Waiting } old && (_planToolId != null || _localPlan))
+        {
+            old.State = PlanState.Skipped;
+            _pending.AddRange(PlanAnswers("The person asked for something else instead (done by the app). The plan was not run."));
+        }
+        _plan = card;
+        _localPlan = true;
+        _localSaid = said;
+        _items.Add(card);
+        AiLog.Write("plan", $"{card.Summary}{(card.Parts.Count > 0 ? ": " + string.Join("; ", card.Parts.Select(p => p.Summary)) : card.Detail is { } d ? $": {d}" : "")} (quick)");
+        if (card.Countdown) StartCountdown(card);
+        else Notify();
+    }
+
+    /// <summary>Something the app did by itself (a reminder set on the quick path): Claude hears of it with the next message.</summary>
+    public void Note(string text) => _pending.Add(new TextBlockParam { Text = $"[Done by the app itself, without you: {text}]" });
+
+    static readonly string[] Counts = ["", "One thing", "Two things", "Three things", "Four things"];
+
+    /// <summary>Several things asked for at once, on one card: one yes (or one countdown) does them all, in order.</summary>
+    public PlanItem Bundle(IReadOnlyList<PlanItem> parts)
+    {
+        var bundle = new PlanItem($"{(parts.Count < Counts.Length ? Counts[parts.Count] : $"{parts.Count} things")}, one go", [])
+        {
+            Parts = parts,
+            Countdown = parts.All(p => p.Countdown),
+        };
+        bundle.Run = async () =>
+        {
+            var outcomes = new List<string>();
+            for (int i = 0; i < parts.Count; i++)
+            {
+                var part = parts[i];
+                bundle.Current = i;
+                part.State = PlanState.Running;
+                Notify();
+                try
+                {
+                    part.Outcome = await part.Run!();
+                    part.State = PlanState.Done;
+                }
+                catch (Exception ex)
+                {
+                    part.Outcome = $"That didn't work: {ex.Message}";
+                    part.State = PlanState.Failed;
+                }
+                AiLog.Write(part.State == PlanState.Done ? "done" : "failed", $"{part.Summary}: {part.Outcome}");
+                outcomes.Add($"{i + 1}. {part.Summary}: {part.Outcome}");
+            }
+            bundle.Outputs = parts.SelectMany(p => p.Outputs).ToList();
+            Notify();
+            return parts.All(p => p.State == PlanState.Done) ? "All done." : string.Join("\n", outcomes);
+        };
+        return bundle;
     }
 
     static Task Finished(Job job)

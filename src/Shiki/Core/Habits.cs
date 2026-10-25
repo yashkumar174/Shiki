@@ -45,7 +45,7 @@ public static class Preferences
         fact = fact.Trim();
         if (fact.Length == 0 || All.Contains(fact, StringComparer.OrdinalIgnoreCase)) return;
         // A short list stays useful (and cheap): the oldest go first.
-        Write(All.Append(fact).TakeLast(40).ToList());
+        Write(All.Append(fact).TakeLast(80).ToList());
     }
 
     public static bool Remove(string fact)
