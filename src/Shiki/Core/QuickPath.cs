@@ -131,7 +131,6 @@ public static class QuickPath
             if (who != "me") return null;
             email = true;
         }
-        if (whatsapp && who == "me") return null;
         return new Files(who == "me" ? "me" : Title(who), !whatsapp, what);
     }
 
@@ -212,9 +211,14 @@ public static class QuickPath
     // ---- Who's who (from what the cat remembers) ----
 
     /// <summary>A remembered WhatsApp number for this name ("Mummy's WhatsApp is 91…"), sounds-alike names included.</summary>
-    public static (string Name, string Phone)? RememberedPhone(string name) => Remembered(name, @"(?<a>\+?\d[\d ]{8,})", "WhatsApp|number|phone|mobile") is { } r
-        ? (r.Name, new string(r.Value.Where(char.IsAsciiDigit).ToArray()))
-        : null;
+    public static (string Name, string Phone)? RememberedPhone(string name)
+    {
+        if (name == "me" && Preferences.All.Select(f => Regex.Match(f, @"^my own (?:whats ?app|number|phone)\b.*? is (?<a>\+?\d[\d ]{8,})", I)).FirstOrDefault(m => m.Success) is { } own)
+            return ("me", new string(own.Groups["a"].Value.Where(char.IsAsciiDigit).ToArray()));
+        return Remembered(name, @"(?<a>\+?\d[\d ]{8,})", "WhatsApp|number|phone|mobile") is { } r
+            ? (r.Name, new string(r.Value.Where(char.IsAsciiDigit).ToArray()))
+            : null;
+    }
 
     /// <summary>A remembered email for this name, or the person's own for "me".</summary>
     public static (string Name, string Email)? RememberedEmail(string name)

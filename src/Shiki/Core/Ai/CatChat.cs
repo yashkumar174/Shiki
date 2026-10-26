@@ -1131,7 +1131,15 @@ public sealed class CatChat(CatHands hands)
     /// <summary>Remembers a new person's number or email (the card's box), so it's never asked again.</summary>
     static void RememberAddress(AddressAsk ask, string address)
     {
-        var fact = ask.Kind == AddressKind.Phone ? $"{ask.Name}'s WhatsApp is {address}" : $"{ask.Name}'s email is {address}";
+        // Their own number or email (sending to "me"), said the way "my own email" already is.
+        bool own = ask.Name.Trim().ToLowerInvariant() is "me" or "myself" or "my own" or "mine";
+        var fact = (ask.Kind, own) switch
+        {
+            (AddressKind.Phone, true) => $"My own WhatsApp (when I say me or myself) is {address}",
+            (AddressKind.Phone, false) => $"{ask.Name}'s WhatsApp is {address}",
+            (_, true) => $"My own email (when I say me or myself) is {address}",
+            _ => $"{ask.Name}'s email is {address}",
+        };
         Preferences.Add(fact);
         AiLog.Write("remembered", fact);
     }

@@ -631,6 +631,11 @@ public partial class App : Application
                 Chat.Say(Chat.Bundle(parts));
                 break;
             }
+            case "briefing":
+                // Dev aid: the day's briefing in the chat (see it with snapshot-bubble), as if asked.
+                EnterBuddyMode();
+                _ = Brief(spoken: false);
+                break;
             case "quick-test" when args.Length >= 2:
             {
                 // Dev aid: how the quick path reads a request, and who it would go to (nothing is sent or set).
@@ -1155,6 +1160,7 @@ public partial class App : Application
                 new SettingSwitch("Offer to take notes when a call starts", "Zoom, Teams, Meet in a browser and other calling apps. Asks once per call.", () => _settings.OfferNotes, () => { _settings.OfferNotes = !_settings.OfferNotes; _settings.Save(); }, "meetings"),
                 new SettingSwitch("Send to people I know after a countdown", "A WhatsApp or email to someone you've written to before goes after 5 seconds (say \"stop\" or press Stop) instead of asking first. New people still get a card.", () => _settings.CountdownSends, () => { _settings.CountdownSends = !_settings.CountdownSends; _settings.Save(); }, "ai"),
                 new SettingSwitch("Quick sends and reminders", "\"WhatsApp Mummy that I'm on my way\", \"email this to me\", \"remind me at 5 to call the bank\": done in a second on this PC, without waiting for Claude. Anything unclear still goes to Claude.", () => _settings.QuickPath, () => { _settings.QuickPath = !_settings.QuickPath; _settings.Save(); }, "ai"),
+                new SettingSwitch("Morning briefing", $"The first \"Hey {CatName}\" of the day (after 4 am), said on its own, tells you today's meetings, the emails that matter and tasks due. Say \"brief me\" or \"good morning\" any time for it.", () => _settings.BriefingOnWake, () => { _settings.BriefingOnWake = !_settings.BriefingOnWake; _settings.Save(); }, "ai"),
                 new SettingSwitch("Privacy guard", "Card numbers, Aadhaar and PAN numbers, passwords and keys in documents or copied text are hidden on this PC before anything goes to Claude.", () => _settings.PrivacyGuard, () => { _settings.PrivacyGuard = !_settings.PrivacyGuard; Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard; _settings.Save(); }, "ai"),
                 new SettingSwitch("Suggest what to do with downloads", "A HEIC photo, a huge video, an archive: one tap to fix it. Worked out on this PC.", () => _settings.SuggestDownloads, () => { _settings.SuggestDownloads = !_settings.SuggestDownloads; _settings.Save(); }, "automation"),
                 new SettingSwitch($"{CatName} says a word now and then", "Welcome back, what a job saved, your tasks for today. Never over full-screen apps.", () => _settings.Quips, () => { _settings.Quips = !_settings.Quips; _settings.Save(); }, "cat"),
@@ -1489,8 +1495,51 @@ public partial class App : Application
         if (_voice is { Active: true } || Chat.Busy) return;
         if (!ShowVoicePill()) return;
         _buddy?.Act("purr");
-        if (after.Length == 0) _ = Voice.Listen();
+        // The first "Hey Sky" of the day, on its own: the day's briefing (then it listens as usual).
+        bool first = Briefing.FirstToday(_settings.LastWake, DateTime.Now);
+        _settings.LastWake = DateTime.Now;
+        _settings.Save();
+        if (first && _settings.BriefingOnWake && after.Length == 0) _ = Brief(spoken: true);
+        else if (after.Length == 0) _ = Voice.Listen();
         else _ = Voice.Use(after);
+    }
+
+    // How much of a reply is read aloud before "the rest is on screen" (more for the briefing).
+    int _speakLimit = 320;
+
+    /// <summary>
+    /// The day's briefing: meetings, the emails that matter and tasks due, gathered here, written
+    /// up by Claude in a few spoken sentences, then it listens for what's next ("reply to Rahul").
+    /// </summary>
+    async System.Threading.Tasks.Task Brief(bool spoken)
+    {
+        AiLog.Write("briefing", spoken ? "spoken" : "typed");
+        Chat.Say(new CatDid("\uE706", "Your day at a glance"));
+        string note;
+        try
+        {
+            var (facts, found) = await Briefing.Gather(CatName, default);
+            note = facts;
+            AiLog.Write("briefing", $"{found.Events} events, {found.Mail} unread emails, {found.Tasks} tasks due");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Briefing failed", ex);
+            note = $"Briefing: say good morning, and that you couldn't get today's details ({ex.Message}).";
+        }
+        Chat.NextNote = note;
+        _speakLimit = 900;
+        try
+        {
+            await Chat.Send("Brief me on my day.", spoken, shown: false);
+        }
+        finally
+        {
+            _speakLimit = 320;
+        }
+        if (!spoken || _settings.FollowUpSeconds <= 0) return;
+        while (_mouth?.Speaking == true) await System.Threading.Tasks.Task.Delay(150);
+        if (!Voice.Active && !Chat.Busy) _ = Voice.Listen(followUp: true);
     }
 
     /// <summary>Meet your cat: name it and say "Hey &lt;name&gt;" three times.</summary>
@@ -1556,9 +1605,9 @@ public partial class App : Application
             if (!(_settings.TalkBack == "always" || (_settings.TalkBack == "spoken" && spoken))) return;
             // A long answer: the first few sentences aloud, the rest on screen.
             if (first) _spokenChars = 0;
-            if (_spokenChars >= 320) return;
+            if (_spokenChars >= _speakLimit) return;
             _spokenChars += sentence.Length;
-            var say = _spokenChars >= 320 ? sentence + " The rest is on screen." : sentence;
+            var say = _spokenChars >= _speakLimit ? sentence + " The rest is on screen." : sentence;
             if (first) _ = Mouth.Say(say, _settings.TalkVoice);
             else Mouth.Append(say, _settings.TalkVoice);
         },
@@ -2161,8 +2210,11 @@ public partial class App : Application
                         }
                         else
                         {
-                            var (name, phone, unsure) = await FindPhone(send.Who);
-                            if (unsure) { await ToClaude($"more than one number for {send.Who}"); return; }
+                            // To yourself: the number you gave once ("my own WhatsApp"), else Claude asks.
+                            var (name, phone, unsure) = send.Who == "me"
+                                ? (QuickPath.RememberedPhone("me") is { } own ? ("me", own.Phone, false) : ("me", null, true))
+                                : await FindPhone(send.Who);
+                            if (unsure) { await ToClaude($"which number for {send.Who}"); return; }
                             var input = new Dictionary<string, object> { ["name"] = name, ["text"] = "", ["files"] = files };
                             if (phone != null) input["phone"] = phone;
                             card = await Chat.Card("whatsapp_send", input);
@@ -2741,6 +2793,10 @@ public partial class App : Application
     {
         // Hindi and Hinglish ("awaaz kam karo", "chrome kholo") in the English the commands below know.
         var words = WakeMatcher.Normalize(Speech.Hindi ? Hinglish.ToCommand(said) : said);
+        // "Good morning", "brief me", "what's my day like": the day's briefing.
+        var withoutName = System.Text.RegularExpressions.Regex.Replace(WakeMatcher.Normalize(said), $@" {System.Text.RegularExpressions.Regex.Escape(WakeMatcher.Normalize(CatName))}$", "");
+        if (Briefing.Asked(words) || Briefing.Asked(withoutName))
+            return () => _ = Brief(spoken: _voice is { Active: true });
         // Everyday sends and reminders, alone or two or three joined by "and": worked out here, no waiting for Claude.
         if (_settings.QuickPath && QuickPath.Plan(said, DateTime.Now) is { } quick)
         {

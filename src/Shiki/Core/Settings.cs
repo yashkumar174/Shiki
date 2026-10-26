@@ -89,6 +89,10 @@ public sealed class Settings
     public bool CountdownSends { get; set; } = true;
     /// <summary>Everyday sends and reminders ("WhatsApp Mummy that…", "remind me at 5…") worked out on this PC, without Claude.</summary>
     public bool QuickPath { get; set; } = true;
+    /// <summary>The first "Hey Sky" of the day, on its own, brings the day's briefing (meetings, email that matters, tasks).</summary>
+    public bool BriefingOnWake { get; set; } = true;
+    /// <summary>When "Hey Sky" was last heard (the first of the day brings the briefing).</summary>
+    public DateTime? LastWake { get; set; }
     /// <summary>After a spoken request and the cat's reply, keep listening this many seconds for the next one (0: off).</summary>
     public int FollowUpSeconds { get; set; } = 8;
     /// <summary>Listen all the time (on this PC) for "Hey &lt;cat name&gt;".</summary>
