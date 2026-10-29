@@ -102,9 +102,13 @@ In no fixed order yet; we pick as we go.
 - **Hindi and Hinglish** (v2.18): Deepgram multilingual, Whisper multilingual, Hinglish quick commands.
 - **The web and Gmail, fast** (v2.19): Claude web search and fetch; Gmail through Google's API (search, read, draft, send with a card).
 - **What can Sky do?** page (v2.20), Settings in tabs (v2.20.1), a short right-click menu (v2.20.2).
+- **Say it and it happens** (v2.38–v2.42): a 5-second countdown for people already written to, a box on the card for a new person's number or email, quick sends and reminders without waiting for Claude, several things on one card with one yes, habits learned from corrections, and the morning briefing.
 
 ## Open
 
+- **WhatsApp files that attach by themselves** (today the file can be left on the clipboard to paste).
+- **Voice quality**: local speech-to-text (Whisper, Parakeet) against Deepgram, a faster "Hey Sky", dictation cleanup.
+- **Email triage** ("anything important?") and follow-up reminders, **clipboard history**.
 - **Wispr Flow**: waiting for their API.
 - **Phone link**: files between phone and PC.
 - **Mellow's skin**: needs her colours.
