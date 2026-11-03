@@ -345,6 +345,16 @@ public partial class App : Application
                     }
                 });
                 break;
+            case "compare-clips":
+                // Dev aid: the kept voice clips (newest first, or the newest N) through Deepgram's careful mode,
+                // ElevenLabs Scribe v2 and Whisper on this PC, next to what was heard live. Writes voice-clips\compare.md.
+                _ = CompareClips(args.Length > 1 && int.TryParse(args[1], out var howMany) ? howMany : 30);
+                break;
+            case "scribe-file" when args.Length == 2:
+                // Dev aid: stream a WAV to ElevenLabs Scribe live, as the microphone would; partials and the end go to the log.
+                EnterBuddyMode();
+                _ = ScribeFile(args[1]);
+                break;
             case "script-test":
                 // Dev aid: what different scripts become in English letters (answers go to the log).
                 foreach (var heardText in new[] { "కేక్ నంబర్ వై", "نمسطو ته বাই seedhe maut",
@@ -1177,6 +1187,7 @@ public partial class App : Application
                 new SettingSwitch("Send to people I know after a countdown", "A WhatsApp or email to someone you've written to before goes after 5 seconds (say \"stop\" or press Stop) instead of asking first. New people still get a card.", () => _settings.CountdownSends, () => { _settings.CountdownSends = !_settings.CountdownSends; _settings.Save(); }, "ai"),
                 new SettingSwitch("Quick sends and reminders", "\"WhatsApp Mummy that I'm on my way\", \"email this to me\", \"remind me at 5 to call the bank\": done in a second on this PC, without waiting for Claude. Anything unclear still goes to Claude.", () => _settings.QuickPath, () => { _settings.QuickPath = !_settings.QuickPath; _settings.Save(); }, "ai"),
                 new SettingSwitch("Morning briefing", $"The first \"Hey {CatName}\" of the day (after 4 am), said on its own, tells you today's meetings, the emails that matter and tasks due. Say \"brief me\" or \"good morning\" any time for it.", () => _settings.BriefingOnWake, () => { _settings.BriefingOnWake = !_settings.BriefingOnWake; _settings.Save(); }, "ai"),
+                new SettingSwitch("Keep my last 30 voice requests", "As sound files on this PC only (Shiki's data folder, voice-clips), so speech engines can be tested on your own voice. Nothing is uploaded by itself.", () => _settings.KeepVoiceClips, () => { _settings.KeepVoiceClips = !_settings.KeepVoiceClips; VoiceClips.On = _settings.KeepVoiceClips; _settings.Save(); }, "ai"),
                 new SettingSwitch("Privacy guard", "Card numbers, Aadhaar and PAN numbers, passwords and keys in documents or copied text are hidden on this PC before anything goes to Claude.", () => _settings.PrivacyGuard, () => { _settings.PrivacyGuard = !_settings.PrivacyGuard; Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard; _settings.Save(); }, "ai"),
                 new SettingSwitch("Suggest what to do with downloads", "A HEIC photo, a huge video, an archive: one tap to fix it. Worked out on this PC.", () => _settings.SuggestDownloads, () => { _settings.SuggestDownloads = !_settings.SuggestDownloads; _settings.Save(); }, "automation"),
                 new SettingSwitch($"{CatName} says a word now and then", "Welcome back, what a job saved, your tasks for today. Never over full-screen apps.", () => _settings.Quips, () => { _settings.Quips = !_settings.Quips; _settings.Save(); }, "cat"),
@@ -1187,7 +1198,7 @@ public partial class App : Application
                 () => _settings.AiEnabled,
                 () => { _settings.AiEnabled = !_settings.AiEnabled; _settings.Save(); ApplyWake(); },
                 () => _settings.VoiceEngine,
-                engine => { _settings.VoiceEngine = engine; _settings.Save(); },
+                engine => { _settings.VoiceEngine = engine; _settings.Save(); Speech.OnScribe = engine == "elevenlabs"; },
                 () => _settings.WakeEngine,
                 engine => { _settings.WakeEngine = engine; _settings.Save(); Speech.WakeOnDeepgram = engine == "deepgram"; },
                 () => _settings.DeepgramSeconds < 1 ? "" : $"Deepgram so far: {_settings.DeepgramSeconds / 60:0.0} minutes of speech (about ${_settings.DeepgramSeconds / 60 * 0.0077:0.00} at Nova-3's streaming price).",
@@ -1471,6 +1482,7 @@ public partial class App : Application
     void ApplyWake()
     {
         Speech.WakeOnDeepgram = _settings.WakeEngine == "deepgram";
+        Speech.OnScribe = _settings.VoiceEngine == "elevenlabs";
         bool want = _settings.WakeWord && _settings.AiEnabled && _settings.WakeVariants.Count > 0 && ClaudeKey.Exists;
         if (want && _wake == null)
         {
@@ -1786,7 +1798,7 @@ public partial class App : Application
         bool sent = false;
         try
         {
-            string result = web ? await FilesOnWhatsAppWeb(phone, text, what, left) : await FilesOnWhatsAppApp(phone, text, what, left);
+            string result = web ? await FilesOnWhatsAppWeb(phone, text, what, left, files) : await FilesOnWhatsAppApp(phone, text, what, left);
             sent = result.StartsWith("Sent");
             return result;
         }
@@ -1802,7 +1814,7 @@ public partial class App : Application
         }
     }
 
-    async System.Threading.Tasks.Task<string> FilesOnWhatsAppWeb(string phone, string text, string what, string left)
+    async System.Threading.Tasks.Task<string> FilesOnWhatsAppWeb(string phone, string text, string what, string left, IReadOnlyList<string> files)
     {
         var link = $"https://web.whatsapp.com/send?phone={phone}";
         var browser = OpenWhatsAppWeb(link);
@@ -1813,10 +1825,8 @@ public partial class App : Application
             return $"WhatsApp Web is open in {browser}, but the chat didn't finish loading. The {(what.EndsWith("files") ? "files are" : "file is")} on your clipboard: open the chat, press Ctrl+V, then Enter.";
         WhatsAppWeb.FocusBox(chat.Window, chat.Box);
         await System.Threading.Tasks.Task.Delay(300);
-        await TypeText.WaitForModifiersUp();
-        if (!WhatsAppWebInFront()) { Note("WhatsApp Web wasn't in front, so nothing was pasted"); return left; }
-        TypeText.Paste();
-        Note("pasted the files");
+        // Attach the files the way a person does (pasting files isn't passed on to WhatsApp Web).
+        if (!await WhatsAppWeb.AttachFiles(chat.Window, files, Note)) return left;
         // The preview opens with a caption box and a Send button (bigger files take a moment).
         bool up = false;
         for (int i = 0; i < 20 && !up; i++)
@@ -1824,10 +1834,12 @@ public partial class App : Application
             await System.Threading.Tasks.Task.Delay(500);
             up = await WhatsAppWeb.PreviewUp(chat.Window);
         }
-        if (!up) { Note("the paste didn't open WhatsApp's preview"); return left; }
+        if (!up) { Note("WhatsApp's preview didn't open"); return left; }
         if (text.Length > 0)
         {
             await System.Threading.Tasks.Task.Delay(300);
+            NativeMethods.ForceForeground(new IntPtr(chat.Window.Current.NativeWindowHandle));
+            await System.Threading.Tasks.Task.Delay(150);
             if (!WhatsAppWebInFront() || !TypeText.Type(text)) { Note("couldn't type the caption"); return "The files are in WhatsApp's preview: add the caption and press Enter."; }
         }
         if (await WhatsAppWeb.PressSend(chat.Window, TimeSpan.FromSeconds(5)))
@@ -2132,6 +2144,7 @@ public partial class App : Application
     /// </summary>
     void RefreshKeyTerms()
     {
+        VoiceClips.On = _settings.KeepVoiceClips;
         // The contacts' names, for the speech engine (once a day, in the background).
         _ = People.RefreshContacts();
         var terms = Routines.All.SelectMany(r => r.Phrases.Take(2)).ToList();
@@ -2149,6 +2162,30 @@ public partial class App : Application
         {
         }
         Speech.Extra = terms.Where(t => t.Length > 2).Distinct(StringComparer.OrdinalIgnoreCase).Take(20).ToList();
+    }
+
+    /// <summary>Dev aid: how each engine writes down the person's own kept clips (see "compare-clips").</summary>
+    async System.Threading.Tasks.Task CompareClips(int most)
+    {
+        var clips = VoiceClips.All().Take(most).ToList();
+        var terms = Speech.KeyTerms(CatName).ToList();
+        var table = new System.Text.StringBuilder("| Clip | Live (Deepgram, as heard) | Deepgram careful | ElevenLabs Scribe v2 | Whisper (this PC) |\n|---|---|---|---|---|\n");
+        static string Cell(string t) => t.Replace("|", "/").Replace("\n", " ");
+        foreach (var (wav, live) in clips)
+        {
+            var samples = VoiceClips.Read(wav);
+            string deepgram, scribe, whisper;
+            var watch = Stopwatch.StartNew();
+            try { deepgram = await Deepgram.Transcribe(samples, terms, default) + $" ({watch.ElapsedMilliseconds} ms)"; } catch (Exception ex) { deepgram = "error: " + ex.Message; }
+            watch.Restart();
+            try { scribe = ElevenLabs.HasKey ? await ElevenLabs.Transcribe(File.ReadAllBytes(wav), terms, default) + $" ({watch.ElapsedMilliseconds} ms)" : "no key"; } catch (Exception ex) { scribe = "error: " + ex.Message; }
+            watch.Restart();
+            try { whisper = Speech.WhisperHindi.IsDownloaded ? await Speech.WhisperHindi.Transcribe(samples, $"{CatName}.", default, threads: Math.Clamp(Environment.ProcessorCount - 1, 2, 8)) + $" ({watch.ElapsedMilliseconds} ms)" : "not downloaded"; } catch (Exception ex) { whisper = "error: " + ex.Message; }
+            Log.Info($"compare-clips {Path.GetFileNameWithoutExtension(wav)}: live \"{live}\" | deepgram \"{deepgram}\" | scribe \"{scribe}\" | whisper \"{whisper}\"");
+            table.Append($"| {Path.GetFileNameWithoutExtension(wav)} | {Cell(live)} | {Cell(deepgram)} | {Cell(scribe)} | {Cell(whisper)} |\n");
+        }
+        File.WriteAllText(Path.Combine(VoiceClips.Folder, "compare.md"), table.ToString());
+        Log.Info($"compare-clips: {clips.Count} clips, table in {Path.Combine(VoiceClips.Folder, "compare.md")}");
     }
 
     // ---- Instant answers ----
@@ -3402,6 +3439,35 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Error("stream-file failed", ex);
+        }
+    }
+
+    async System.Threading.Tasks.Task ScribeFile(string wav)
+    {
+        try
+        {
+            var samples = ReadWav(wav);
+            var key = ElevenLabs.Key.Read() ?? throw new InvalidOperationException("no ElevenLabs key");
+            var watch = Stopwatch.StartNew();
+            await using var live = await ScribeLive.Open(key, 16000, Speech.KeyTerms(CatName), default);
+            Log.Info($"scribe-file: connected in {watch.ElapsedMilliseconds} ms");
+            bool ended = false;
+            live.Partial += text => Log.Info($"scribe-file: {watch.ElapsedMilliseconds} ms partial \"{text}\"");
+            live.Ended += () => { ended = true; Log.Info($"scribe-file: {watch.ElapsedMilliseconds} ms Scribe says finished"); };
+            var all = samples.Concat(new float[32000]).ToArray();
+            var pace = Stopwatch.StartNew();
+            for (int i = 0; i < all.Length && !ended; i += 320)
+            {
+                live.Send(all[i..Math.Min(all.Length, i + 320)]);
+                var due = (i + 320) / 16.0 - pace.Elapsed.TotalMilliseconds;
+                if (due > 1) await System.Threading.Tasks.Task.Delay((int)due);
+            }
+            Log.Info($"scribe-file: audio sent by {watch.ElapsedMilliseconds} ms");
+            Log.Info($"scribe-file: final \"{await live.Finish()}\" after {watch.ElapsedMilliseconds} ms ({samples.Length / 16000.0:0.0} s of speech)");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("scribe-file failed", ex);
         }
     }
 

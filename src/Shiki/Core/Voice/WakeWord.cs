@@ -323,6 +323,20 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
     /// </summary>
     public static async Task<string> RequestAfterName(float[] samples, string name, IEnumerable<string> learned, string quickRest, CancellationToken ct)
     {
+        // With Scribe for requests, the burst is written down again carefully (names, Hinglish).
+        if (Speech.OnScribe && ElevenLabs.HasKey)
+        {
+            try
+            {
+                var careful = await ElevenLabs.Transcribe(Deepgram.Wav(samples), Speech.KeyTerms(name), ct);
+                var (named, after) = WakeMatcher.Match(careful, name, learned);
+                if (named && after.Length > 0) return after;
+            }
+            catch (Exception ex) when (ex is ElevenLabsException or System.Net.Http.HttpRequestException or TaskCanceledException && !ct.IsCancellationRequested)
+            {
+                Log.Error("Scribe couldn't write the request down; keeping the quick one", ex);
+            }
+        }
         // Deepgram already wrote the whole burst down; only the capped Whisper check needs a second pass.
         if (Speech.WakeOnDeepgram && Deepgram.HasKey) return quickRest;
         var full = await Speech.Local.Transcribe(samples, $"Hey {name}. Convert, merge, compress, PDF, JPG, Downloads, Desktop.", ct);

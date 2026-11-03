@@ -98,8 +98,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         var ct = _cancel.Token;
         var engine = Speech.ForCommands(settings, catName);
         Partial = "";
-        DeepgramLive? live = null;
-        Task<DeepgramLive?>? connecting = null;
+        ILiveStream? live = null;
+        Task<ILiveStream?>? connecting = null;
         Microphone? mic = null;
         string? said = null;
         bool quiet = false;
@@ -115,29 +115,21 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             Heard heard;
             // Waiting for a follow-up: only as long as the setting says. Otherwise the usual few seconds.
             double wait = followUp || answering ? Math.Max(settings.FollowUpSeconds, answering ? 7 : 3) : 7;
-            // With Deepgram, Deepgram decides when you've finished; the local pause is only a backstop.
+            // With a live engine (Scribe or Deepgram), it decides when you've finished; the local pause is only a backstop.
             // This listen's own microphone: _mic is only there so Stop and Finish can reach it.
-            using (mic = _mic = new Microphone(pauseEnds: engine is Deepgram ? 6 : 1.9, waitForSpeech: wait))
+            using (mic = _mic = new Microphone(pauseEnds: Speech.IsLive(engine) ? 6 : 1.9, waitForSpeech: wait))
             {
-                var key = engine is Deepgram ? Deepgram.Key.Read() : null;
+                bool key = Speech.IsLive(engine);
                 var thisMic = mic;
                 // Connects and starts streaming what's been heard so far (the microphone keeps it meanwhile).
-                async Task<DeepgramLive?> Connect()
+                async Task<ILiveStream?> Connect()
                 {
-                    try
-                    {
-                        var stream = await DeepgramLive.Open(key!, thisMic.SampleRate, Speech.KeyTerms(catName()), ct);
-                        stream.Partial += text => Post(() => { Partial = text; Changed?.Invoke(); });
-                        stream.Ended += thisMic.Stop;
-                        thisMic.StreamTo(stream.Send);
-                        return stream;
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-                    {
-                        // Offline or refused: keep listening as usual and let Whisper write it down.
-                        Log.Error("Deepgram stream couldn't open; using Whisper", ex);
-                        return null;
-                    }
+                    var stream = await Speech.OpenLive(engine, thisMic.SampleRate, Speech.KeyTerms(catName()), ct);
+                    if (stream == null) return null;
+                    stream.Partial += text => Post(() => { Partial = text; Changed?.Invoke(); });
+                    stream.Ended += thisMic.Stop;
+                    thisMic.StreamTo(stream.Send);
+                    return stream;
                 }
 
                 mic.Level += level => Post(() =>
@@ -152,16 +144,17 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
                 {
                     Set(VoiceState.Hearing);
                     // A follow-up connects only now that you're talking: waiting in silence sends nothing.
-                    if (key != null && connecting == null) connecting = Connect();
+                    if (key && connecting == null) connecting = Connect();
                 });
                 Set(VoiceState.Waiting);
                 var listening = mic.Listen(ct);
                 // Asked on purpose (the mic, the shortcut, "Hey Sky"): connect straight away.
-                if (key != null && !followUp) connecting = Connect();
+                if (key && !followUp) connecting = Connect();
                 heard = await listening;
                 if (connecting != null) live = await connecting;
             }
             if (ct.IsCancellationRequested) return;
+            // No live stream: Scribe writes the recording down whole if it can; otherwise Whisper on this PC.
             if (engine is Deepgram && live == null) engine = Speech.Local;
             string? streamed = live != null ? await live.Finish() : null;
             if (heard.Kind != HeardKind.Speech && string.IsNullOrWhiteSpace(streamed))
@@ -174,6 +167,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             Set(VoiceState.Understanding);
             var text = streamed is { Length: > 0 } ? streamed : await Transcribe(engine, heard.Samples, ct);
             AiLog.Write("heard", text);
+            // Kept on this PC (last 30), so engines can be compared on this voice.
+            VoiceClips.Keep(heard.Samples, text);
             if (text.Length == 0)
             {
                 if (followUp) { quiet = true; return; }

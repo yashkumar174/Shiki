@@ -110,7 +110,7 @@ public sealed class Deepgram(Func<IEnumerable<string>> keyterms) : ISpeechToText
     }
 
     /// <summary>16 kHz mono floats as a little WAV file (16-bit PCM).</summary>
-    static byte[] Wav(float[] samples)
+    internal static byte[] Wav(float[] samples)
     {
         using var stream = new MemoryStream(44 + samples.Length * 2);
         using var w = new BinaryWriter(stream);
@@ -153,7 +153,7 @@ public sealed class DeepgramException(System.Net.HttpStatusCode status, string b
 /// back as you say them, and Deepgram says when you've finished (a pause it judges from the
 /// words, not just the loudness, so stopping to think doesn't end it too early).
 /// </summary>
-public sealed class DeepgramLive : IAsyncDisposable
+public sealed class DeepgramLive : ILiveStream
 {
     readonly ClientWebSocket _socket = new();
     readonly Channel<byte[]> _outgoing = Channel.CreateUnbounded<byte[]>();
@@ -291,6 +291,23 @@ public sealed class DeepgramLive : IAsyncDisposable
         "me", "it", "this", "these", "please", "is", "are", "was", "will", "be", "for", "what", "there", "some", "i", "can", "could",
     };
 
+    /// <summary>
+    /// Does this sound like someone stopped mid-sentence ("send it to", "can you", "…for me" with no
+    /// full stop)? Then the stream waits a few seconds more before deciding they've finished.
+    /// </summary>
+    public static bool LooksUnfinished(string text)
+    {
+        text = text.Trim().TrimEnd(' ');
+        if (text.EndsWith(',')) return true;
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var last = words.LastOrDefault()?.Trim('.', ',', '?', '!') ?? "";
+        var lastTwo = words.Length >= 2 ? $"{words[^2].Trim('.', ',', '?', '!')} {last}".ToLowerInvariant() : "";
+        bool closed = text.EndsWith('.') || text.EndsWith('?') || text.EndsWith('!');
+        return words.Length < 2 || Dangling.Contains(last)
+            || lastTwo is "can you" or "could you" or "will you" or "would you" or "do you"
+            || Soft.Contains(last) && !closed;
+    }
+
     void EndUnlessUnfinished()
     {
         var text = (Text + " " + _interim).Trim().TrimEnd(',', ' ');
@@ -309,7 +326,8 @@ public sealed class DeepgramLive : IAsyncDisposable
         // Give them a moment more; new words cancel this and the next pause decides again.
         _waiting?.Cancel();
         var waiting = _waiting = new CancellationTokenSource();
-        _ = Task.Delay(2500, waiting.Token).ContinueWith(t => { if (!t.IsCanceled) End(); }, TaskScheduler.Default);
+        // Four seconds: people stop to think mid-sentence ("send it to… Tausif"); new words cancel this.
+        _ = Task.Delay(4000, waiting.Token).ContinueWith(t => { if (!t.IsCanceled) End(); }, TaskScheduler.Default);
     }
 
     void End()

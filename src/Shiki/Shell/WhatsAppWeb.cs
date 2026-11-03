@@ -69,13 +69,32 @@ public static class WhatsAppWeb
         return null;
     }
 
+    /// <summary>
+    /// Presses a button whatever kind it is: a plain one (invoke), one that opens a menu (expand:
+    /// WhatsApp's Attach is one), a toggle, or a row to select.
+    /// </summary>
     static bool Press(AutomationElement button)
     {
         try
         {
-            if (button.TryGetCurrentPattern(InvokePattern.Pattern, out var pattern))
+            if (button.TryGetCurrentPattern(InvokePattern.Pattern, out var invoke))
             {
-                ((InvokePattern)pattern).Invoke();
+                ((InvokePattern)invoke).Invoke();
+                return true;
+            }
+            if (button.TryGetCurrentPattern(ExpandCollapsePattern.Pattern, out var expand))
+            {
+                ((ExpandCollapsePattern)expand).Expand();
+                return true;
+            }
+            if (button.TryGetCurrentPattern(TogglePattern.Pattern, out var toggle))
+            {
+                ((TogglePattern)toggle).Toggle();
+                return true;
+            }
+            if (button.TryGetCurrentPattern(SelectionItemPattern.Pattern, out var select))
+            {
+                ((SelectionItemPattern)select).Select();
                 return true;
             }
         }
@@ -187,6 +206,138 @@ public static class WhatsAppWeb
             await Task.Delay(400, ct);
         }
         return false;
+    }
+
+    static readonly string[] MediaTypes = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".bmp", ".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp", ".m4v"];
+
+    /// <summary>The element with exactly this name (any kind), or null.</summary>
+    static AutomationElement? Named(AutomationElement scope, string name)
+    {
+        try
+        {
+            return scope.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.NameProperty, name, PropertyConditionFlags.IgnoreCase));
+        }
+        catch (ElementNotAvailableException) { return null; }
+    }
+
+    /// <summary>Presses it, or the nearest thing above it that can be pressed (a menu row's text, say).</summary>
+    static bool PressUp(AutomationElement element)
+    {
+        var walker = TreeWalker.ControlViewWalker;
+        for (var e = element; e != null; e = walker.GetParent(e))
+        {
+            if (Press(e)) return true;
+            try { if (e.Current.ControlType == ControlType.Document) break; } catch (ElementNotAvailableException) { break; }
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Attaches files the way a person does: the Attach button (paperclip), then "Photos &amp; videos"
+    /// (all pictures and videos) or "Document", then the file window: the path goes in the
+    /// File name box and Open is pressed. True once Open was pressed; each step is noted.
+    /// </summary>
+    public static async Task<bool> AttachFiles(AutomationElement window, System.Collections.Generic.IReadOnlyList<string> files, Action<string> note)
+    {
+        bool media = files.All(f => MediaTypes.Contains(System.IO.Path.GetExtension(f).ToLowerInvariant()));
+        var attach = await Task.Run(() => Find(window, ControlType.Button, n => n.Equals("Attach", StringComparison.OrdinalIgnoreCase)));
+        if (attach == null || !Press(attach)) { note("couldn't find WhatsApp's Attach button"); return false; }
+        note("pressed Attach");
+
+        string want = media ? "Photos & videos" : "Document";
+        AutomationElement? item = null;
+        for (int i = 0; i < 12 && item == null; i++)
+        {
+            await Task.Delay(250);
+            item = await Task.Run(() => Named(window, want));
+        }
+        if (item == null || !await Task.Run(() => PressUp(item))) { note($"couldn't find \"{want}\" in the Attach menu"); return false; }
+        note($"chose \"{want}\"");
+
+        // The file window opens over Chrome (a standard Windows "Open" box).
+        int process = window.Current.ProcessId;
+        AutomationElement? dialog = null;
+        for (int i = 0; i < 24 && dialog == null; i++)
+        {
+            await Task.Delay(250);
+            dialog = await Task.Run(() => FileDialog(window, process));
+        }
+        if (dialog == null) { note("the file window didn't open"); return false; }
+        note("the file window is open");
+
+        bool picked = await Task.Run(() =>
+        {
+            if (FileNameBox(dialog) is not { } box) return false;
+            var folders = files.Select(f => System.IO.Path.GetDirectoryName(f) ?? "").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            // One file: its full path. Several in one folder: go to the folder, then their names, quoted.
+            string text = files.Count == 1 ? files[0]
+                : folders.Count == 1 ? string.Join(" ", files.Select(f => $"\"{System.IO.Path.GetFileName(f)}\"")) : files[0];
+            if (files.Count > 1 && folders.Count == 1)
+            {
+                if (!SetText(box, folders[0]) || !PressOpen(dialog)) return false;
+                Thread.Sleep(700);
+                if (FileNameBox(dialog) is not { } again) return false;
+                box = again;
+            }
+            return SetText(box, text) && PressOpen(dialog);
+        });
+        if (!picked) { note("couldn't fill in the file window"); return false; }
+        note(files.Count > 1 && files.Select(System.IO.Path.GetDirectoryName).Distinct().Count() > 1
+            ? "picked the first file (the others are in other folders)" : $"picked {(files.Count == 1 ? "the file" : $"{files.Count} files")}");
+        return true;
+    }
+
+    static AutomationElement? FileDialog(AutomationElement window, int process)
+    {
+        try
+        {
+            var dialogs = AutomationElement.RootElement.FindAll(TreeScope.Children, new PropertyCondition(AutomationElement.ClassNameProperty, "#32770"));
+            foreach (AutomationElement d in dialogs)
+                if (d.Current.ProcessId == process) return d;
+            return window.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, "#32770"));
+        }
+        catch (ElementNotAvailableException) { return null; }
+    }
+
+    static AutomationElement? FileNameBox(AutomationElement dialog)
+    {
+        try
+        {
+            // The File name box (its id is 1148 in Windows' Open window).
+            return dialog.FindFirst(TreeScope.Descendants, new AndCondition(
+                new PropertyCondition(AutomationElement.AutomationIdProperty, "1148"),
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit)))
+                ?? Find(dialog, ControlType.Edit, n => n.StartsWith("File name", StringComparison.OrdinalIgnoreCase));
+        }
+        catch (ElementNotAvailableException) { return null; }
+    }
+
+    static bool SetText(AutomationElement box, string text)
+    {
+        try
+        {
+            if (box.TryGetCurrentPattern(ValuePattern.Pattern, out var pattern))
+            {
+                ((ValuePattern)pattern).SetValue(text);
+                return true;
+            }
+        }
+        catch (Exception ex) when (ex is ElementNotAvailableException or InvalidOperationException) { }
+        return false;
+    }
+
+    static bool PressOpen(AutomationElement dialog)
+    {
+        try
+        {
+            // Open is button 1 in Windows' Open window.
+            var open = dialog.FindFirst(TreeScope.Children, new AndCondition(
+                new PropertyCondition(AutomationElement.AutomationIdProperty, "1"),
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button)))
+                ?? Find(dialog, ControlType.Button, n => n.Equals("Open", StringComparison.OrdinalIgnoreCase));
+            return open != null && Press(open);
+        }
+        catch (ElementNotAvailableException) { return false; }
     }
 
     /// <summary>Is the files' preview up (its caption box, or a Send button while the message box is empty)?</summary>

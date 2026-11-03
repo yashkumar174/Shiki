@@ -276,8 +276,9 @@ public sealed class SettingsWindow : Window
         var cmdWhisper = UiKit.Button("On this PC", () => { ai.SetVoiceEngine("whisper"); refresh(); });
         var cmdDeepgram = UiKit.Button("Deepgram", () => { ai.SetVoiceEngine("deepgram"); refresh(); });
         var cmdWispr = UiKit.Button("Wispr Flow", () => { ai.SetVoiceEngine("wispr"); refresh(); });
+        var cmdScribe = UiKit.Button("ElevenLabs Scribe", () => { ai.SetVoiceEngine("elevenlabs"); refresh(); });
         stack.Children.Add(Line("What you say", "Who writes down your requests.", new Border()));
-        var cmdRow = UiKit.Row(cmdWhisper, cmdDeepgram, cmdWispr);
+        var cmdRow = UiKit.Row(cmdWhisper, cmdDeepgram, cmdScribe, cmdWispr);
         cmdRow.Margin = new Thickness(0, 0, 0, 4);
         stack.Children.Add(cmdRow);
         var cmdNote = UiKit.Body("");
@@ -313,6 +314,7 @@ public sealed class SettingsWindow : Window
             UiKit.Select(cmdWhisper, cmd == "whisper");
             UiKit.Select(cmdDeepgram, cmd == "deepgram");
             UiKit.Select(cmdWispr, cmd == "wispr");
+            UiKit.Select(cmdScribe, cmd == "elevenlabs");
             UiKit.Select(wakeWhisper, wake == "whisper");
             UiKit.Select(wakeDeepgram, wake == "deepgram");
             cmdNote.Text = cmd switch
@@ -320,6 +322,9 @@ public sealed class SettingsWindow : Window
                 "deepgram" => hasDeepgram
                     ? "Deepgram Nova-3 writes your words down live, as you speak, and judges when you've finished. Your voice goes to Deepgram; if it can't be reached, Whisper here takes over."
                     : "Add a Deepgram key below. Until then Whisper on this PC is used.",
+                "elevenlabs" => Core.Voice.ElevenLabs.HasKey
+                    ? "ElevenLabs Scribe v2 writes your words down live, careful with names and Hindi mixed with English, with background noise filtered out. Your voice goes to ElevenLabs; if it can't be reached, Deepgram (then Whisper here) takes over."
+                    : "Add your ElevenLabs key (Talking back, below). Until then Deepgram or Whisper is used.",
                 "wispr" => Core.Voice.WisprFlow.Available
                     ? "What you say goes to Wispr Flow to be written down."
                     : "Wispr Flow's API isn't open to Shiki yet (access has been asked for). Until it is, Whisper on this PC is used. You can save your Wispr key now.",

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -44,6 +45,46 @@ public static class Speech
 
     public static bool CommandsOnDeepgram(Settings settings) => settings.VoiceEngine == "deepgram" && Deepgram.HasKey;
 
+    /// <summary>ElevenLabs Scribe writes down what's said (set from settings, for the "Hey Sky, …" check too).</summary>
+    public static bool OnScribe { get; set; }
+
+    public static bool CommandsOnScribe(Settings settings) => settings.VoiceEngine == "elevenlabs" && ElevenLabs.HasKey;
+
+    /// <summary>An engine that streams live (words as they're said), not a whole-recording one.</summary>
+    public static bool IsLive(ISpeechToText engine) => engine is Deepgram or Scribe;
+
+    /// <summary>
+    /// Opens the live stream for this engine at the microphone's rate: Scribe (falling back to
+    /// Deepgram if it can't), or Deepgram. Null when neither can: the recording is written down whole.
+    /// </summary>
+    public static async Task<ILiveStream?> OpenLive(ISpeechToText engine, int rate, IEnumerable<string> terms, CancellationToken ct)
+    {
+        var words = terms.ToList();
+        if (engine is Scribe && ElevenLabs.Key.Read() is { } elevenKey && Scribe.TakesRate(rate))
+        {
+            try
+            {
+                return await ScribeLive.Open(elevenKey, rate, words, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                Log.Error("Scribe stream couldn't open; trying Deepgram", ex);
+            }
+        }
+        if (engine is Deepgram or Scribe && Deepgram.Key.Read() is { } deepgramKey)
+        {
+            try
+            {
+                return await DeepgramLive.Open(deepgramKey, rate, words, ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                Log.Error("Deepgram stream couldn't open; using Whisper", ex);
+            }
+        }
+        return null;
+    }
+
     /// <summary>Words Deepgram should expect: the cat's name, the person's people, and the app's vocabulary.</summary>
     public static IEnumerable<string> KeyTerms(string catName) =>
         [catName, $"Hey {catName}", "Shiki", .. People.ForSpeech(30), .. Extra, "PDF", "JPG", "PNG", "WEBP", "MP4", "MP3", "GIF", "Downloads", "zip",
@@ -55,6 +96,7 @@ public static class Speech
 
     public static ISpeechToText ForCommands(Settings settings, Func<string> catName) =>
         settings.VoiceEngine == "wispr" && WisprFlow.Available && WisprFlow.HasKey ? new WisprFlow()
+        : CommandsOnScribe(settings) ? new Scribe(() => KeyTerms(catName()))
         : CommandsOnDeepgram(settings) ? new Deepgram(() => KeyTerms(catName()))
         : Local;
 }

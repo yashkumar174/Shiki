@@ -44,33 +44,28 @@ public sealed class Dictation(Settings settings, Func<string> catName)
         {
             await engine.Prepare(new Progress<double>(p => Post(() => Status = $"Getting my ears ready (one time)… {p:0%}")), ct);
         }
-        DeepgramLive? live = null;
+        ILiveStream? live = null;
         try
         {
             Heard heard;
             // Dictation has longer pauses than commands: thinking mid-sentence mustn't end it.
-            using (var mic = _mic = new Microphone(pauseEnds: engine is Deepgram ? 8 : 2.5, waitForSpeech: 10))
+            using (var mic = _mic = new Microphone(pauseEnds: Speech.IsLive(engine) ? 8 : 2.5, waitForSpeech: 10))
             {
                 int tick = 0;
                 mic.Level += level => { Level = level; if (++tick % 4 == 0) Post(() => { }); };
                 Post(() => Status = Held ? "Listening… let go to type" : "Listening… pause to finish");
                 var listening = mic.Listen(ct);
-                if (engine is Deepgram && Deepgram.Key.Read() is { } key)
+                if (Speech.IsLive(engine))
                 {
-                    try
+                    live = await Speech.OpenLive(engine, mic.SampleRate, [catName(), "Shiki", .. People.ForSpeech(60)], ct);
+                    if (live != null)
                     {
-                        live = await DeepgramLive.Open(key, mic.SampleRate, [catName(), "Shiki"], ct);
                         live.Partial += text => Post(() => Partial = text);
-                        // Tapped: Deepgram decides when you've finished. Held: the key does.
+                        // Tapped: the engine decides when you've finished. Held: the key does.
                         live.Ended += () => { if (!Held) mic.Stop(); };
                         mic.StreamTo(live.Send);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
-                    {
-                        Log.Error("Dictation: Deepgram couldn't open; using Whisper", ex);
-                        live = null;
-                        engine = Speech.Local;
-                    }
+                    else if (engine is Deepgram) engine = Speech.Local;
                 }
                 heard = await listening;
             }

@@ -171,6 +171,32 @@ public static class ElevenLabs
         return (request, response);
     }
 
+    /// <summary>
+    /// Writes down a recording with Scribe v2 (ElevenLabs' careful speech-to-text, Hindi and English
+    /// mixed, any of 90+ languages), expecting these words (names), up to 1,000.
+    /// </summary>
+    public static async Task<string> Transcribe(byte[] wav, IEnumerable<string> keyterms, CancellationToken ct)
+    {
+        var key = Key.Read() ?? throw new InvalidOperationException("No ElevenLabs key.");
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("scribe_v2"), "model_id" },
+            { new StringContent("false"), "tag_audio_events" },
+        };
+        var file = new ByteArrayContent(wav);
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
+        form.Add(file, "file", "clip.wav");
+        foreach (var term in keyterms.Select(t => t.Trim()).Where(t => t.Length is > 1 and <= 50 && t.Split(' ').Length <= 5 && !t.Any(c => "<>{}[]\\".Contains(c))).Distinct(StringComparer.OrdinalIgnoreCase).Take(300))
+            form.Add(new StringContent(term), "keyterms");
+        using var request = new HttpRequestMessage(HttpMethod.Post, Api + "v1/speech-to-text") { Content = form };
+        request.Headers.Add("xi-api-key", key);
+        using var response = await Http.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode) throw new ElevenLabsException((int)response.StatusCode, body);
+        using var json = JsonDocument.Parse(body);
+        return json.RootElement.TryGetProperty("text", out var text) ? (text.GetString() ?? "").Trim() : "";
+    }
+
     /// <summary>The whole speech as a WAV (previews and tests).</summary>
     public static async Task<byte[]> Wav(string text, string voiceId, CancellationToken ct)
     {

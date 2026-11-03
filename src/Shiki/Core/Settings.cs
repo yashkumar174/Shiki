@@ -87,6 +87,8 @@ public sealed class Settings
     public bool VoiceAnswers { get; set; } = true;
     /// <summary>A message or email to someone already written to goes after a 5-second countdown, not a card.</summary>
     public bool CountdownSends { get; set; } = true;
+    /// <summary>Keep the last 30 voice requests as sound on this PC, to compare speech engines on this voice.</summary>
+    public bool KeepVoiceClips { get; set; } = true;
     /// <summary>Everyday sends and reminders ("WhatsApp Mummy that…", "remind me at 5…") worked out on this PC, without Claude.</summary>
     public bool QuickPath { get; set; } = true;
     /// <summary>The first "Hey Sky" of the day, on its own, brings the day's briefing (meetings, email that matters, tasks).</summary>
