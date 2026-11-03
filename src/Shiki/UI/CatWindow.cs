@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -322,6 +323,7 @@ public sealed class CatWindow : Window
     /// </summary>
     void Life()
     {
+        WatchOut();
         // Full screen: a video, a game, a presentation, on the cat's own screen.
         var front = NativeMethods.GetForegroundWindow();
         bool fullScreen = false;
@@ -525,6 +527,34 @@ public sealed class CatWindow : Window
     }
 
     // ---- Out and in ----
+
+    /// <summary>The reasons it's up right now, for the log ("noticing, listening").</summary>
+    public string WhyOut() => string.Join(", ", new (bool On, string Name)[]
+    {
+        (_hover, "pointer over it"), (_dragOver, "a drag over it"), (_noticing, "noticing"), (_busy > 0, $"busy ({_busy})"),
+        (_celebrating, "celebrating"), (_greeting, "greeting"), (_dragging, "being dragged"), (_startled > 0, "startled"),
+        (_yawn > 0, "yawning"), (_grumpy > 0, "grumpy"), (Petting, "being petted"), (_listening, "listening"),
+        (_talking, "talking"), (_pointing > 0, "pointing"),
+    }.Where(r => r.On).Select(r => r.Name));
+
+    public bool IsNoticing => _noticing;
+    public bool IsListening => _listening;
+    public bool IsTalking => _talking;
+
+    DateTime? _outSince;
+    bool _toldOut;
+
+    /// <summary>Notes it in the log when the cat has stayed up over a minute, and why (a stuck reason shows there).</summary>
+    void WatchOut()
+    {
+        if (!WantsOut || _hover || Petting || _dragging) { _outSince = null; _toldOut = false; return; }
+        _outSince ??= DateTime.Now;
+        if (!_toldOut && DateTime.Now - _outSince > TimeSpan.FromMinutes(1))
+        {
+            _toldOut = true;
+            Log.Info($"Cat has stayed up over a minute: {WhyOut()}");
+        }
+    }
 
     bool WantsOut => _hover || _dragOver || _noticing || _busy > 0 || _celebrating || _greeting || _dragging || _startled > 0 || _yawn > 0 || _grumpy > 0 || Petting || _listening || _talking || _pointing > 0;
 

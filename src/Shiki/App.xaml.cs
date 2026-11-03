@@ -3060,9 +3060,35 @@ public partial class App : Application
 
     // ---- Task reminders ----
 
+    /// <summary>
+    /// Puts right a reason the cat was told to stay up that nothing will ever switch off (a card
+    /// that closed without saying so, a voice that stopped mid-word): noticing with nothing open,
+    /// listening with nothing listening, talking with nothing being said. Then it tucks back down.
+    /// </summary>
+    void UnstickCat()
+    {
+        if (_buddy is not { } cat) return;
+        bool somethingOpen = _voicePill != null || _bubble != null || _dragWheel != null || _paw != null || _menu != null;
+        if (cat.IsNoticing && !somethingOpen)
+        {
+            Log.Info($"Cat was left noticing with nothing open ({cat.WhyOut()}): let it rest");
+            cat.Notice(false);
+        }
+        if (cat.IsListening && _voice is not { State: VoiceState.Waiting or VoiceState.Hearing } && _agent == null)
+        {
+            Log.Info($"Cat was left listening with nothing listening ({cat.WhyOut()}): let it rest");
+            cat.Listening(false);
+        }
+        if (cat.IsTalking && _mouth?.Speaking != true)
+        {
+            Log.Info($"Cat was left talking with nothing being said ({cat.WhyOut()}): let it rest");
+            cat.Talking(false);
+        }
+    }
+
     void StartReminders()
     {
-        _reminders.Tick += (_, _) => { RemindDue(); WatchMeetings(); };
+        _reminders.Tick += (_, _) => { RemindDue(); WatchMeetings(); UnstickCat(); };
         _reminders.Start();
         RemindDue();
     }
