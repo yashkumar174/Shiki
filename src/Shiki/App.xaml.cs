@@ -329,6 +329,22 @@ public partial class App : Application
                     Log.Info($"names-test: known tausif@example.com={People.Known("tausif@example.com")} 919000000001={People.Known("919000000001")} someone@new.com={People.Known("someone@new.com")}");
                 });
                 break;
+            case "whatsapp-read-test":
+                // Dev aid: opens WhatsApp Web on a chat (yours, if given a number) and only READS the page:
+                // the tab, "Use here", the message box. Nothing is typed, pasted or sent.
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    Log.Info($"whatsapp-read-test: app installed = {WhatsAppWeb.AppInstalled()}");
+                    if (args.Length > 1) Dispatcher.Invoke(() => OpenWhatsAppWeb($"https://web.whatsapp.com/send?phone={new string(args[1].Where(char.IsDigit).ToArray())}"));
+                    var watch = Stopwatch.StartNew();
+                    var chat = await WhatsAppWeb.WaitForChat(TimeSpan.FromSeconds(40), step => Log.Info($"whatsapp-read-test: {step} ({watch.ElapsedMilliseconds} ms)"));
+                    if (chat is { } c)
+                    {
+                        Log.Info($"whatsapp-read-test: message box \"{c.Box.Current.Name}\" found after {watch.ElapsedMilliseconds} ms; window \"{c.Window.Current.Name}\"");
+                        Log.Info($"whatsapp-read-test: Send button now = {await WhatsAppWeb.SendButton(c.Window) != null}, preview up = {await WhatsAppWeb.PreviewUp(c.Window)}");
+                    }
+                });
+                break;
             case "script-test":
                 // Dev aid: what different scripts become in English letters (answers go to the log).
                 foreach (var heardText in new[] { "కేక్ నంబర్ వై", "نمسطو ته বাই seedhe maut",
@@ -1666,9 +1682,15 @@ public partial class App : Application
     /// <summary>
     /// WhatsApp opens on the chat with the message typed (its own link, no searching), and once
     /// its window is in front, Enter sends it. If it never comes up, the message waits there.
+    /// With no WhatsApp app on this PC, WhatsApp Web does it instead.
     /// </summary>
     async System.Threading.Tasks.Task<string> SendWhatsApp(string phone, string text, bool web, IReadOnlyList<string> files)
     {
+        if (!web && !WhatsAppWeb.AppInstalled())
+        {
+            web = true;
+            AiLog.Write("whatsapp", "no WhatsApp app on this PC: using WhatsApp Web");
+        }
         if (files.Count > 0) return await SendWhatsAppFiles(phone, text, web, files);
         if (web) return await SendWhatsAppWeb(phone, text);
         var link = $"whatsapp://send?phone={phone}&text={Uri.EscapeDataString(text)}";
@@ -1691,30 +1713,51 @@ public partial class App : Application
         return "WhatsApp is open with the message ready: press Enter to send it.";
     }
 
+    /// <summary>Opens WhatsApp Web on a chat in Chrome (or the usual browser); says which.</summary>
+    static string OpenWhatsAppWeb(string link)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("chrome", link) { UseShellExecute = true })?.Dispose();
+            return "Chrome";
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            Process.Start(new ProcessStartInfo(link) { UseShellExecute = true })?.Dispose();
+            return "your browser";
+        }
+    }
+
     /// <summary>
-    /// WhatsApp Web in Chrome (or the usual browser if there's no Chrome), on the chat with the
-    /// message typed. Once its tab is in front and has had time to load, Enter sends it.
+    /// WhatsApp Web, on the chat with the message typed. Shiki waits until the chat's message box
+    /// is really there (reading the page the way a screen reader does), then presses its Send
+    /// button. If the page can't be read, it falls back to Enter once the tab has had time to load.
     /// </summary>
     async System.Threading.Tasks.Task<string> SendWhatsAppWeb(string phone, string text)
     {
-        var link = $"https://web.whatsapp.com/send?phone={phone}&text={Uri.EscapeDataString(text)}";
-        string browser = "Chrome";
-        try { Process.Start(new ProcessStartInfo("chrome", link) { UseShellExecute = true })?.Dispose(); }
-        catch (System.ComponentModel.Win32Exception)
-        {
-            browser = "your browser";
-            Process.Start(new ProcessStartInfo(link) { UseShellExecute = true })?.Dispose();
-        }
+        var browser = OpenWhatsAppWeb($"https://web.whatsapp.com/send?phone={phone}&text={Uri.EscapeDataString(text)}");
         AiLog.Write("whatsapp", $"web, to {phone}: {text.Length} characters");
-        for (int i = 0; i < 60; i++)
+        void Note(string step) => AiLog.Write("whatsapp", step);
+        if (await WhatsAppWeb.WaitForChat(TimeSpan.FromSeconds(35), Note) is { } chat)
         {
-            await System.Threading.Tasks.Task.Delay(250);
-            if (!WhatsAppWebInFront()) continue;
-            // The page takes a few seconds to load the chat and put the message in the box.
-            await System.Threading.Tasks.Task.Delay(7000);
-            if (!WhatsAppWebInFront()) break;
-            TypeText.PressEnter();
-            return $"WhatsApp Web is open in {browser} on that chat, and Enter was pressed to send it. If the message is still in the box (the page was slow), press Enter.";
+            WhatsAppWeb.FocusBox(chat.Window, chat.Box);
+            if (await WhatsAppWeb.PressSend(chat.Window, TimeSpan.FromSeconds(6)))
+            {
+                Note("pressed Send");
+                return "Sent on WhatsApp Web.";
+            }
+            Note("no Send button (the message didn't fill in)");
+            return $"WhatsApp Web is open in {browser} on that chat, but the message didn't fill in: type it there.";
+        }
+        // The page couldn't be read: the old way, Enter once it has had time to load.
+        if (WhatsAppWebInFront())
+        {
+            await System.Threading.Tasks.Task.Delay(2000);
+            if (WhatsAppWebInFront())
+            {
+                TypeText.PressEnter();
+                return $"WhatsApp Web is open in {browser} on that chat, and Enter was pressed to send it. If the message is still in the box, press Enter.";
+            }
         }
         return $"WhatsApp Web is open in {browser} with the message typed: press Enter to send it.";
     }
@@ -1722,8 +1765,10 @@ public partial class App : Application
     /// <summary>
     /// Photos and files on WhatsApp, with no mouse: the files go on the clipboard (as if copied in
     /// File Explorer), the chat opens, Ctrl+V puts them in WhatsApp's send preview, the text goes in
-    /// as the caption and Enter sends. Every key waits for WhatsApp to be the window in front, so
-    /// nothing lands anywhere else; the clipboard's text is put back afterwards.
+    /// as the caption and Send sends. On WhatsApp Web each step is checked on the page itself (the
+    /// message box is there, the preview opened, the Send button is pressed). If a step doesn't
+    /// come, the files stay on the clipboard to paste by hand; otherwise the clipboard's text is
+    /// put back.
     /// </summary>
     async System.Threading.Tasks.Task<string> SendWhatsAppFiles(string phone, string text, bool web, IReadOnlyList<string> files)
     {
@@ -1734,45 +1779,89 @@ public partial class App : Application
         Clipboard.SetFileDropList(list);
         string what = files.Count == 1 ? Path.GetFileName(files[0]) : $"{files.Count} files";
         AiLog.Write("whatsapp", $"{(web ? "web, " : "")}to {phone}: {what}{(text.Length > 0 ? $" + {text.Length} characters" : "")}");
-
-        Func<bool> inFront = web ? WhatsAppWebInFront : WhatsAppAppInFront;
-        if (web)
-        {
-            try { Process.Start(new ProcessStartInfo("chrome", $"https://web.whatsapp.com/send?phone={phone}") { UseShellExecute = true })?.Dispose(); }
-            catch (System.ComponentModel.Win32Exception) { Process.Start(new ProcessStartInfo($"https://web.whatsapp.com/send?phone={phone}") { UseShellExecute = true })?.Dispose(); }
-        }
-        else Process.Start(new ProcessStartInfo($"whatsapp://send?phone={phone}") { UseShellExecute = true })?.Dispose();
-
         string left = $"The chat is open and the {(files.Count == 1 ? "file is" : "files are")} on your clipboard: press Ctrl+V, then Enter.";
+        bool sent = false;
         try
         {
-            bool up = false;
-            for (int i = 0; i < 60 && !up; i++)
-            {
-                await System.Threading.Tasks.Task.Delay(250);
-                up = inFront();
-            }
-            if (!up) return left;
-            // The chat loads (the web takes longer), then the files go in.
-            await System.Threading.Tasks.Task.Delay(web ? 7000 : 1800);
-            await TypeText.WaitForModifiersUp();
-            if (!inFront()) return left;
-            TypeText.Paste();
-            // The send preview opens with the caption box ready.
-            await System.Threading.Tasks.Task.Delay(1500 + 250 * Math.Min(files.Count, 8));
-            if (!inFront()) return left;
-            if (text.Length > 0 && !TypeText.Type(text)) return left;
-            await System.Threading.Tasks.Task.Delay(300);
-            if (!inFront()) return "The files and caption are ready in WhatsApp: press Enter to send.";
-            TypeText.PressEnter();
-            return $"Sent {what} on WhatsApp{(web ? " Web" : "")}.";
+            string result = web ? await FilesOnWhatsAppWeb(phone, text, what, left) : await FilesOnWhatsAppApp(phone, text, what, left);
+            sent = result.StartsWith("Sent");
+            return result;
         }
         finally
         {
-            // A little later, so the paste has happened: put back what was copied before.
-            await System.Threading.Tasks.Task.Delay(1500);
-            try { if (kept != null) Clipboard.SetText(kept); } catch (System.Runtime.InteropServices.ExternalException) { }
+            // Sent: put back what was copied before (a little later, so the paste has happened).
+            // Not sent: the files stay on the clipboard, ready to paste.
+            if (sent)
+            {
+                await System.Threading.Tasks.Task.Delay(1500);
+                try { if (kept != null) Clipboard.SetText(kept); } catch (System.Runtime.InteropServices.ExternalException) { }
+            }
         }
+    }
+
+    async System.Threading.Tasks.Task<string> FilesOnWhatsAppWeb(string phone, string text, string what, string left)
+    {
+        var browser = OpenWhatsAppWeb($"https://web.whatsapp.com/send?phone={phone}");
+        void Note(string step) => AiLog.Write("whatsapp", step);
+        if (await WhatsAppWeb.WaitForChat(TimeSpan.FromSeconds(40), Note) is not { } chat)
+            return $"WhatsApp Web is open in {browser}, but the chat didn't finish loading. The {(what.EndsWith("files") ? "files are" : "file is")} on your clipboard: open the chat, press Ctrl+V, then Enter.";
+        WhatsAppWeb.FocusBox(chat.Window, chat.Box);
+        await System.Threading.Tasks.Task.Delay(300);
+        await TypeText.WaitForModifiersUp();
+        if (!WhatsAppWebInFront()) { Note("WhatsApp Web wasn't in front, so nothing was pasted"); return left; }
+        TypeText.Paste();
+        Note("pasted the files");
+        // The preview opens with a caption box and a Send button (bigger files take a moment).
+        bool up = false;
+        for (int i = 0; i < 20 && !up; i++)
+        {
+            await System.Threading.Tasks.Task.Delay(500);
+            up = await WhatsAppWeb.PreviewUp(chat.Window);
+        }
+        if (!up) { Note("the paste didn't open WhatsApp's preview"); return left; }
+        if (text.Length > 0)
+        {
+            await System.Threading.Tasks.Task.Delay(300);
+            if (!WhatsAppWebInFront() || !TypeText.Type(text)) { Note("couldn't type the caption"); return "The files are in WhatsApp's preview: add the caption and press Enter."; }
+        }
+        if (await WhatsAppWeb.PressSend(chat.Window, TimeSpan.FromSeconds(5)))
+        {
+            Note("pressed Send");
+            return $"Sent {what} on WhatsApp Web.";
+        }
+        // No Send button to press: Enter does the same in the preview.
+        if (WhatsAppWebInFront())
+        {
+            TypeText.PressEnter();
+            Note("pressed Enter (no Send button found)");
+            return $"Sent {what} on WhatsApp Web.";
+        }
+        return "The files are in WhatsApp's preview: press Enter to send.";
+    }
+
+    async System.Threading.Tasks.Task<string> FilesOnWhatsAppApp(string phone, string text, string what, string left)
+    {
+        Process.Start(new ProcessStartInfo($"whatsapp://send?phone={phone}") { UseShellExecute = true })?.Dispose();
+        bool up = false;
+        for (int i = 0; i < 60 && !up; i++)
+        {
+            await System.Threading.Tasks.Task.Delay(250);
+            up = WhatsAppAppInFront();
+        }
+        if (!up) { AiLog.Write("whatsapp", "the WhatsApp app didn't come to the front"); return left; }
+        // The chat loads, then the files go in.
+        await System.Threading.Tasks.Task.Delay(1800);
+        await TypeText.WaitForModifiersUp();
+        if (!WhatsAppAppInFront()) return left;
+        TypeText.Paste();
+        // The send preview opens with the caption box ready.
+        await System.Threading.Tasks.Task.Delay(1500);
+        if (!WhatsAppAppInFront()) return left;
+        if (text.Length > 0 && !TypeText.Type(text)) return left;
+        await System.Threading.Tasks.Task.Delay(300);
+        if (!WhatsAppAppInFront()) return "The files and caption are ready in WhatsApp: press Enter to send.";
+        TypeText.PressEnter();
+        return $"Sent {what} on WhatsApp.";
     }
 
     /// <summary>The WhatsApp app is the window in front.</summary>

@@ -109,6 +109,7 @@ Run `Shiki.exe <verb> ...` (the running instance does it; results go to `%LOCALA
 | `bundle-demo` | A pretend two-things card (WhatsApp + email with files), for `snapshot-bubble` |
 | `briefing` | The day's briefing in the chat, as if asked (or `ask-quiet "brief me"`, which `snapshot-bubble` can draw) (v2.42) |
 | `task-remove <exact words>` | Takes a test task back off the list |
+| `whatsapp-read-test [number]` | Opens WhatsApp Web on that chat and only reads the page (tab, "Use here", message box, Send button); nothing is typed or sent (v2.43) |
 
 Screen captures: toasts and some pills are **excluded from capture** (`WDA_EXCLUDEFROMCAPTURE`), so a screenshot won't show them; check window lists instead. PowerShell `CopyFromScreen` with `SetProcessDPIAware` works for other windows.
 
@@ -218,7 +219,7 @@ The user's current settings worth knowing: VoiceEngine and WakeEngine = **deepgr
 
 ## 11. Known issues and things not yet verified
 
-- **WhatsApp with files does not attach by itself yet.** First real use (26 October, a video to the user's own number): the chat opened, but the file was left on the clipboard with "press Ctrl+V, then Enter". Fix next (code: `SendWhatsApp`, `SendWhatsAppWeb` and the files part after them in `App.xaml.cs`, around lines 1670–1760). Email with files worked the same day (with the countdown).
+- **WhatsApp files (fixed in v2.43, the real send not yet tried).** The 26 October failure was because **the WhatsApp app isn't installed** on the user's PC (no `whatsapp:` link handler); the cat opened the app's link, nothing came up, and after 15 s it fell back to the clipboard (whose text it then put back, so the file was gone too; also fixed). Now: no app → WhatsApp Web in Chrome, read with Windows UI Automation (`Shell/WhatsAppWeb.cs`): wait for the message box ("Type a message to +91 …"; up to 150 s while it says "Loading your chats"), "Use here" if needed, paste, wait for the preview (caption box / Send button), caption, press Send. Checked read-only with `whatsapp-read-test 919000000002`: tab in ~1 s, box at ~9 s. Each step is logged as "whatsapp" lines in cat-log.txt.
 - **The morning briefing hasn't run on a real morning yet** (`LastWake` was still empty on 29 October). With **TalkBack off** it is shown in the chat, not read aloud.
 - **Six "Shiki: …" tasks** (from planning, due 24 October) sit in Shiki's own Tasks list and show as overdue in the briefing. Five are built (names into Deepgram, countdown, learning corrections, commands without Claude, the ElevenLabs voice); "Try local speech-to-text (Whisper/Parakeet)" is not. Tick off the five when the user says so.
 - **Quick path limits:** it only takes the patterns it knows (English and some Hinglish), at most 3 parts; anything it can't read fully goes to Claude, which is slower but still works. Bare small hours mean pm ("at 5" = 5 pm).
@@ -238,7 +239,7 @@ The user's current settings worth knowing: VoiceEngine and WakeEngine = **deepgr
 
 **Next up (offered, waiting for the user's go-ahead)**
 
-1. **WhatsApp files that attach by themselves** (section 11): the file should land in the chat with its caption and send, without the clipboard fallback.
+1. **Confirm WhatsApp files with a real send** (built in v2.43, section 11): the user sends a file to themselves; if it stops, the "whatsapp" lines in cat-log.txt say at which step.
 2. Tick off the five finished "Shiki: …" tasks in Shiki's Tasks list.
 
 **The rest of the "say it and it happens" plan**

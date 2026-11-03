@@ -106,7 +106,7 @@ In no fixed order yet; we pick as we go.
 
 ## Open
 
-- **WhatsApp files that attach by themselves** (today the file can be left on the clipboard to paste).
+- **WhatsApp files that attach by themselves** (built in v2.43 through WhatsApp Web; waiting for the first real send).
 - **Voice quality**: local speech-to-text (Whisper, Parakeet) against Deepgram, a faster "Hey Sky", dictation cleanup.
 - **Email triage** ("anything important?") and follow-up reminders, **clipboard history**.
 - **Wispr Flow**: waiting for their API.
