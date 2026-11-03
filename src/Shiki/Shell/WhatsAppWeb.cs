@@ -87,11 +87,14 @@ public static class WhatsAppWeb
     /// Waits for the chat to be ready: the WhatsApp window, then its message box ("Type a message").
     /// Presses "Use here" if WhatsApp is open in another window. Null if it doesn't come in time.
     /// </summary>
-    public static async Task<(AutomationElement Window, AutomationElement Box)?> WaitForChat(TimeSpan most, Action<string> note, CancellationToken ct = default)
+    /// <param name="reopen">Opens the chat's link again (once) when WhatsApp hangs on "Starting chat".</param>
+    public static async Task<(AutomationElement Window, AutomationElement Box)?> WaitForChat(TimeSpan most, Action<string> note, Action? reopen = null, CancellationToken ct = default)
     {
         var start = DateTime.Now;
         var until = start + most;
-        bool usedHere = false, sawWindow = false, sawLoading = false;
+        bool usedHere = false, sawWindow = false, sawLoading = false, reopened = false, invalid = false;
+        DateTime? startingSince = null;
+        NotOnWhatsApp = false;
         while (DateTime.Now < until && !ct.IsCancellationRequested)
         {
             var found = await Task.Run(() =>
@@ -110,6 +113,28 @@ public static class WhatsAppWeb
                     usedHere = true;
                     note("pressed \"Use here\" (WhatsApp was open in another window)");
                 }
+                // "Phone number shared via url is invalid": not on WhatsApp. Close the message and stop.
+                if (Find(window, ControlType.Text, n => n.Contains("shared via url is invalid", StringComparison.OrdinalIgnoreCase)) != null)
+                {
+                    if (Find(window, ControlType.Button, n => n.Equals("OK", StringComparison.OrdinalIgnoreCase)) is { } ok) Press(ok);
+                    invalid = true;
+                    return (window, null);
+                }
+                // "Starting chat" that doesn't finish: cancel it and open the chat once more.
+                if (Find(window, ControlType.Text, n => n.Equals("Starting chat", StringComparison.OrdinalIgnoreCase)) != null)
+                {
+                    startingSince ??= DateTime.Now;
+                    if (DateTime.Now - startingSince > TimeSpan.FromSeconds(12) && !reopened && reopen != null)
+                    {
+                        if (Find(window, ControlType.Button, n => n.Equals("Cancel", StringComparison.OrdinalIgnoreCase)) is { } cancel) Press(cancel);
+                        reopened = true;
+                        startingSince = null;
+                        note("WhatsApp was stuck on \"Starting chat\": cancelled it and opened the chat again");
+                        reopen();
+                        until = DateTime.Now.AddSeconds(30) > until ? DateTime.Now.AddSeconds(30) : until;
+                    }
+                }
+                else startingSince = null;
                 var box = Find(window, ControlType.Edit, n => n.Contains("message", StringComparison.OrdinalIgnoreCase) && !n.Contains("search", StringComparison.OrdinalIgnoreCase));
                 return (window, box);
             }, ct);
@@ -118,11 +143,20 @@ public static class WhatsAppWeb
                 if (!sawWindow) { sawWindow = true; note("the WhatsApp tab is open"); }
                 if (f.Item2 is { } box) return (f.Item1, box);
             }
+            if (invalid)
+            {
+                note("WhatsApp says this number isn't on WhatsApp");
+                NotOnWhatsApp = true;
+                return null;
+            }
             await Task.Delay(700, ct);
         }
         note(sawWindow ? "the chat's message box never appeared (still loading, or the number isn't on WhatsApp)" : "no WhatsApp tab came up");
         return null;
     }
+
+    /// <summary>The last wait ended because WhatsApp said the number isn't on WhatsApp.</summary>
+    public static bool NotOnWhatsApp { get; private set; }
 
     /// <summary>Brings the window to the front and puts the cursor in the message box.</summary>
     public static bool FocusBox(AutomationElement window, AutomationElement box)

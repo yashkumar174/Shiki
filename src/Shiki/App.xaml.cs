@@ -1735,10 +1735,13 @@ public partial class App : Application
     /// </summary>
     async System.Threading.Tasks.Task<string> SendWhatsAppWeb(string phone, string text)
     {
-        var browser = OpenWhatsAppWeb($"https://web.whatsapp.com/send?phone={phone}&text={Uri.EscapeDataString(text)}");
+        var link = $"https://web.whatsapp.com/send?phone={phone}&text={Uri.EscapeDataString(text)}";
+        var browser = OpenWhatsAppWeb(link);
         AiLog.Write("whatsapp", $"web, to {phone}: {text.Length} characters");
         void Note(string step) => AiLog.Write("whatsapp", step);
-        if (await WhatsAppWeb.WaitForChat(TimeSpan.FromSeconds(35), Note) is { } chat)
+        var opened = await WhatsAppWeb.WaitForChat(TimeSpan.FromSeconds(35), Note, () => Dispatcher.Invoke(() => OpenWhatsAppWeb(link)));
+        if (WhatsAppWeb.NotOnWhatsApp) return $"WhatsApp says +{phone} isn't on WhatsApp, so nothing was sent. Check the number.";
+        if (opened is { } chat)
         {
             WhatsAppWeb.FocusBox(chat.Window, chat.Box);
             if (await WhatsAppWeb.PressSend(chat.Window, TimeSpan.FromSeconds(6)))
@@ -1801,9 +1804,12 @@ public partial class App : Application
 
     async System.Threading.Tasks.Task<string> FilesOnWhatsAppWeb(string phone, string text, string what, string left)
     {
-        var browser = OpenWhatsAppWeb($"https://web.whatsapp.com/send?phone={phone}");
+        var link = $"https://web.whatsapp.com/send?phone={phone}";
+        var browser = OpenWhatsAppWeb(link);
         void Note(string step) => AiLog.Write("whatsapp", step);
-        if (await WhatsAppWeb.WaitForChat(TimeSpan.FromSeconds(40), Note) is not { } chat)
+        var opened = await WhatsAppWeb.WaitForChat(TimeSpan.FromSeconds(40), Note, () => Dispatcher.Invoke(() => OpenWhatsAppWeb(link)));
+        if (WhatsAppWeb.NotOnWhatsApp) return $"WhatsApp says +{phone} isn't on WhatsApp, so nothing was sent. Check the number.";
+        if (opened is not { } chat)
             return $"WhatsApp Web is open in {browser}, but the chat didn't finish loading. The {(what.EndsWith("files") ? "files are" : "file is")} on your clipboard: open the chat, press Ctrl+V, then Enter.";
         WhatsAppWeb.FocusBox(chat.Window, chat.Box);
         await System.Threading.Tasks.Task.Delay(300);
