@@ -102,7 +102,7 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         Task<ILiveStream?>? connecting = null;
         Microphone? mic = null;
         string? said = null;
-        bool quiet = false;
+        bool quiet = false, again = false;
         try
         {
             if (engine is WhisperLocal local && !local.IsDownloaded)
@@ -154,6 +154,17 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
                 if (connecting != null) live = await connecting;
             }
             if (ct.IsCancellationRequested) return;
+            // That microphone sent no sound at all: once, straight away, on the PC's other one.
+            if (mic.NoSound && !_triedOtherMic)
+            {
+                again = true;
+                return;
+            }
+            if (mic.NoSound)
+            {
+                chat.Say(new ChatProblem($"My microphone ({mic.DeviceName}) isn't sending any sound. Check it's connected, or pick another in Windows' sound settings."));
+                return;
+            }
             // No live stream: the same engine writes the recording down whole (Deepgram's or Scribe's
             // careful mode); Whisper on this PC only if that fails too.
             string? streamed = live != null ? await live.Finish() : null;
@@ -197,12 +208,21 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             Partial = "";
             if (State != VoiceState.Off) Set(VoiceState.Off);
         }
+        if (again)
+        {
+            _triedOtherMic = true;
+            try { await Listen(answering, followUp); }
+            finally { _triedOtherMic = false; }
+            return;
+        }
         // Nothing heard: an answer that was waited for isn't waited for any more.
         if (said == null) OneAnswer = null;
         // Only once this listen is fully over: using it may start the next one.
         if (said != null) await Use(said, fromFollowUp: followUp);
         else if (quiet && (followUp || answering)) EndConversation(quietly: true);
     }
+
+    bool _triedOtherMic;
 
     async Task<string> Transcribe(ISpeechToText engine, float[] samples, CancellationToken ct)
     {

@@ -1619,6 +1619,7 @@ public partial class App : Application
     /// <summary>The talk shortcut: the bubble, already listening. Pressed again, it stops and sends.</summary>
     void Talk()
     {
+        Log.Info($"Talk shortcut ({(_voice is { Active: true } ? "sends what was heard" : "starts listening")})");
         if (_voice is { Active: true })
         {
             _voice.Finish();

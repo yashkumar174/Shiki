@@ -48,13 +48,32 @@ public sealed class Microphone : IDisposable
 
     public int SampleRate => _rate;
 
+    /// <summary>The microphone this listen uses, by its Windows name.</summary>
+    public string DeviceName { get; }
+
+    /// <summary>
+    /// It sent no sound at all (a Bluetooth headset half-connected, say). It's then skipped for a
+    /// while, so listening again uses the PC's other microphone.
+    /// </summary>
+    public bool NoSound { get; private set; }
+
+    // A microphone that recently sent nothing, and until when to skip it.
+    static string? s_skipId;
+    static long s_skipUntil;
+    readonly string _deviceId;
+    readonly System.Diagnostics.Stopwatch _clock = new();
+    System.Threading.Timer? _watchdog;
+    volatile bool _gotSound;
+
     /// <param name="pauseEnds">Seconds of quiet after speech that end the listen.</param>
     /// <param name="waitForSpeech">Seconds to wait for speech to start before giving up.</param>
     public Microphone(double pauseEnds = 1.9, double waitForSpeech = 7)
     {
         _pauseEnds = pauseEnds;
         _waitForSpeech = waitForSpeech;
-        var device = new MMDeviceEnumerator().GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+        var device = PickDevice();
+        DeviceName = device.FriendlyName;
+        _deviceId = device.ID;
         _capture = new WasapiCapture(device) { ShareMode = AudioClientShareMode.Shared };
         _rate = _capture.WaveFormat.SampleRate;
         _channels = _capture.WaveFormat.Channels;
@@ -65,6 +84,23 @@ public sealed class Microphone : IDisposable
             if (e.Exception != null) _done.TrySetException(e.Exception);
             else Finish(_speechFrames > 3 ? HeardKind.Speech : HeardKind.Nothing);
         };
+    }
+
+    /// <summary>Windows' microphone for calls, unless it just sent nothing; then its everyday one.</summary>
+    static MMDevice PickDevice()
+    {
+        var devices = new MMDeviceEnumerator();
+        var device = devices.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Communications);
+        if (device.ID == s_skipId && Environment.TickCount64 < s_skipUntil)
+        {
+            try
+            {
+                var other = devices.GetDefaultAudioEndpoint(DataFlow.Capture, Role.Console);
+                if (other.ID != device.ID) return other;
+            }
+            catch (Exception) { }
+        }
+        return device;
     }
 
     /// <summary>Is there a microphone at all?</summary>
@@ -84,14 +120,39 @@ public sealed class Microphone : IDisposable
     public Task<Heard> Listen(CancellationToken ct)
     {
         ct.Register(Stop);
+        _clock.Start();
         _capture.StartRecording();
+        // The waits above count the sound that arrives; this one counts the clock, so a microphone
+        // that sends nothing can't leave the cat listening forever.
+        _watchdog = new System.Threading.Timer(_ => Watch(), null, 250, 250);
         return _done.Task;
+    }
+
+    void Watch()
+    {
+        if (_finished) return;
+        double seconds = _clock.Elapsed.TotalSeconds;
+        if (!_gotSound && seconds > 3)
+        {
+            NoSound = true;
+            s_skipId = _deviceId;
+            s_skipUntil = Environment.TickCount64 + 10 * 60 * 1000;
+            Log.Info($"Microphone \"{DeviceName}\" sent no sound in 3 s; skipping it for 10 minutes");
+            Stop();
+        }
+        else if (seconds > _waitForSpeech + MaxLength + 5) Stop();
     }
 
     /// <summary>Stop now and keep what was said so far.</summary>
     public void Stop()
     {
         try { _capture.StopRecording(); } catch (Exception ex) { Log.Error("Stopping the microphone", ex); }
+        // A microphone that has gone away may never say it stopped: finish anyway, shortly.
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            Thread.Sleep(1500);
+            Finish(_speechFrames > 3 ? HeardKind.Speech : HeardKind.Nothing);
+        });
     }
 
     void OnData(object? sender, WaveInEventArgs e)
@@ -99,6 +160,7 @@ public sealed class Microphone : IDisposable
         var format = _capture.WaveFormat;
         int bytesPerSample = format.BitsPerSample / 8;
         int count = e.BytesRecorded / bytesPerSample / _channels;
+        if (count > 0) _gotSound = true;
         lock (_gate)
         {
             if (_finished) return;
@@ -235,5 +297,9 @@ public sealed class Microphone : IDisposable
         }
     }
 
-    public void Dispose() => _capture.Dispose();
+    public void Dispose()
+    {
+        _watchdog?.Dispose();
+        _capture.Dispose();
+    }
 }
