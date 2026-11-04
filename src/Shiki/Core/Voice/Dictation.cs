@@ -65,7 +65,7 @@ public sealed class Dictation(Settings settings, Func<string> catName)
                         live.Ended += () => { if (!Held) mic.Stop(); };
                         mic.StreamTo(live.Send);
                     }
-                    else if (engine is Deepgram) engine = Speech.Local;
+                    // No live stream: the same engine writes the recording down whole.
                 }
                 heard = await listening;
             }

@@ -154,8 +154,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
                 if (connecting != null) live = await connecting;
             }
             if (ct.IsCancellationRequested) return;
-            // No live stream: Scribe writes the recording down whole if it can; otherwise Whisper on this PC.
-            if (engine is Deepgram && live == null) engine = Speech.Local;
+            // No live stream: the same engine writes the recording down whole (Deepgram's or Scribe's
+            // careful mode); Whisper on this PC only if that fails too.
             string? streamed = live != null ? await live.Finish() : null;
             if (heard.Kind != HeardKind.Speech && string.IsNullOrWhiteSpace(streamed))
             {
@@ -211,8 +211,15 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         {
             return await engine.Transcribe(samples, hint, ct);
         }
-        catch (Exception ex) when (engine is not WhisperLocal && ex is System.Net.Http.HttpRequestException or DeepgramException or TaskCanceledException && !ct.IsCancellationRequested)
+        catch (Exception ex) when (engine is not WhisperLocal && ex is System.Net.Http.HttpRequestException or DeepgramException or ElevenLabsException or TaskCanceledException && !ct.IsCancellationRequested)
         {
+            // Whisper on this PC, but only if it's already there: downloading it now would leave
+            // the person waiting on "…" for minutes.
+            if (Speech.Local is { IsDownloaded: false })
+            {
+                Log.Error($"{engine.Name} failed, and Whisper isn't downloaded", ex);
+                return "";
+            }
             Log.Error($"{engine.Name} failed; using Whisper", ex);
             return await Speech.Local.Transcribe(samples, hint, ct);
         }

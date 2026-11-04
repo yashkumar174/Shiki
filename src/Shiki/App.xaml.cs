@@ -359,6 +359,31 @@ public partial class App : Application
                 // Dev aid: one recording through Scribe with each language setting (whole and live); answers go to the log.
                 _ = ScribeLanguageTest(args[1]);
                 break;
+            case "deepgram-terms-test":
+                // Dev aid: opens Deepgram's live stream with more and more of the words to expect, to find one it refuses.
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    var terms = Speech.KeyTerms(CatName).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase).Take(90).ToList();
+                    Log.Info($"deepgram-terms-test: {terms.Count} terms, query {Deepgram.Query(terms).Length} characters");
+                    async System.Threading.Tasks.Task<bool> Opens(List<string> some)
+                    {
+                        try { await using var live = await DeepgramLive.Open(Deepgram.Key.Read()!, 16000, some, default); return true; }
+                        catch (Exception) { return false; }
+                    }
+                    foreach (var n in new[] { 0, 10, 20, 30, 40, 50, 60, 70, 80, 90 })
+                    {
+                        if (n > terms.Count) break;
+                        bool ok = await Opens(terms.Take(n).ToList());
+                        Log.Info($"deepgram-terms-test: first {n}: {(ok ? "opens" : "refused")}");
+                        if (!ok)
+                        {
+                            foreach (var term in terms.Take(n).Skip(Math.Max(0, n - 10)))
+                                Log.Info($"deepgram-terms-test:   alone \"{term}\": {(await Opens([term]) ? "fine" : "REFUSED")}");
+                            break;
+                        }
+                    }
+                });
+                break;
             case "script-test":
                 // Dev aid: what different scripts become in English letters (answers go to the log).
                 foreach (var heardText in new[] { "కేక్ నంబర్ వై", "نمسطو ته বাই seedhe maut",
