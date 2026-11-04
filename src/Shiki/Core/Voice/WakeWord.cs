@@ -328,7 +328,7 @@ public sealed class WakeListener(Func<string> name, Func<IReadOnlyList<string>> 
         {
             try
             {
-                var careful = await ElevenLabs.Transcribe(Deepgram.Wav(samples), Speech.KeyTerms(name), ct);
+                var careful = await ElevenLabs.Transcribe(Deepgram.Wav(samples), Speech.KeyTerms(name), ct, "en");
                 var (named, after) = WakeMatcher.Match(careful, name, learned);
                 if (named && after.Length > 0) return after;
             }

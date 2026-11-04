@@ -355,6 +355,10 @@ public partial class App : Application
                 EnterBuddyMode();
                 _ = ScribeFile(args[1]);
                 break;
+            case "scribe-lang-test" when args.Length == 2:
+                // Dev aid: one recording through Scribe with each language setting (whole and live); answers go to the log.
+                _ = ScribeLanguageTest(args[1]);
+                break;
             case "script-test":
                 // Dev aid: what different scripts become in English letters (answers go to the log).
                 foreach (var heardText in new[] { "కేక్ నంబర్ వై", "نمسطو ته বাই seedhe maut",
@@ -3494,6 +3498,34 @@ public partial class App : Application
         catch (Exception ex)
         {
             Log.Error("scribe-file failed", ex);
+        }
+    }
+
+    async System.Threading.Tasks.Task ScribeLanguageTest(string wav)
+    {
+        var terms = Speech.KeyTerms(CatName).ToList();
+        foreach (var language in new string?[] { null, "en", "hi" })
+        {
+            try { Log.Info($"scribe-lang-test whole {language ?? "auto"}: \"{await ElevenLabs.Transcribe(File.ReadAllBytes(wav), terms, default, language)}\""); }
+            catch (Exception ex) { Log.Info($"scribe-lang-test whole {language ?? "auto"}: error {ex.Message}"); }
+        }
+        var samples = ReadWav(wav);
+        foreach (var (language, secondary) in new (string?, string?)[] { (null, null), ("en", null), ("en", "hi"), ("hi", null) })
+        {
+            try
+            {
+                await using var live = await ScribeLive.Open(ElevenLabs.Key.Read()!, 16000, terms, default, language, secondary);
+                var all = samples.Concat(new float[16000]).ToArray();
+                var pace = Stopwatch.StartNew();
+                for (int i = 0; i < all.Length; i += 320)
+                {
+                    live.Send(all[i..Math.Min(all.Length, i + 320)]);
+                    var due = (i + 320) / 16.0 - pace.Elapsed.TotalMilliseconds;
+                    if (due > 1) await System.Threading.Tasks.Task.Delay((int)due);
+                }
+                Log.Info($"scribe-lang-test live {language ?? "auto"}{(secondary != null ? "+" + secondary : "")}: \"{await live.Finish()}\"");
+            }
+            catch (Exception ex) { Log.Info($"scribe-lang-test live {language ?? "auto"}: error {ex.Message}"); }
         }
     }
 

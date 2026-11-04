@@ -64,7 +64,9 @@ public static class Speech
         {
             try
             {
-                return await ScribeLive.Open(elevenKey, rate, words, ct);
+                // English as the main language: left to guess, Scribe sometimes took Hindi for Urdu and
+                // wrote it in Urdu letters. Hindi still comes through (in Hindi letters, spelled out in Roman later).
+                return await ScribeLive.Open(elevenKey, rate, words, ct, language: "en");
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
@@ -87,7 +89,7 @@ public static class Speech
 
     /// <summary>Words Deepgram should expect: the cat's name, the person's people, and the app's vocabulary.</summary>
     public static IEnumerable<string> KeyTerms(string catName) =>
-        [catName, $"Hey {catName}", "Shiki", .. People.ForSpeech(30), .. Extra, "PDF", "JPG", "PNG", "WEBP", "MP4", "MP3", "GIF", "Downloads", "zip",
+        [catName, $"Hey {catName}", "Shiki", .. People.ForSpeech(30), .. Spotify.Names().Distinct(StringComparer.OrdinalIgnoreCase).Take(12), .. Extra, "PDF", "JPG", "PNG", "WEBP", "MP4", "MP3", "GIF", "Downloads", "zip",
             "Spotify", "WhatsApp", "Chrome", "Gmail", "YouTube", "Instagram", "Excel", "PowerPoint", "Word", "Teams", "Zoom", "Notepad",
             "File Explorer", "Desktop", "Documents", "C drive", "D drive", "disk space", "dark mode", "do not disturb", "captions", "screenshot"];
 

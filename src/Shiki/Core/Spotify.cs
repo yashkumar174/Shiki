@@ -52,6 +52,23 @@ public static class Spotify
         return Regex.Replace(words, @"[^a-z0-9ऀ-ॿ]", "");
     }
 
+    /// <summary>
+    /// The artists and songs played before ("Seedhe Maut", "Kesariya"), for the speech engine to
+    /// expect: names like these are what it mishears most ("CD mode").
+    /// </summary>
+    public static IEnumerable<string> Names()
+    {
+        foreach (var pick in Picks.Values)
+        {
+            var parts = pick.Label.Split(" by ", 2);
+            var song = Regex.Replace(parts[0], @"\s*[\(\[].*$", "").Trim();
+            if (song.Length > 1) yield return song;
+            if (parts.Length > 1)
+                foreach (var artist in Regex.Replace(parts[1], @"\s*[\(\[].*$", "").Split([",", "&", " and "], StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+                    yield return artist;
+        }
+    }
+
     public static Pick? Find(string said) => Key(said) is { Length: > 0 } key && Picks.TryGetValue(key, out var pick) ? pick : null;
 
     public static void Remember(string said, string uri, string label)

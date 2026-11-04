@@ -38,7 +38,7 @@ public sealed class Scribe(Func<IEnumerable<string>> keyterms) : ISpeechToText
 
     public Task Prepare(IProgress<double>? progress, CancellationToken ct) => Task.CompletedTask;
 
-    public Task<string> Transcribe(float[] samples, string hint, CancellationToken ct) => ElevenLabs.Transcribe(Deepgram.Wav(samples), keyterms(), ct);
+    public Task<string> Transcribe(float[] samples, string hint, CancellationToken ct) => ElevenLabs.Transcribe(Deepgram.Wav(samples), keyterms(), ct, "en");
 
     /// <summary>The rates the live stream takes as they are.</summary>
     public static bool TakesRate(int rate) => rate is 8000 or 16000 or 22050 or 24000 or 44100 or 48000;
@@ -69,11 +69,13 @@ public sealed class ScribeLive : ILiveStream
 
     public string Text => string.Join(" ", _finals).Trim();
 
-    public static async Task<ScribeLive> Open(string key, int sampleRate, IEnumerable<string> terms, CancellationToken ct)
+    public static async Task<ScribeLive> Open(string key, int sampleRate, IEnumerable<string> terms, CancellationToken ct, string? language = null, string? secondary = null)
     {
         var live = new ScribeLive(sampleRate);
         live._socket.Options.SetRequestHeader("xi-api-key", key);
         var query = new StringBuilder($"model_id=scribe_v2_realtime&audio_format=pcm_{sampleRate}&commit_strategy=vad&vad_silence_threshold_secs=0.6&no_verbatim=true&filter_background_audio=true");
+        if (!string.IsNullOrEmpty(language)) query.Append("&language_code=").Append(language);
+        if (!string.IsNullOrEmpty(secondary)) query.Append("&secondary_languages=").Append(secondary);
         foreach (var term in terms.Select(t => t.Trim()).Where(t => t.Length is > 1 and <= 50 && t.Split(' ').Length <= 5 && !t.Any(c => "<>{}[]\\".Contains(c)))
                      .Distinct(StringComparer.OrdinalIgnoreCase).Take(50)) // the live model takes at most 50 (names come first)
             query.Append("&keyterms=").Append(Uri.EscapeDataString(term));

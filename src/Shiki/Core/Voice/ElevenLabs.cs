@@ -175,7 +175,7 @@ public static class ElevenLabs
     /// Writes down a recording with Scribe v2 (ElevenLabs' careful speech-to-text, Hindi and English
     /// mixed, any of 90+ languages), expecting these words (names), up to 1,000.
     /// </summary>
-    public static async Task<string> Transcribe(byte[] wav, IEnumerable<string> keyterms, CancellationToken ct)
+    public static async Task<string> Transcribe(byte[] wav, IEnumerable<string> keyterms, CancellationToken ct, string? language = null)
     {
         var key = Key.Read() ?? throw new InvalidOperationException("No ElevenLabs key.");
         using var form = new MultipartFormDataContent
@@ -183,6 +183,7 @@ public static class ElevenLabs
             { new StringContent("scribe_v2"), "model_id" },
             { new StringContent("false"), "tag_audio_events" },
         };
+        if (!string.IsNullOrEmpty(language)) form.Add(new StringContent(language), "language_code");
         var file = new ByteArrayContent(wav);
         file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("audio/wav");
         form.Add(file, "file", "clip.wav");
