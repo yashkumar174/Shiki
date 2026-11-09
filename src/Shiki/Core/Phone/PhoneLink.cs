@@ -27,6 +27,8 @@ public sealed class PairedPhone
     public DateTime Paired { get; set; }
     public DateTime? LastSeen { get; set; }
     public string? LastIp { get; set; }
+    /// <summary>"android" (Shiki for Android, over TLS) or "iphone" (the Expo app, over the web link).</summary>
+    public string Kind { get; set; } = "android";
 }
 
 /// <summary>A phone asking to pair: the person checks the code is the same on both screens.</summary>
@@ -62,7 +64,7 @@ public sealed class PhoneJob(string id, string phone, bool quiet)
 /// can ask it for photos. Every file goes byte for byte over TLS (the phone pins this PC's
 /// certificate) and is checked with SHA-256 before it's kept. Only devices on the local network.
 /// </summary>
-public sealed class PhoneLink : IDisposable
+public sealed partial class PhoneLink : IDisposable
 {
     public const int FindPort = 47811, LinkPort = 47812, AppPort = 47813;
     const int Version = 1;
@@ -73,6 +75,8 @@ public sealed class PhoneLink : IDisposable
     public event Action<PairRequest>? PairRequested;
     /// <summary>A batch of files has finished arriving. Raised off the UI thread.</summary>
     public event Action<PhoneJob>? JobFinished;
+    /// <summary>A phone was paired (an iPhone pairs by scanning the QR code, without a code to compare). Raised off the UI thread.</summary>
+    public event Action<PairedPhone>? PhonePaired;
     /// <summary>Phones paired, removed, connected or gone. Raised off the UI thread.</summary>
     public event Action? Changed;
 
@@ -159,6 +163,7 @@ public sealed class PhoneLink : IDisposable
             _ = AcceptLoop(_link, client => Serve(client));
             _find = new UdpClient(new IPEndPoint(IPAddress.Any, FindPort)) { EnableBroadcast = true };
             _ = FindLoop(_find);
+            ListenWeb();
             Log.Info($"Phone link listening on {LinkPort} (find on {FindPort}), certificate {Fingerprint[..12]}…");
         }
         catch (Exception ex)
@@ -370,6 +375,7 @@ public sealed class PhoneLink : IDisposable
         SaveState();
         AiLog.Write("phone", $"paired {name}");
         await Reply(ssl, new JsonObject { ["ok"] = true, ["phone"] = phone.Id, ["key"] = key, ["pc"] = _state.PcId, ["name"] = PcName });
+        PhonePaired?.Invoke(phone);
         Changed?.Invoke();
     }
 
@@ -507,9 +513,27 @@ public sealed class PhoneLink : IDisposable
             await Reply(ssl, new JsonObject { ["ok"] = false, ["error"] = "checksum" });
             return;
         }
+        var target = Keep(partPath, name, sha, Long(request, "taken"), job, phone, size);
+        await Reply(ssl, new JsonObject { ["ok"] = true, ["saved"] = Path.GetFileName(target) });
+        if (string.IsNullOrWhiteSpace(jobId)) FinishSingle(job);
+    }
+
+    /// <summary>
+    /// A received, checked file: kept in its folder with the date it was taken (or, if the same file
+    /// came before, the copy that's already here is used and this one dropped).
+    /// </summary>
+    string Keep(string partPath, string name, string sha, long taken, PhoneJob job, PairedPhone phone, long size)
+    {
+        string? had;
+        lock (_gate) _received.TryGetValue(sha, out had);
+        if (had != null && File.Exists(had))
+        {
+            File.Delete(partPath);
+            lock (_gate) if (!job.Saved.Contains(had)) job.Saved.Add(had);
+            return had;
+        }
         var target = Unique(Path.Combine(FolderFor(name), name));
         File.Move(partPath, target);
-        long taken = Long(request, "taken");
         if (taken > 0)
         {
             var when = DateTimeOffset.FromUnixTimeMilliseconds(taken).LocalDateTime;
@@ -522,9 +546,13 @@ public sealed class PhoneLink : IDisposable
         }
         try { File.AppendAllText(ReceivedPath, $"{sha}\t{target}\n"); } catch (Exception ex) { Log.Error("Noting a phone file", ex); }
         AiLog.Write("phone", $"from {phone.Name}: {Path.GetFileName(target)} ({size:N0} bytes, checked)");
-        await Reply(ssl, new JsonObject { ["ok"] = true, ["saved"] = Path.GetFileName(target) });
-        // A file on its own (no batch): it's finished now.
-        if (string.IsNullOrWhiteSpace(jobId) && job.Finished.TrySetResult())
+        return target;
+    }
+
+    /// <summary>A file on its own (no batch): it's finished as soon as it's here.</summary>
+    void FinishSingle(PhoneJob job)
+    {
+        if (job.Finished.TrySetResult())
         {
             _jobs.TryRemove(job.Id, out _);
             JobFinished?.Invoke(job);
@@ -532,6 +560,13 @@ public sealed class PhoneLink : IDisposable
     }
 
     async Task JobReport(SslStream ssl, JsonObject request, PairedPhone phone)
+    {
+        ApplyJob(request, phone);
+        await Reply(ssl, new JsonObject { ["ok"] = true });
+    }
+
+    /// <summary>The phone says how a batch is going: its total, then that it's done (and how many failed).</summary>
+    void ApplyJob(JsonObject request, PairedPhone phone)
     {
         var job = JobFor(Str(request, "job"), phone.Id);
         if (request["total"] is JsonValue total && total.TryGetValue<int>(out var n)) job.Total = n;
@@ -546,7 +581,6 @@ public sealed class PhoneLink : IDisposable
                 if (job.Saved.Count > 0 || job.Failed > 0) JobFinished?.Invoke(job);
             }
         }
-        await Reply(ssl, new JsonObject { ["ok"] = true });
     }
 
     PhoneJob JobFor(string? id, string phone)
@@ -650,7 +684,9 @@ public sealed class PhoneLink : IDisposable
         int failed = job.Failed;
         if (!job.IsDone) return $"Still sending to {phone.Name}; it carries on by itself.";
         return failed == 0
-            ? $"Sent {files.Count} file(s) to {phone.Name}, checked: they're in the phone's Download/Shiki folder."
+            ? phone.Kind == "iphone"
+                ? $"Sent {files.Count} file(s) to {phone.Name}: photos and videos are in its Photos, other files in Shiki on the iPhone (Share there to put them in Files)."
+                : $"Sent {files.Count} file(s) to {phone.Name}, checked: they're in the phone's Download/Shiki folder."
             : $"Sent {files.Count - failed} of {files.Count} to {phone.Name}; {failed} didn't make it ({job.Note ?? "try again"}).";
     }
 
@@ -665,7 +701,9 @@ public sealed class PhoneLink : IDisposable
 
     string NotReachable() => Phones.Count == 0
         ? "No phone is connected to Shiki yet. Say \"connect my phone\" (or Settings, Phone) to set it up once."
-        : $"{Phones[0].Name} isn't connected right now. It needs to be on the same Wi-Fi as this PC with Shiki open (or running in the background).";
+        : Phones.OrderByDescending(p => p.LastSeen).First() is { Kind: "iphone" } iphone
+            ? $"{iphone.Name} isn't connected right now: open Shiki on the iPhone (in Expo Go). It listens only while it's open, on the same Wi-Fi as this PC (or with this PC on its hotspot)."
+            : $"{Phones[0].Name} isn't connected right now. It needs to be on the same Wi-Fi as this PC with Shiki open (or running in the background).";
 
     static string Summary(PhoneJob job, PairedPhone phone, bool finished)
     {

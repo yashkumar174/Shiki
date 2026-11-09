@@ -3776,6 +3776,11 @@ public partial class App : Application
             _phone = Core.Phone.PhoneLink.Start(_settings);
             _phone.PairRequested += request => Dispatcher.BeginInvoke(() => ShowPhoneConnect(request));
             _phone.JobFinished += job => Dispatcher.BeginInvoke(() => PhoneFilesArrived(job));
+            _phone.PhonePaired += phone => Dispatcher.BeginInvoke(() =>
+            {
+                _phoneWindow?.ShowPaired(phone);
+                ToastHost.Show(ToastWindow.Message($"{phone.Name} is connected", $"Photos and files from it land in {_phone.PhotoFolder}."));
+            });
         }
         catch (Exception ex)
         {

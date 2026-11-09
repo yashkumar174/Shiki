@@ -107,7 +107,7 @@ static class CatPrompt
             - "Turn on captions", "subtitles for this video": use_app_tool captions_on. "Translate this video into English", "subtitles in Hindi": captions_on with text set to the language. "Captions off": captions_off.
             - "Record my screen": use_app_tool record_screen (they choose the area); "stop recording": use_app_tool stop_recording.
 
-            The phone (Shiki for Android, on the same Wi-Fi)
+            The phone (Shiki on their iPhone or Android, on the same Wi-Fi; on an iPhone the app has to be open)
             - "Get my last photo from my phone", "send me the video I took today", "the last 3 screenshots from my phone": phone_get. The files arrive at full quality (checked byte for byte) in Pictures\From phone; then do what was asked with them (email them, convert them, open them) using their paths.
             - "Send this to my phone", "put the PDF on my phone": phone_send with the full paths (selected_files or find_files first). They land in the phone's Download/Shiki folder.
             - "Connect my phone", or a phone tool says no phone is connected yet: use_app_tool connect_phone (a window with a QR code to get the app; it's done once).
@@ -433,7 +433,7 @@ static class CatPrompt
         new Tool
         {
             Name = "phone_get",
-            Description = "Get the newest photos, videos or screenshots from the person's own phone (Shiki for Android, paired) onto this PC at full quality, and wait for them. Returns where they were saved.",
+            Description = "Get the newest photos, videos or screenshots from the person's own phone (Shiki on their iPhone or Android, paired) onto this PC at full quality, and wait for them. Returns where they were saved.",
             InputSchema = new()
             {
                 Properties = new Dictionary<string, JsonElement>
@@ -447,7 +447,7 @@ static class CatPrompt
         new Tool
         {
             Name = "phone_send",
-            Description = "Send files from this PC to the person's own phone (Shiki for Android, paired): they land in the phone's Download/Shiki folder, checked byte for byte.",
+            Description = "Send files from this PC to the person's own phone (Shiki on their iPhone or Android, paired): on an iPhone photos and videos go into Photos and other files into the Shiki app; on Android into Download/Shiki.",
             InputSchema = new()
             {
                 Properties = new Dictionary<string, JsonElement>

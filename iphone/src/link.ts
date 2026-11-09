@@ -1,0 +1,149 @@
+import * as FileSystem from 'expo-file-system/legacy';
+import { Pairing, Scanned } from './store';
+
+/**
+ * Talking to Shiki on the PC over the home network (plain web requests: Expo Go can't pin a
+ * certificate). Every request but pairing carries this phone's secret key. Files go whole, with
+ * their MD5 worked out here, which the PC checks along with the size before keeping them.
+ */
+
+export class Unpaired extends Error {}
+
+export type Command =
+  | { cmd: 'none' }
+  | { cmd: 'send-recent'; job: string; count: number; kind: 'photo' | 'video' | 'screenshot' | 'any'; today: boolean }
+  | { cmd: 'get'; job: string; files: { token: string; name: string; size: number; sha: string }[] };
+
+const base = (p: { host: string; port: number }) => `http://${p.host}:${p.port}`;
+const auth = (p: Pairing) => ({ 'X-Shiki-Phone': p.phone, 'X-Shiki-Key': p.key });
+
+async function withTimeout(url: string, init: RequestInit, ms: number): Promise<Response> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: abort.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Pairs with the PC whose code was scanned; the token works once. */
+export async function pair(scanned: Scanned, phoneName: string): Promise<Pairing> {
+  const r = await withTimeout(`${base(scanned)}/v1/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: scanned.token, name: phoneName }),
+  }, 15000);
+  const json = await r.json();
+  if (!json.ok) throw new Error(json.error || 'The PC said no.');
+  return {
+    pcId: json.pc,
+    pcName: json.name || scanned.pcName,
+    host: scanned.host,
+    port: scanned.port,
+    phone: json.phone,
+    key: json.key,
+    autoSince: Date.now(),
+    autoSend: true,
+  };
+}
+
+/** "Anything for me?": the PC answers at once with a command, or with none after 25 seconds. */
+export async function wait(p: Pairing): Promise<Command> {
+  const r = await withTimeout(`${base(p)}/v1/wait`, { method: 'POST', headers: auth(p) }, 40000);
+  if (r.status === 401) throw new Unpaired();
+  return (await r.json()) as Command;
+}
+
+export async function report(p: Pairing, job: string, info: { total?: number; done?: boolean; failed?: number; note?: string }) {
+  try {
+    await withTimeout(`${base(p)}/v1/job`, {
+      method: 'POST',
+      headers: { ...auth(p), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job, ...info }),
+    }, 15000);
+  } catch {
+    // The PC times the batch out on its own.
+  }
+}
+
+export type Sendable = { uri: string; name: string; taken: number; id: string };
+
+const query = (values: Record<string, string | number | undefined>) =>
+  Object.entries(values)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join('&');
+
+/** Sends one file whole; true once the PC has it, checked. Tries three times. */
+export async function upload(p: Pairing, item: Sendable, job?: string): Promise<boolean> {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const check = await withTimeout(`${base(p)}/v1/check?${query({ id: item.id, job })}`, { headers: auth(p) }, 15000);
+      if (check.status === 401) throw new Unpaired();
+      if ((await check.json()).done) return true;
+
+      let uri = item.uri;
+      let info = await FileSystem.getInfoAsync(uri, { md5: true });
+      let copy: string | null = null;
+      if (!info.exists) {
+        // Some photo library files can only be read through a copy.
+        copy = `${FileSystem.cacheDirectory}send-${Date.now()}-${item.name}`;
+        await FileSystem.copyAsync({ from: item.uri, to: copy });
+        uri = copy;
+        info = await FileSystem.getInfoAsync(uri, { md5: true });
+      }
+      if (!info.exists) return false;
+      try {
+        const url = `${base(p)}/v1/put?${query({ id: item.id, name: item.name, size: info.size, taken: item.taken, md5: info.md5, job })}`;
+        const result = await FileSystem.uploadAsync(url, uri, {
+          httpMethod: 'PUT',
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: { ...auth(p), 'Content-Type': 'application/octet-stream' },
+        });
+        if (result.status === 401) throw new Unpaired();
+        if (result.status === 200) return true;
+      } finally {
+        if (copy) await FileSystem.deleteAsync(copy, { idempotent: true });
+      }
+    } catch (e) {
+      if (e instanceof Unpaired) throw e;
+      if (attempt === 3) return false;
+      await new Promise((r) => setTimeout(r, 1500 * attempt));
+    }
+  }
+  return false;
+}
+
+/** Fetches a file the PC offered into the app's own folder; its path, or null. */
+export async function download(p: Pairing, token: string, name: string): Promise<string | null> {
+  const folder = `${FileSystem.documentDirectory}From PC/`;
+  await FileSystem.makeDirectoryAsync(folder, { intermediates: true }).catch(() => {});
+  const safe = name.replace(/[\/\\:]/g, '_');
+  let target = folder + safe;
+  if ((await FileSystem.getInfoAsync(target)).exists) {
+    const dot = safe.lastIndexOf('.');
+    target = folder + (dot > 0 ? `${safe.slice(0, dot)} ${Date.now()}${safe.slice(dot)}` : `${safe} ${Date.now()}`);
+  }
+  const result = await FileSystem.downloadAsync(`${base(p)}/v1/get?${query({ file: token })}`, target, { headers: auth(p) });
+  if (result.status !== 200) {
+    await FileSystem.deleteAsync(target, { idempotent: true });
+    return null;
+  }
+  return target;
+}
+
+/** Files the PC sent, newest first. */
+export async function received(): Promise<{ name: string; uri: string }[]> {
+  const folder = `${FileSystem.documentDirectory}From PC/`;
+  try {
+    const names = await FileSystem.readDirectoryAsync(folder);
+    const items = await Promise.all(names.map(async (name) => {
+      const info = await FileSystem.getInfoAsync(folder + name);
+      return { name, uri: folder + name, time: info.exists ? info.modificationTime ?? 0 : 0 };
+    }));
+    return items.sort((a, b) => b.time - a.time).map(({ name, uri }) => ({ name, uri }));
+  } catch {
+    return [];
+  }
+}
