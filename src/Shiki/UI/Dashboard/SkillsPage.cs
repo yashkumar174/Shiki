@@ -129,7 +129,7 @@ public sealed class SkillsPage(DashKit k, DashboardHost host)
     {
         var cat = host.CatName();
         var page = new StackPanel { Margin = new Thickness(52, 44, 52, 48), MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Stretch };
-        page.Children.Add(k.Text($"What can {cat} do?", 30, weight: FontWeights.SemiBold, font: DashKit.Display));
+        page.Children.Add(k.Text($"What can {cat} do?", 34, font: DashKit.Pixel));
         var sub = k.Text($"Say it after \"Hey {cat}\", press {host.Settings.TalkHotkey} and talk, or type it in Ask {cat}. Try does it now. Anything that changes files, sends or closes something shows you a card first.", 15, P.Muted, wrap: true);
         sub.Margin = new Thickness(0, 6, 0, 22);
         page.Children.Add(sub);

@@ -345,7 +345,7 @@ public sealed class RecordFrame : Window
     readonly Rectangle _outline = new() { StrokeThickness = 2, IsHitTestVisible = false };
     readonly TextBlock _number = new()
     {
-        FontFamily = new FontFamily(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Instrument Serif"),
+        FontFamily = Theme.PixelFont,
         FontSize = 96,
         Foreground = Brushes.White,
         HorizontalAlignment = HorizontalAlignment.Center,

@@ -204,7 +204,7 @@ public sealed class PlayerView
     {
         var head = new Image { Source = CatSprites.Frame(CatSprites.Skin(_host.Settings.Cat), CatPose.Happy), Width = 140, Height = 140, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 0, 40) };
         RenderOptions.SetBitmapScalingMode(head, BitmapScalingMode.NearestNeighbor);
-        var name = _k.Text(System.IO.Path.GetFileNameWithoutExtension(Path), 22, Colors.White, font: DashKit.Serif);
+        var name = _k.Text(System.IO.Path.GetFileNameWithoutExtension(Path), 20, Colors.White, FontWeights.SemiBold);
         name.HorizontalAlignment = HorizontalAlignment.Center;
         name.VerticalAlignment = VerticalAlignment.Center;
         name.Margin = new Thickness(0, 170, 0, 0);

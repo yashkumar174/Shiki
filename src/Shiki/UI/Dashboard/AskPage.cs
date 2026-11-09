@@ -689,7 +689,7 @@ public sealed class AskView
         DockPanel.SetDock(tools, Dock.Right);
         head.Children.Add(tools);
         var titles = new StackPanel();
-        titles.Children.Add(k.Text($"Ask {CatName}", 30, weight: FontWeights.SemiBold, font: DashKit.Display));
+        titles.Children.Add(k.Text($"Ask {CatName}", 34, font: DashKit.Pixel));
         var sub = k.Text($"Say what you want done with your files or your PC, or ask about anything on screen ({host.Settings.PawHotkey} to point at it). {CatName} shows you the plan and waits for your OK.", 15, P.Muted, wrap: true);
         sub.Margin = new Thickness(0, 6, 0, 0);
         titles.Children.Add(sub);

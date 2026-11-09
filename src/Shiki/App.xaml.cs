@@ -232,6 +232,7 @@ public partial class App : Application
         _instance.StartServer();
         _settings = Settings.Load();
         Theme.EditorDark = _settings.DashboardDark ?? DashPalette.WindowsIsDark();
+        SmoothScroll.Install();
         OutputPaths.Folder = _settings.OutputFolder;
         OutputPaths.SortByType = _settings.SortOutputs;
         FormerName.MoveTheRest(_settings, ExePath, BroArt.EnsureIconFile(Skin));

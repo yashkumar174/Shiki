@@ -240,7 +240,7 @@ public sealed class DashboardWindow : Window
             Background = DashKit.B(_p.Panel),
             BorderBrush = DashKit.B(_p.Line),
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(24),
+            CornerRadius = new CornerRadius(20),
             Margin = new Thickness(0, 0, 14, 14),
             ClipToBounds = true,
         };
@@ -659,8 +659,8 @@ public sealed class DashboardWindow : Window
         row.Children.Add(head);
         if (!_collapsed)
         {
-            var name = _k.Text("Shiki", 22, weight: FontWeights.SemiBold, font: DashKit.Display);
-            name.Margin = new Thickness(10, -1, 0, 0);
+            var name = _k.Text("Shiki", 26, font: DashKit.Pixel);
+            name.Margin = new Thickness(10, -3, 0, 0);
             name.VerticalAlignment = VerticalAlignment.Center;
             row.Children.Add(name);
         }
@@ -674,7 +674,8 @@ public sealed class DashboardWindow : Window
 
     Border NavItem(string? glyph, string label, bool selected, Action onClick, ImageSource? picture, string tooltip)
     {
-        var rest = selected ? _p.Selected : Colors.Transparent;
+        // The page you're on: a moonlight tint, its icon in the accent.
+        var rest = selected ? DashKit.A(_p.Accent, _p.Dark ? (byte)0x1F : (byte)0x1A) : Colors.Transparent;
         var background = new SolidColorBrush(rest);
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         if (picture != null)
@@ -683,10 +684,10 @@ public sealed class DashboardWindow : Window
             RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
             row.Children.Add(image);
         }
-        else row.Children.Add(new Border { Width = 20, Child = _k.Icon(glyph!, 17, _p.Text) });
+        else row.Children.Add(new Border { Width = 20, Child = _k.Icon(glyph!, 17, selected ? (_p.Dark ? _p.Accent : _p.AccentEdge) : _p.Muted) });
         if (!_collapsed)
         {
-            var text = _k.Text(label, 15.5, weight: selected ? FontWeights.SemiBold : FontWeights.Normal);
+            var text = _k.Text(label, 15, weight: selected ? FontWeights.Bold : FontWeights.Medium);
             text.Margin = new Thickness(13, 0, 0, 1);
             text.VerticalAlignment = VerticalAlignment.Center;
             row.Children.Add(text);

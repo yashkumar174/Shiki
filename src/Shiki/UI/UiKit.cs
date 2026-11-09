@@ -31,13 +31,14 @@ public static class UiKit
         };
     }
 
+    /// <summary>A window's title, in the cat's pixel type.</summary>
     public static TextBlock Title(string text) => new()
     {
         Text = text,
-        FontFamily = Theme.DisplayFont,
-        FontSize = 21,
-        FontWeight = P.Pixel ? FontWeights.Normal : FontWeights.SemiBold,
+        FontFamily = Theme.PixelFont,
+        FontSize = 26,
         Foreground = Theme.Brush(P.Text),
+        Margin = new Thickness(0, 0, 0, 4),
     };
 
     public static TextBlock Body(string text, double size = 13) => new()
@@ -50,13 +51,15 @@ public static class UiKit
         Margin = new Thickness(0, 4, 0, 0),
     };
 
+    /// <summary>A section's name: plain and bold, so a page reads as a few clear groups.</summary>
     public static TextBlock Heading(string text) => new()
     {
         Text = text,
         FontFamily = Theme.TextFont,
-        FontSize = 12.5,
-        Foreground = Theme.Brush(P.SubtleText),
-        Margin = new Thickness(0, 18, 0, 8),
+        FontSize = 15,
+        FontWeight = FontWeights.Bold,
+        Foreground = Theme.Brush(P.Text),
+        Margin = new Thickness(0, 26, 0, 6),
     };
 
     public static TextBlock Error() => new()
@@ -104,7 +107,7 @@ public static class UiKit
             Background = background,
             BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(P.Pixel ? 2 : 1.5),
-            CornerRadius = new CornerRadius(P.Pixel ? 0 : 8),
+            CornerRadius = new CornerRadius(P.Pixel ? 0 : 10),
             Padding = new Thickness(icon ? 8 : 14, 7, icon ? 8 : 14, 8),
             Margin = new Thickness(0, 0, stretch ? 0 : 8, stretch ? 8 : 0),
             Cursor = Cursors.Hand,
@@ -113,13 +116,15 @@ public static class UiKit
             {
                 Text = label,
                 FontFamily = icon ? Theme.IconFont : Theme.TextFont,
-                FontSize = icon ? 13 : 13,
+                FontSize = icon ? 13 : 13.5,
+                FontWeight = primary ? FontWeights.SemiBold : FontWeights.Medium,
                 Foreground = Theme.Brush(primary ? Theme.EditorAccentText : P.Text),
                 HorizontalAlignment = HorizontalAlignment.Center,
             },
         };
         button.MouseEnter += (_, _) => background.Color = hot;
         button.MouseLeave += (_, _) => background.Color = rest;
+        Dashboard.DashKit.Press(button);
         button.MouseLeftButtonUp += (_, e) => { e.Handled = true; onClick(); };
         return button;
     }

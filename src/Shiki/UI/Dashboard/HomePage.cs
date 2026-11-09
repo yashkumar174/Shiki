@@ -11,7 +11,7 @@ using Shiki.Core;
 namespace Shiki.UI.Dashboard;
 
 /// <summary>
-/// Home: a greeting, the black drop card (drop files on it, or pick some), the cat's numbers,
+/// Home: a greeting, the night window (drop files on it, or pick some), the cat's numbers,
 /// one helpful tip, and what was converted lately.
 /// </summary>
 public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Action search)
@@ -21,8 +21,8 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
     public UIElement Build()
     {
         var page = new StackPanel { Margin = new Thickness(52, 44, 52, 48), MaxWidth = 1180, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var hello = k.Text(Greeting(), 30, weight: FontWeights.SemiBold, font: DashKit.Display);
-        hello.Margin = new Thickness(0, 0, 0, 26);
+        var hello = k.Text(Greeting(), 34, font: DashKit.Pixel);
+        hello.Margin = new Thickness(0, 0, 0, 24);
         page.Children.Add(hello);
 
         var grid = new Grid();
@@ -59,15 +59,25 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         return Names.First is { Length: > 0 } name ? $"{part}, {name}" : part;
     }
 
-    // ---- The black card: drop files here ----
+    // ---- The night window: drop files here ----
 
+    /// <summary>
+    /// The one big moment: a window onto the cat's night, pixel stars and a crescent moon, the cat
+    /// sitting on the sill. Drop files on it, or pick some.
+    /// </summary>
     UIElement Hero()
     {
-        var title = new TextBlock { FontFamily = DashKit.Serif, FontSize = 40, Foreground = DashKit.B(P.HeroText), TextWrapping = TextWrapping.Wrap };
-        title.Inlines.Add(new System.Windows.Documents.Run("Convert anything, "));
-        title.Inlines.Add(new System.Windows.Documents.Run("right here.") { FontStyle = FontStyles.Italic });
-        var sub = k.Text("Drop files on this card, or pick some. Nothing leaves your PC.", 15.5, DashKit.A(Colors.White, 0xD8), wrap: true);
-        sub.Margin = new Thickness(0, 8, 0, 22);
+        var title = new TextBlock
+        {
+            Text = "Convert anything," + Environment.NewLine + "right here.",
+            FontFamily = DashKit.Pixel,
+            FontSize = 31,
+            LineHeight = 38,
+            Foreground = DashKit.B(P.HeroText),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var sub = k.Text("Drop files on this window, or pick some. Nothing leaves your PC.", 15.5, Color.FromRgb(0xC3, 0xCD, 0xDD), wrap: true);
+        sub.Margin = new Thickness(0, 12, 0, 24);
         var buttons = new WrapPanel();
         var choose = k.Button("Choose files", host.PickFiles, DashKit.Pill.Light);
         choose.Margin = new Thickness(0, 0, 10, 10);
@@ -75,17 +85,57 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         var snip = k.Button("Snip the screen", host.Snip, DashKit.Pill.Outline, "\uE924");
         snip.Margin = new Thickness(0, 0, 0, 10);
         buttons.Children.Add(snip);
-        var text = new StackPanel { Margin = new Thickness(40, 34, 12, 34), VerticalAlignment = VerticalAlignment.Center, Children = { title, sub, buttons } };
+        var text = new StackPanel { Margin = new Thickness(40, 36, 12, 40), VerticalAlignment = VerticalAlignment.Center, Children = { title, sub, buttons } };
 
-        // The cat, big, in a warm glow on the right.
-        var glow = new Ellipse
+        // The sky: a handful of pixel stars, the same every time (a fixed seed), dim enough to read over.
+        var sky = new Canvas { IsHitTestVisible = false };
+        var random = new Random(11);
+        for (int i = 0; i < 54; i++)
         {
-            Width = 340,
-            Height = 340,
-            Fill = new RadialGradientBrush(DashKit.A(P.Accent, 0x66), DashKit.A(P.Accent, 0)),
+            double size = random.NextDouble() < 0.2 ? 3 : 2;
+            var star = new Rectangle { Width = size, Height = size, Fill = DashKit.B(DashKit.A(Colors.White, (byte)random.Next(55, 200))) };
+            Canvas.SetLeft(star, Math.Round(random.NextDouble() * 1100));
+            Canvas.SetTop(star, Math.Round(random.NextDouble() * 230));
+            sky.Children.Add(star);
+        }
+
+        // The moon, drawn on a pixel grid: a full disc with a darker one taken out of it.
+        const int cell = 5, r = 8;
+        var moon = new Canvas { Width = (2 * r + 1) * cell, Height = (2 * r + 1) * cell, IsHitTestVisible = false };
+        var moonInk = DashKit.B(Color.FromRgb(0xF4, 0xEB, 0xCB));
+        for (int y = -r; y <= r; y++)
+            for (int x = -r; x <= r; x++)
+            {
+                bool disc = x * x + y * y <= r * r;
+                bool shadow = (x + 5) * (x + 5) + (y - 3) * (y - 3) <= r * r;
+                if (!disc || shadow) continue;
+                var px = new Rectangle { Width = cell, Height = cell, Fill = moonInk };
+                Canvas.SetLeft(px, (x + r) * cell);
+                Canvas.SetTop(px, (y + r) * cell);
+                moon.Children.Add(px);
+            }
+        var moonGlow = new Ellipse
+        {
+            Width = 260,
+            Height = 260,
+            Fill = new RadialGradientBrush(DashKit.A(Color.FromRgb(0x5A, 0xB9, 0xFC), 0x38), DashKit.A(Color.FromRgb(0x5A, 0xB9, 0xFC), 0)),
             HorizontalAlignment = HorizontalAlignment.Right,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, -40, -50, -40),
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, -84, -46, 0),
+            IsHitTestVisible = false,
+        };
+        moon.HorizontalAlignment = HorizontalAlignment.Right;
+        moon.VerticalAlignment = VerticalAlignment.Top;
+        moon.Margin = new Thickness(0, 26, 40, 0);
+
+        // The sill the cat sits on.
+        var sill = new Border
+        {
+            Height = 18,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Background = DashKit.B(Color.FromRgb(0x13, 0x20, 0x38)),
+            BorderBrush = DashKit.B(Color.FromRgb(0x24, 0x38, 0x5E)),
+            BorderThickness = new Thickness(0, 2, 0, 0),
             IsHitTestVisible = false,
         };
         var cat = new Image
@@ -95,41 +145,50 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
             Height = 20 * 7,
             HorizontalAlignment = HorizontalAlignment.Right,
             VerticalAlignment = VerticalAlignment.Bottom,
-            Margin = new Thickness(0, 0, 40, 0),
+            Margin = new Thickness(0, 0, 44, 16),
             IsHitTestVisible = false,
         };
         RenderOptions.SetBitmapScalingMode(cat, BitmapScalingMode.NearestNeighbor);
 
-        // Text on the left, the cat in its own column on the right, so they never overlap.
-        var layers = new Grid { ClipToBounds = true, MinHeight = 230 };
+        // Text on the left, the cat and the moon in their own column on the right, so they never overlap.
+        var layers = new Grid { ClipToBounds = true, MinHeight = 250 };
         layers.ColumnDefinitions.Add(new ColumnDefinition());
-        layers.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
-        Grid.SetColumnSpan(glow, 2);
-        layers.Children.Add(glow);
-        Grid.SetColumn(cat, 1);
-        layers.Children.Add(cat);
+        layers.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
+        foreach (var back in new UIElement[] { sky, sill })
+        {
+            Grid.SetColumnSpan(back, 2);
+            layers.Children.Add(back);
+        }
+        foreach (var right in new UIElement[] { moonGlow, moon, cat })
+        {
+            Grid.SetColumn(right, 1);
+            layers.Children.Add(right);
+        }
         layers.Children.Add(text);
 
+        var night = new LinearGradientBrush(Color.FromRgb(0x08, 0x0F, 0x1C), Color.FromRgb(0x16, 0x27, 0x47), 90);
+        night.Freeze();
+        var rest = DashKit.B(P.Dark ? P.Line : Color.FromRgb(0x0B, 0x13, 0x22));
         var card = new Border
         {
-            Background = DashKit.B(P.Hero),
-            BorderBrush = DashKit.B(P.Dark ? P.Line : P.Hero),
+            Background = night,
+            BorderBrush = rest,
             BorderThickness = new Thickness(1.5),
-            CornerRadius = new CornerRadius(22),
+            CornerRadius = new CornerRadius(20),
             Child = layers,
             AllowDrop = true,
         };
         layers.Clip = null;
-        card.Loaded += (_, _) => layers.Clip = new RectangleGeometry(new Rect(0, 0, card.ActualWidth - 3, card.ActualHeight - 3), 21, 21);
-        card.SizeChanged += (_, _) => layers.Clip = new RectangleGeometry(new Rect(0, 0, Math.Max(0, card.ActualWidth - 3), Math.Max(0, card.ActualHeight - 3)), 21, 21);
+        card.Loaded += (_, _) => layers.Clip = new RectangleGeometry(new Rect(0, 0, card.ActualWidth - 3, card.ActualHeight - 3), 19, 19);
+        card.SizeChanged += (_, _) => layers.Clip = new RectangleGeometry(new Rect(0, 0, Math.Max(0, card.ActualWidth - 3), Math.Max(0, card.ActualHeight - 3)), 19, 19);
 
-        // Dropping: the edge lights up orange, and letting go opens the wheel at the mouse.
-        card.DragEnter += (_, e) => { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; card.BorderBrush = DashKit.B(P.Accent); e.Handled = true; };
+        // Dropping: the frame lights up moonlight blue, and letting go opens the wheel at the mouse.
+        card.DragEnter += (_, e) => { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; card.BorderBrush = DashKit.B(Color.FromRgb(0x5A, 0xB9, 0xFC)); e.Handled = true; };
         card.DragOver += (_, e) => { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; };
-        card.DragLeave += (_, _) => card.BorderBrush = DashKit.B(P.Dark ? P.Line : P.Hero);
+        card.DragLeave += (_, _) => card.BorderBrush = rest;
         card.Drop += (_, e) =>
         {
-            card.BorderBrush = DashKit.B(P.Dark ? P.Line : P.Hero);
+            card.BorderBrush = rest;
             if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && paths.Length > 0)
                 card.Dispatcher.BeginInvoke(() => host.Convert(FileList.Expand(paths)));
             e.Handled = true;
@@ -155,7 +214,7 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
             stack.Children.Add(k.Rule());
             stack.Children.Add(tip);
         }
-        var card = k.Card(stack, new Thickness(0), 22, P.Dark ? P.Card : Color.FromRgb(0xF5, 0xF3, 0xEF));
+        var card = k.Card(stack, new Thickness(0), 18);
         card.VerticalAlignment = VerticalAlignment.Top;
         if (host.Level == null || host.Points == null) return card;
         var column = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
@@ -189,7 +248,8 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
 
         var track = new Grid { Height = 6, Margin = new Thickness(0, 14, 0, 6) };
         track.Children.Add(new Border { Background = DashKit.B(P.Hover), CornerRadius = new CornerRadius(3) });
-        var fill = new Border { Background = DashKit.B(P.Accent), CornerRadius = new CornerRadius(3), HorizontalAlignment = HorizontalAlignment.Left };
+        // The cat's own progress: in its eye colour.
+        var fill = new Border { Background = DashKit.B(DashPalette.Eye), CornerRadius = new CornerRadius(3), HorizontalAlignment = HorizontalAlignment.Left };
         track.SizeChanged += (_, e) => fill.Width = e.NewSize.Width * Math.Clamp((points - from) / (double)Math.Max(1, to - from), 0, 1);
         track.Children.Add(fill);
         stack.Children.Add(track);
@@ -202,7 +262,7 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         wearables.AddRange(CatSprites.Accessories.Select(a => (a.Id, a.Name, (ImageSource?)CatSprites.Head(CatSprites.Dressed(CatSprites.Skin(s.Cat), a.Id)),
             CatLevel.AccessoryUnlocked(a.Id, level), CatLevel.Unlocks.First(u => u.Id == a.Id).Level)));
         stack.Children.Add(Picker("Wears", wearables, s.Accessory ?? "", id => host.SetAccessory?.Invoke(id.Length == 0 ? null : id)));
-        return k.Card(stack, new Thickness(24, 20, 24, 20), 22, P.Dark ? P.Card : Color.FromRgb(0xF5, 0xF3, 0xEF));
+        return k.Card(stack, new Thickness(24, 20, 24, 20), 18);
     }
 
     UIElement Picker(string label, List<(string Id, string Name, ImageSource? Picture, bool Open, int Level)> options, string current, Action<string> pick)
@@ -244,8 +304,8 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
     UIElement Stat(string number, string label)
     {
         var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 4) };
-        var big = k.Text(number, 34, font: DashKit.Serif);
-        var small = k.Text(label, 16, P.Text);
+        var big = k.Text(number, 34, font: DashKit.Pixel);
+        var small = k.Text(label, 15, P.Muted);
         small.Margin = new Thickness(10, 0, 0, 7);
         small.VerticalAlignment = VerticalAlignment.Bottom;
         row.Children.Add(big);
@@ -260,7 +320,7 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         (string Title, string Body, string Button, Action Do)? tip =
             !host.ExplorerMenuOn() ? ("Right-click to convert", "Add Shiki to Explorer's right-click menu.", "Add it", host.AddExplorerMenu)
             : !s.UsedConvertHotkey ? ("The fastest way in", $"Select a file in File Explorer and press {s.ConvertHotkey}.", "Got it", () => { s.UsedConvertHotkey = true; host.SaveSettings(); })
-            : host.TeachName != null && Core.Ai.ClaudeKey.Exists && !(s.WakeWord && s.WakeVariants.Count > 0)
+            : host.TeachName != null && Core.Ai.ClaudeKey.Exists && s.WakeVariants.Count == 0
                 ? ($"Just say \"Hey {host.CatName()}\"", "Teach the cat its name once (about a minute) and it wakes up when you call it, no keys needed.", "Teach it", host.TeachName)
             : host.TeachName != null && s.WakeVariants.Count > 0 && s.VoiceLock && !Core.Voice.VoicePrint.HasPrint
                 ? ($"Only your voice wakes {host.CatName()}", "Say its name again, plus one sentence, and \"Hey " + host.CatName() + "\" from a video or someone else won't wake it.", "Record my voice", host.TeachName)

@@ -39,7 +39,7 @@ public sealed class MeetingsPage(DashKit k, DashboardHost host, string? openId, 
             DockPanel.SetDock(notes, Dock.Right);
             head.Children.Add(notes);
         }
-        head.Children.Add(k.Text("Meetings", 30, weight: FontWeights.SemiBold, font: DashKit.Display));
+        head.Children.Add(k.Text("Meetings", 34, font: DashKit.Pixel));
         page.Children.Add(head);
         var sub = k.Text($"Say \"Hey {host.CatName()}, take notes\" when a call starts, or press {host.Settings.NotesHotkey}. At the end you get a summary, decisions, your tasks and a follow-up email.", 15, P.Muted, wrap: true);
         sub.Margin = new Thickness(0, 6, 0, 22);

@@ -204,7 +204,7 @@ public sealed class HistoryPage(DashKit k, DashboardHost host, string? search, A
     public UIElement Build()
     {
         var page = new StackPanel { Margin = new Thickness(52, 44, 52, 48), MaxWidth = 1000, HorizontalAlignment = HorizontalAlignment.Stretch };
-        var title = k.Text("History", 30, weight: FontWeights.SemiBold, font: DashKit.Display);
+        var title = k.Text("History", 34, font: DashKit.Pixel);
         page.Children.Add(title);
         var sub = k.Text("Everything you've converted. Removing a line here only forgets it; your files stay put.", 15, P.Muted, wrap: true);
         sub.Margin = new Thickness(0, 6, 0, 22);

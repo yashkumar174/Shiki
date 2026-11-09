@@ -30,11 +30,13 @@ public sealed class Palette
 
 public static class Theme
 {
-    public static readonly Color Brand = Color.FromRgb(0x7B, 0x6B, 0xFF);
-    public static readonly Color BrandDeep = Color.FromRgb(0x4B, 0x3F, 0xD9);
+    /// <summary>Moonlight blue: what can be pressed or is chosen.</summary>
+    public static readonly Color Brand = Color.FromRgb(0x5A, 0xB9, 0xFC);
+    public static readonly Color BrandDeep = Color.FromRgb(0x19, 0x71, 0xC2);
 
-    public static readonly FontFamily TextFont = new("Segoe UI Variable Text, Segoe UI");
-    public static readonly FontFamily DisplayFont = new("Segoe UI Variable Display, Segoe UI");
+    /// <summary>Manrope for everything read; Segoe UI for what it doesn't cover (Devanagari, symbols).</summary>
+    public static readonly FontFamily TextFont = new(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Manrope ExtraLight, Segoe UI Variable Text, Segoe UI");
+    public static readonly FontFamily DisplayFont = TextFont;
     public static readonly FontFamily IconFont = new("Segoe Fluent Icons, Segoe MDL2 Assets");
     public static readonly FontFamily PixelFont = new(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Pixelify Sans");
 
@@ -70,18 +72,18 @@ public static class Theme
     static readonly Palette DarkPalette = new()
     {
         Dark = true,
-        GlassTint = Color.FromArgb(0x5C, 0x16, 0x13, 0x24),
+        GlassTint = Color.FromArgb(0x5C, 0x0B, 0x13, 0x22),
         GlassRim = Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF),
         WedgeRest = Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF),
         WedgeEdge = Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF),
-        Label = Color.FromRgb(0xF4, 0xF3, 0xF8),
-        SubLabel = Color.FromRgb(0xB3, 0xB0, 0xC4),
+        Label = Color.FromRgb(0xE9, 0xED, 0xF3),
+        SubLabel = Color.FromRgb(0xA9, 0xB3, 0xC4),
         HubPill = Color.FromArgb(0x24, 0xFF, 0xFF, 0xFF),
-        Surface = Color.FromArgb(0xF7, 0x23, 0x21, 0x2E),
+        Surface = Color.FromArgb(0xF7, 0x14, 0x1A, 0x27),
         SurfaceBorder = Color.FromArgb(0x16, 0xFF, 0xFF, 0xFF),
         RowHover = Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF),
-        Text = Color.FromRgb(0xF4, 0xF3, 0xF8),
-        SubtleText = Color.FromRgb(0xA9, 0xA6, 0xBA),
+        Text = Color.FromRgb(0xE9, 0xED, 0xF3),
+        SubtleText = Color.FromRgb(0xA1, 0xAC, 0xBE),
         Track = Color.FromArgb(0x20, 0xFF, 0xFF, 0xFF),
     };
 
@@ -92,14 +94,14 @@ public static class Theme
         GlassRim = Color.FromArgb(0x90, 0xFF, 0xFF, 0xFF),
         WedgeRest = Color.FromArgb(0x8C, 0xFF, 0xFF, 0xFF),
         WedgeEdge = Color.FromArgb(0xB0, 0xFF, 0xFF, 0xFF),
-        Label = Color.FromRgb(0x24, 0x20, 0x33),
-        SubLabel = Color.FromRgb(0x5E, 0x59, 0x70),
+        Label = Color.FromRgb(0x0E, 0x17, 0x26),
+        SubLabel = Color.FromRgb(0x52, 0x60, 0x77),
         HubPill = Color.FromArgb(0xB8, 0xFF, 0xFF, 0xFF),
-        Surface = Color.FromArgb(0xF7, 0xFA, 0xF9, 0xFD),
+        Surface = Color.FromArgb(0xF7, 0xF8, 0xFA, 0xFD),
         SurfaceBorder = Color.FromArgb(0x1A, 0x00, 0x00, 0x00),
         RowHover = Color.FromArgb(0x0E, 0x00, 0x00, 0x00),
-        Text = Color.FromRgb(0x1D, 0x1A, 0x29),
-        SubtleText = Color.FromRgb(0x62, 0x5E, 0x72),
+        Text = Color.FromRgb(0x0E, 0x17, 0x26),
+        SubtleText = Color.FromRgb(0x52, 0x60, 0x77),
         Track = Color.FromArgb(0x18, 0x00, 0x00, 0x00),
     };
 
@@ -111,45 +113,45 @@ public static class Theme
 
     /// <summary>Light or dark for the dashboard and its editors; set from settings (or Windows).</summary>
     public static bool EditorDark { get; set; }
-    public static Palette Editor => EditorDark ? FlowNight : FlowLight;
-    /// <summary>Wispr Flow's warm orange; text on it is near-black.</summary>
-    public static readonly Color EditorAccent = Color.FromRgb(0xF6, 0xA9, 0x45);
-    public static readonly Color EditorAccentText = Color.FromRgb(0x1C, 0x1B, 0x19);
+    public static Palette Editor => EditorDark ? NightEditor : DayEditor;
+    /// <summary>What can be pressed in the dashboard's editors and settings (the dashboard's accent).</summary>
+    public static Color EditorAccent => EditorDark ? Color.FromRgb(0x5A, 0xB9, 0xFC) : Color.FromRgb(0x19, 0x71, 0xC2);
+    public static Color EditorAccentText => EditorDark ? Color.FromRgb(0x06, 0x11, 0x1F) : Colors.White;
 
-    static readonly Palette FlowLight = new()
+    static readonly Palette DayEditor = new()
     {
         Dark = false,
-        GlassTint = Color.FromRgb(0xFB, 0xFA, 0xF8),
-        GlassRim = Color.FromRgb(0xE7, 0xE3, 0xDD),
+        GlassTint = Color.FromRgb(0xF4, 0xF7, 0xFB),
+        GlassRim = Color.FromRgb(0xD8, 0xE0, 0xEB),
         WedgeRest = Color.FromRgb(0xFF, 0xFF, 0xFF),
-        WedgeEdge = Color.FromRgb(0xE7, 0xE3, 0xDD),
-        Label = Color.FromRgb(0x1C, 0x1B, 0x19),
-        SubLabel = Color.FromRgb(0x6D, 0x68, 0x62),
-        HubPill = Color.FromRgb(0xEC, 0xE9, 0xE4),
-        Surface = Color.FromRgb(0xFB, 0xFA, 0xF8),
-        SurfaceBorder = Color.FromRgb(0xE7, 0xE3, 0xDD),
-        RowHover = Color.FromRgb(0xEC, 0xE9, 0xE4),
-        Text = Color.FromRgb(0x1C, 0x1B, 0x19),
-        SubtleText = Color.FromRgb(0x6D, 0x68, 0x62),
-        Track = Color.FromRgb(0xE6, 0xE2, 0xDC),
+        WedgeEdge = Color.FromRgb(0xD8, 0xE0, 0xEB),
+        Label = Color.FromRgb(0x0E, 0x17, 0x26),
+        SubLabel = Color.FromRgb(0x52, 0x60, 0x77),
+        HubPill = Color.FromRgb(0xE6, 0xEC, 0xF4),
+        Surface = Color.FromRgb(0xF4, 0xF7, 0xFB),
+        SurfaceBorder = Color.FromRgb(0xD8, 0xE0, 0xEB),
+        RowHover = Color.FromRgb(0xE6, 0xEC, 0xF4),
+        Text = Color.FromRgb(0x0E, 0x17, 0x26),
+        SubtleText = Color.FromRgb(0x52, 0x60, 0x77),
+        Track = Color.FromRgb(0xDC, 0xE5, 0xF0),
     };
 
-    static readonly Palette FlowNight = new()
+    static readonly Palette NightEditor = new()
     {
         Dark = true,
-        GlassTint = Color.FromRgb(0x1A, 0x19, 0x18),
-        GlassRim = Color.FromRgb(0x2E, 0x2B, 0x28),
-        WedgeRest = Color.FromRgb(0x21, 0x1F, 0x1D),
-        WedgeEdge = Color.FromRgb(0x2E, 0x2B, 0x28),
-        Label = Color.FromRgb(0xF2, 0xEF, 0xEA),
-        SubLabel = Color.FromRgb(0xA6, 0xA0, 0x98),
-        HubPill = Color.FromRgb(0x25, 0x23, 0x20),
-        Surface = Color.FromRgb(0x1A, 0x19, 0x18),
-        SurfaceBorder = Color.FromRgb(0x2E, 0x2B, 0x28),
-        RowHover = Color.FromRgb(0x25, 0x23, 0x20),
-        Text = Color.FromRgb(0xF2, 0xEF, 0xEA),
-        SubtleText = Color.FromRgb(0xA6, 0xA0, 0x98),
-        Track = Color.FromRgb(0x2C, 0x2A, 0x27),
+        GlassTint = Color.FromRgb(0x0E, 0x12, 0x1B),
+        GlassRim = Color.FromRgb(0x22, 0x2B, 0x3C),
+        WedgeRest = Color.FromRgb(0x14, 0x1A, 0x27),
+        WedgeEdge = Color.FromRgb(0x22, 0x2B, 0x3C),
+        Label = Color.FromRgb(0xE9, 0xED, 0xF3),
+        SubLabel = Color.FromRgb(0x9A, 0xA5, 0xB8),
+        HubPill = Color.FromRgb(0x1A, 0x21, 0x32),
+        Surface = Color.FromRgb(0x0E, 0x12, 0x1B),
+        SurfaceBorder = Color.FromRgb(0x22, 0x2B, 0x3C),
+        RowHover = Color.FromRgb(0x1A, 0x21, 0x32),
+        Text = Color.FromRgb(0xE9, 0xED, 0xF3),
+        SubtleText = Color.FromRgb(0x9A, 0xA5, 0xB8),
+        Track = Color.FromRgb(0x1D, 0x28, 0x40),
     };
 
     static Theme()
@@ -176,10 +178,10 @@ public static class Theme
     public static Color Accent(FileKind kind) => kind switch
     {
         FileKind.Image => Color.FromRgb(0xFF, 0x8A, 0x3D), // tangerine
-        FileKind.Video => Color.FromRgb(0x6F, 0x86, 0xFF), // iris
+        FileKind.Video => Color.FromRgb(0x4C, 0x8D, 0xF6), // blue
         FileKind.Audio => Color.FromRgb(0x2F, 0xD3, 0xA0), // mint
         FileKind.Pdf => Color.FromRgb(0xFF, 0x5A, 0x6E),   // coral
-        FileKind.Document => Color.FromRgb(0xB0, 0x7C, 0xFF), // lavender
+        FileKind.Document => Color.FromRgb(0xE6, 0xB3, 0x4A), // amber
         _ => Brand,
     };
 

@@ -9,8 +9,9 @@ using Microsoft.Win32;
 namespace Shiki.UI.Dashboard;
 
 /// <summary>
-/// The dashboard's look, after Wispr Flow: a warm paper canvas (or deep charcoal), white cards,
-/// a serif for the big moments, and one warm orange accent. No blue anywhere.
+/// The dashboard's look, "night shift": Shiki is a cat that lives on your screen after dark. Ink
+/// blue-black (or a pale day sky), moonlight blue for everything you can press, and the cat's own
+/// amber eyes only on the cat's things. Pixel type for the big moments, Manrope for reading.
 /// </summary>
 public sealed record DashPalette(
     bool Dark,
@@ -21,23 +22,28 @@ public sealed record DashPalette(
     Color Accent, Color AccentEdge, Color AccentText,
     Color Danger)
 {
+    /// <summary>Day: a pale sky, white cards, deep ink, a deeper blue to press.</summary>
     public static readonly DashPalette Light = new(
         Dark: false,
-        Canvas: Rgb(0xF2F0EC), Panel: Rgb(0xFBFAF8), Card: Rgb(0xFFFFFF), Line: Rgb(0xE7E3DD),
-        Text: Rgb(0x1C1B19), Muted: Rgb(0x6D6862), Faint: Rgb(0x8C877F),
-        Hover: Rgb(0xECE9E4), Selected: Rgb(0xE6E2DC),
-        Hero: Rgb(0x0E0D0C), HeroText: Rgb(0xFFFFFF),
-        Accent: Rgb(0xF6A945), AccentEdge: Rgb(0xD98A2B), AccentText: Rgb(0x1C1B19),
-        Danger: Rgb(0xC2410C));
+        Canvas: Rgb(0xE8EDF4), Panel: Rgb(0xF4F7FB), Card: Rgb(0xFFFFFF), Line: Rgb(0xD8E0EB),
+        Text: Rgb(0x0E1726), Muted: Rgb(0x526077), Faint: Rgb(0x75829A),
+        Hover: Rgb(0xE6ECF4), Selected: Rgb(0xDCE7F5),
+        Hero: Rgb(0x0B1322), HeroText: Rgb(0xF3F6FA),
+        Accent: Rgb(0x1971C2), AccentEdge: Rgb(0x135A9C), AccentText: Rgb(0xFFFFFF),
+        Danger: Rgb(0xC8410C));
 
+    /// <summary>Night: ink blue-black, panels a step lighter, moonlight blue to press.</summary>
     public static readonly DashPalette Night = new(
         Dark: true,
-        Canvas: Rgb(0x121110), Panel: Rgb(0x1A1918), Card: Rgb(0x211F1D), Line: Rgb(0x2E2B28),
-        Text: Rgb(0xF2EFEA), Muted: Rgb(0xA6A098), Faint: Rgb(0x837E77),
-        Hover: Rgb(0x252320), Selected: Rgb(0x2C2A27),
-        Hero: Rgb(0x070707), HeroText: Rgb(0xFFFFFF),
-        Accent: Rgb(0xF6A945), AccentEdge: Rgb(0xB9741F), AccentText: Rgb(0x1C1B19),
-        Danger: Rgb(0xF08A5D));
+        Canvas: Rgb(0x0A0D14), Panel: Rgb(0x0E121B), Card: Rgb(0x141A27), Line: Rgb(0x222B3C),
+        Text: Rgb(0xE9EDF3), Muted: Rgb(0x9AA5B8), Faint: Rgb(0x6F7B90),
+        Hover: Rgb(0x1A2132), Selected: Rgb(0x1D2840),
+        Hero: Rgb(0x0B1322), HeroText: Rgb(0xF3F6FA),
+        Accent: Rgb(0x5AB9FC), AccentEdge: Rgb(0x3A9EE6), AccentText: Rgb(0x06111F),
+        Danger: Rgb(0xFF7A6B));
+
+    /// <summary>The cat's eyes: its level, its streak, the cat itself. Never a button.</summary>
+    public static readonly Color Eye = Rgb(0xF2C14E);
 
     static Color Rgb(int rgb) => Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
 
@@ -54,9 +60,11 @@ public sealed class DashKit(DashPalette p)
 {
     public DashPalette P { get; } = p;
 
-    public static readonly FontFamily Serif = new(new Uri("pack://application:,,,/"), "./Assets/Fonts/#Instrument Serif");
-    public static readonly FontFamily Sans = new("Segoe UI Variable Text, Segoe UI");
-    public static readonly FontFamily Display = new("Segoe UI Variable Display, Segoe UI");
+    /// <summary>The cat's own pixel type: titles, the greeting, big numbers.</summary>
+    public static readonly FontFamily Pixel = Theme.PixelFont;
+    /// <summary>Everything read: Manrope (Segoe UI for what it doesn't cover, such as Devanagari).</summary>
+    public static readonly FontFamily Sans = Theme.TextFont;
+    public static readonly FontFamily Display = Theme.TextFont;
     public static readonly FontFamily Icons = new("Segoe Fluent Icons, Segoe MDL2 Assets");
 
     public static SolidColorBrush B(Color c)
@@ -89,18 +97,18 @@ public sealed class DashKit(DashPalette p)
         HorizontalAlignment = HorizontalAlignment.Center,
     };
 
-    /// <summary>A small all-caps label over a section, like Flow's "TODAY".</summary>
+    /// <summary>A small label over a section ("1 November", "Cats"), in sentence case.</summary>
     public TextBlock Label(string text) => new()
     {
-        Text = text.ToUpperInvariant(),
+        Text = text,
         FontFamily = Sans,
-        FontSize = 12,
+        FontSize = 13,
         FontWeight = FontWeights.SemiBold,
-        Foreground = B(P.Faint),
+        Foreground = B(P.Muted),
         VerticalAlignment = VerticalAlignment.Center,
     };
 
-    public Border Card(UIElement child, Thickness? padding = null, double radius = 20, Color? fill = null) => new()
+    public Border Card(UIElement child, Thickness? padding = null, double radius = 18, Color? fill = null) => new()
     {
         Background = B(fill ?? P.Card),
         BorderBrush = B(P.Line),
@@ -112,13 +120,13 @@ public sealed class DashKit(DashPalette p)
 
     public enum Pill { Accent, Light, Quiet, Outline }
 
-    /// <summary>A rounded button. Accent is Flow's orange; Light sits on the black hero card.</summary>
+    /// <summary>A rounded button: Accent is moonlight blue; Light sits on the night card.</summary>
     public Border Button(string label, Action onClick, Pill kind = Pill.Quiet, string? glyph = null, double size = 14)
     {
         var (fill, hot, edge, ink) = kind switch
         {
-            Pill.Accent => (P.Accent, Theme.Lighten(P.Accent, 0.1), P.AccentEdge, P.AccentText),
-            Pill.Light => (Color.FromRgb(0xF4, 0xF0, 0xE9), Colors.White, Colors.Transparent, Color.FromRgb(0x1C, 0x1B, 0x19)),
+            Pill.Accent => (P.Accent, Theme.Lighten(P.Accent, 0.12), P.AccentEdge, P.AccentText),
+            Pill.Light => (Color.FromRgb(0xEE, 0xF3, 0xF9), Colors.White, Colors.Transparent, Color.FromRgb(0x0B, 0x13, 0x22)),
             Pill.Outline => (Colors.Transparent, A(Colors.White, 0x1A), A(Colors.White, 0x55), Colors.White),
             _ => (P.Hover, P.Selected, P.Line, P.Text),
         };
@@ -137,7 +145,7 @@ public sealed class DashKit(DashPalette p)
             Background = background,
             BorderBrush = B(edge),
             BorderThickness = new Thickness(kind == Pill.Light ? 0 : 1),
-            CornerRadius = new CornerRadius(10),
+            CornerRadius = new CornerRadius(12),
             Padding = new Thickness(18, 9, 18, 10),
             Cursor = Cursors.Hand,
             HorizontalAlignment = HorizontalAlignment.Left,
@@ -147,6 +155,7 @@ public sealed class DashKit(DashPalette p)
         var fast = TimeSpan.FromMilliseconds(110);
         button.MouseEnter += (_, _) => background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(hot, fast));
         button.MouseLeave += (_, _) => background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(fill, fast));
+        Press(button);
         button.MouseLeftButtonUp += (_, e) => { e.Handled = true; onClick(); };
         button.KeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space) { e.Handled = true; onClick(); } };
         return button;
@@ -169,8 +178,29 @@ public sealed class DashKit(DashPalette p)
         var hot = hover ?? P.Hover;
         button.MouseEnter += (_, _) => background.Color = hot;
         button.MouseLeave += (_, _) => background.Color = Colors.Transparent;
+        Press(button);
         button.MouseLeftButtonUp += (_, e) => { e.Handled = true; onClick(); };
         return button;
+    }
+
+    /// <summary>
+    /// How every button answers the pointer: it rises a pixel under the mouse and sinks a little
+    /// while pressed, so a click is felt before anything happens.
+    /// </summary>
+    public static void Press(FrameworkElement button)
+    {
+        var lift = new TranslateTransform();
+        var scale = new ScaleTransform(1, 1);
+        button.RenderTransformOrigin = new Point(0.5, 0.5);
+        button.RenderTransform = new TransformGroup { Children = { scale, lift } };
+        var quick = new Duration(TimeSpan.FromMilliseconds(120));
+        var ease = new CubicEase { EasingMode = EasingMode.EaseOut };
+        void To(DependencyProperty property, Animatable target, double value) =>
+            target.BeginAnimation(property, new DoubleAnimation(value, quick) { EasingFunction = ease });
+        button.MouseEnter += (_, _) => To(TranslateTransform.YProperty, lift, -1);
+        button.MouseLeave += (_, _) => { To(TranslateTransform.YProperty, lift, 0); To(ScaleTransform.ScaleXProperty, scale, 1); To(ScaleTransform.ScaleYProperty, scale, 1); };
+        button.PreviewMouseLeftButtonDown += (_, _) => { To(ScaleTransform.ScaleXProperty, scale, 0.97); To(ScaleTransform.ScaleYProperty, scale, 0.97); };
+        button.PreviewMouseLeftButtonUp += (_, _) => { To(ScaleTransform.ScaleXProperty, scale, 1); To(ScaleTransform.ScaleYProperty, scale, 1); };
     }
 
     /// <summary>A thin rule between rows.</summary>

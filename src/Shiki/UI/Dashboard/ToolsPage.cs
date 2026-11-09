@@ -30,7 +30,7 @@ public sealed class ToolsPage(DashKit k, DashboardHost host)
     public UIElement Build()
     {
         var page = new StackPanel { Margin = new Thickness(52, 44, 52, 48), MaxWidth = 1180, HorizontalAlignment = HorizontalAlignment.Stretch };
-        page.Children.Add(k.Text("Tools", 30, weight: FontWeights.SemiBold, font: DashKit.Display));
+        page.Children.Add(k.Text("Tools", 34, font: DashKit.Pixel));
         var sub = k.Text("Pick a tool, then the files. Or just drop files on the cat, or select them and press " + host.Settings.ConvertHotkey + ".", 15, P.Muted, wrap: true);
         sub.Margin = new Thickness(0, 6, 0, 8);
         page.Children.Add(sub);
@@ -53,7 +53,7 @@ public sealed class ToolsPage(DashKit k, DashboardHost host)
     {
         var stack = new StackPanel { Margin = new Thickness(0, 34, 0, 0) };
         var head = new StackPanel { Orientation = Orientation.Horizontal };
-        var name = k.Text(title, 26, font: DashKit.Serif);
+        var name = k.Text(title, 28, font: DashKit.Pixel);
         head.Children.Add(name);
         var note = k.Text(blurb, 14, P.Muted);
         note.Margin = new Thickness(14, 0, 0, 5);
@@ -145,7 +145,7 @@ public sealed class ToolsPage(DashKit k, DashboardHost host)
             Child = stack,
             MinHeight = 140,
         };
-        tile.MouseEnter += (_, _) => { fill.Color = P.Dark ? P.Hover : Color.FromRgb(0xFA, 0xF8, 0xF5); tile.BorderBrush = DashKit.B(DashKit.A(P.AccentEdge, 0x90)); };
+        tile.MouseEnter += (_, _) => { fill.Color = P.Hover; tile.BorderBrush = DashKit.B(DashKit.A(P.AccentEdge, 0x90)); };
         tile.MouseLeave += (_, _) => { fill.Color = P.Card; tile.BorderBrush = DashKit.B(P.Line); };
         tile.MouseLeftButtonUp += (_, e) => { e.Handled = true; onClick(); };
         return tile;

@@ -21,7 +21,7 @@ public sealed class TasksPage(DashKit k, DashboardHost host, Action rebuild)
     public UIElement Build()
     {
         var page = new StackPanel { Margin = new Thickness(52, 44, 52, 48), MaxWidth = 900, HorizontalAlignment = HorizontalAlignment.Stretch };
-        page.Children.Add(k.Text("Tasks", 30, weight: FontWeights.SemiBold, font: DashKit.Display));
+        page.Children.Add(k.Text("Tasks", 34, font: DashKit.Pixel));
         var sub = k.Text($"From your meetings, added here, or just tell {host.CatName()}: \"remind me to call the bank tomorrow at 5\". You get a reminder when one is due.", 15, P.Muted, wrap: true);
         sub.Margin = new Thickness(0, 6, 0, 22);
         page.Children.Add(sub);
