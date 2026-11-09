@@ -1,4 +1,4 @@
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 import { Sendable } from './link';
 
 /** The iPhone's photos and videos, always as the original files (HEIC stays HEIC). */
