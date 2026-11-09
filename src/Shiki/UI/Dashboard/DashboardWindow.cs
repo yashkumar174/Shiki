@@ -209,6 +209,17 @@ public sealed class DashboardWindow : Window
 
     AskView Ask() => _ask ??= new AskView(_k, _host, _host.Chat!, ThinScrollBar()) { Draft = _askDraft };
 
+    // Where the page was scrolled to, kept across one redraw (picking a cat shouldn't jump to the top).
+    ScrollViewer? _pageScroll;
+    double? _keepOffset;
+
+    /// <summary>Redraws the page (and the sidebar) where it is, after something on it changed.</summary>
+    void RebuildInPlace()
+    {
+        _keepOffset = _pageScroll?.VerticalOffset;
+        Rebuild();
+    }
+
     void Rebuild()
     {
         _root.Children.Clear();
@@ -252,7 +263,13 @@ public sealed class DashboardWindow : Window
         };
         scroll.Resources.Add(typeof(ScrollBar), ThinScrollBar());
         // Pages open at the top, even if something inside takes focus and asks to be shown.
-        scroll.Loaded += (_, _) => scroll.ScrollToTop();
+        _pageScroll = scroll;
+        scroll.Loaded += (_, _) =>
+        {
+            if (_keepOffset is { } offset) scroll.ScrollToVerticalOffset(offset);
+            else scroll.ScrollToTop();
+            _keepOffset = null;
+        };
         scroll.RequestBringIntoView += (_, e) => { if (!scroll.IsMouseOver) e.Handled = true; };
         if (_onPlayer && _player != null)
         {
@@ -515,7 +532,7 @@ public sealed class DashboardWindow : Window
         DashPage.Meetings => new MeetingsPage(_k, _host, _meetingId, id => { _meetingId = id; Rebuild(); }, Rebuild).Build(),
         DashPage.Tasks => new TasksPage(_k, _host, Rebuild).Build(),
         DashPage.Skills => new SkillsPage(_k, _host).Build(),
-        _ => new HomePage(_k, _host, () => Show(DashPage.History), () => { _historySearch = ""; Show(DashPage.History); }).Build(),
+        _ => new HomePage(_k, _host, () => Show(DashPage.History), () => { _historySearch = ""; Show(DashPage.History); }, RebuildInPlace).Build(),
     };
 
     /// <summary>The cat's head scaled up with hard pixel edges, for the window and taskbar icon.</summary>

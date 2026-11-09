@@ -14,7 +14,7 @@ namespace Shiki.UI.Dashboard;
 /// Home: a greeting, the night window (drop files on it, or pick some), the cat's numbers,
 /// one helpful tip, and what was converted lately.
 /// </summary>
-public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Action search)
+public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Action search, Action? refresh = null)
 {
     DashPalette P => k.P;
 
@@ -294,7 +294,13 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
                 ToolTip = open ? name : $"{name}: unlocks at level {needs}",
                 Child = content,
             };
-            if (open) tile.MouseLeftButtonUp += (_, e) => { e.Handled = true; pick(id); };
+            if (open) tile.MouseLeftButtonUp += (_, e) =>
+            {
+                e.Handled = true;
+                pick(id);
+                // The outline moves to the new pick, and the face, the things to wear and the sidebar show the new cat.
+                refresh?.Invoke();
+            };
             row.Children.Add(tile);
         }
         stack.Children.Add(row);
