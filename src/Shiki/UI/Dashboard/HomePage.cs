@@ -14,7 +14,8 @@ namespace Shiki.UI.Dashboard;
 /// Home: a greeting, the night window (drop files on it, or pick some), the cat's numbers,
 /// one helpful tip, and what was converted lately.
 /// </summary>
-public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Action search, Action? refresh = null)
+public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Action search, Action? refresh = null,
+    Func<UIElement?>? setup = null, Action? openCats = null)
 {
     DashPalette P => k.P;
 
@@ -100,7 +101,7 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         }
 
         // The moon, drawn on a pixel grid: a full disc with a darker one taken out of it.
-        const int cell = 5, r = 8;
+        const int cell = 4, r = 8;
         var moon = new Canvas { Width = (2 * r + 1) * cell, Height = (2 * r + 1) * cell, IsHitTestVisible = false };
         var moonInk = DashKit.B(Color.FromRgb(0xF4, 0xEB, 0xCB));
         for (int y = -r; y <= r; y++)
@@ -126,7 +127,7 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         };
         moon.HorizontalAlignment = HorizontalAlignment.Right;
         moon.VerticalAlignment = VerticalAlignment.Top;
-        moon.Margin = new Thickness(0, 26, 40, 0);
+        moon.Margin = new Thickness(0, 18, 34, 0);
 
         // The sill the cat sits on.
         var sill = new Border
@@ -201,12 +202,15 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
     UIElement Side()
     {
         var s = host.Settings;
+        var column = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
+        // "Set up Shiki", while there's still something to set up.
+        if (setup?.Invoke() is { } steps) column.Children.Add(steps);
+
         var numbers = new StackPanel();
         numbers.Children.Add(Stat(Compact(s.FilesDone), s.FilesDone == 1 ? "file converted" : "files converted"));
         numbers.Children.Add(Stat(Bytes(s.BytesSaved), "saved"));
         int streak = History.Streak();
-        numbers.Children.Add(Stat(streak.ToString(), streak == 1 ? "day streak" : "day streak"));
-
+        numbers.Children.Add(Stat(streak.ToString(), "day streak"));
         var stack = new StackPanel();
         stack.Children.Add(new Border { Padding = new Thickness(30, 26, 30, 26), Child = numbers });
         if (Tip() is { } tip)
@@ -214,25 +218,19 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
             stack.Children.Add(k.Rule());
             stack.Children.Add(tip);
         }
-        var card = k.Card(stack, new Thickness(0), 18);
-        card.VerticalAlignment = VerticalAlignment.Top;
-        if (host.Level == null || host.Points == null) return card;
-        var column = new StackPanel { VerticalAlignment = VerticalAlignment.Top };
-        column.Children.Add(card);
+        column.Children.Add(k.Card(stack, new Thickness(0), 18));
+        if (host.Level == null) return column;
         var grows = Grows();
         ((FrameworkElement)grows).Margin = new Thickness(0, 18, 0, 0);
         column.Children.Add(grows);
         return column;
     }
 
-    /// <summary>
-    /// The cat's level: points so far and to the next level, what's next, and the cats and things
-    /// to wear it has unlocked (locked ones show the level that brings them).
-    /// </summary>
+    /// <summary>The cat's level, how far through the next one's tasks, and the way to the cats.</summary>
     UIElement Grows()
     {
-        int level = host.Level!(), points = host.Points!();
-        int from = CatLevel.At(level), to = CatLevel.At(level + 1);
+        int level = host.Level!();
+        var stats = host.Stats?.Invoke();
         var s = host.Settings;
         var stack = new StackPanel();
         var head = new DockPanel();
@@ -242,7 +240,12 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         head.Children.Add(face);
         var titles = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         titles.Children.Add(k.Text($"{host.CatName()}, level {level}", 17, weight: FontWeights.SemiBold));
-        titles.Children.Add(k.Text($"{points:N0} points, {Math.Max(0, to - points):N0} to level {level + 1}", 13, P.Muted));
+        if (stats != null && level < CatLevel.Max)
+        {
+            var next = CatLevel.Goal(level + 1);
+            titles.Children.Add(k.Text($"{next.Quests.Count(q => q.Done(stats))} of {next.Quests.Count} tasks done for level {level + 1}", 13, P.Muted));
+        }
+        else titles.Children.Add(k.Text(CatLevel.Goal(level).Title, 13, P.Muted));
         head.Children.Add(titles);
         stack.Children.Add(head);
 
@@ -250,61 +253,20 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         track.Children.Add(new Border { Background = DashKit.B(P.Hover), CornerRadius = new CornerRadius(3) });
         // The cat's own progress: in its eye colour.
         var fill = new Border { Background = DashKit.B(DashPalette.Eye), CornerRadius = new CornerRadius(3), HorizontalAlignment = HorizontalAlignment.Left };
-        track.SizeChanged += (_, e) => fill.Width = e.NewSize.Width * Math.Clamp((points - from) / (double)Math.Max(1, to - from), 0, 1);
+        double toward = stats != null ? CatLevel.TowardNext(stats, level) : 0;
+        track.SizeChanged += (_, e) => fill.Width = e.NewSize.Width * Math.Clamp(toward, 0, 1);
         track.Children.Add(fill);
         stack.Children.Add(track);
-        if (CatLevel.Next(level) is { } next)
-            stack.Children.Add(k.Text($"Next: {next.Name}{(next.IsCat ? " (a new cat)" : "")} at level {next.Level}", 13, P.Faint));
-
-        stack.Children.Add(Picker("Cats", CatSprites.Skins.Select(c => (c.Id, c.Name, (ImageSource?)CatSprites.Head(c),
-            CatLevel.CatUnlocked(c.Id, level), CatLevel.Unlocks.FirstOrDefault(u => u.Id == c.Id)?.Level ?? 1)).ToList(), s.Cat, id => host.SetCat(id)));
-        var wearables = new List<(string Id, string Name, ImageSource? Picture, bool Open, int Level)> { ("", "Nothing", null, true, 1) };
-        wearables.AddRange(CatSprites.Accessories.Select(a => (a.Id, a.Name, (ImageSource?)CatSprites.Head(CatSprites.Dressed(CatSprites.Skin(s.Cat), a.Id)),
-            CatLevel.AccessoryUnlocked(a.Id, level), CatLevel.Unlocks.First(u => u.Id == a.Id).Level)));
-        stack.Children.Add(Picker("Wears", wearables, s.Accessory ?? "", id => host.SetAccessory?.Invoke(id.Length == 0 ? null : id)));
-        return k.Card(stack, new Thickness(24, 20, 24, 20), 18);
-    }
-
-    UIElement Picker(string label, List<(string Id, string Name, ImageSource? Picture, bool Open, int Level)> options, string current, Action<string> pick)
-    {
-        var stack = new StackPanel { Margin = new Thickness(0, 16, 0, 0) };
-        stack.Children.Add(k.Label(label));
-        var row = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
-        foreach (var (id, name, picture, open, needs) in options)
+        if (CatLevel.Next(level) is { } unlock)
+            stack.Children.Add(k.Text($"Next: {unlock.Name}{(unlock.IsCat ? " (a new cat)" : "")} at level {unlock.Level}", 13, P.Faint));
+        if (openCats != null)
         {
-            bool chosen = id == current;
-            var content = new Grid { Width = 36, Height = 36 };
-            if (picture != null)
-            {
-                var image = new Image { Source = picture, Width = 30, Height = 30, Opacity = open ? 1 : 0.28 };
-                RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
-                content.Children.Add(image);
-            }
-            else content.Children.Add(k.Icon("\uE711", 13, P.Faint));
-            if (!open) content.Children.Add(k.Icon("\uE72E", 12, P.Text));
-            var tile = new Border
-            {
-                Margin = new Thickness(0, 0, 6, 6),
-                Padding = new Thickness(3),
-                CornerRadius = new CornerRadius(10),
-                BorderThickness = new Thickness(1.5),
-                BorderBrush = DashKit.B(chosen ? P.AccentEdge : Colors.Transparent),
-                Background = DashKit.B(chosen ? P.Selected : P.Hover),
-                Cursor = open ? Cursors.Hand : Cursors.Arrow,
-                ToolTip = open ? name : $"{name}: unlocks at level {needs}",
-                Child = content,
-            };
-            if (open) tile.MouseLeftButtonUp += (_, e) =>
-            {
-                e.Handled = true;
-                pick(id);
-                // The outline moves to the new pick, and the face, the things to wear and the sidebar show the new cat.
-                refresh?.Invoke();
-            };
-            row.Children.Add(tile);
+            var meet = k.Button("Meet the cats", openCats, DashKit.Pill.Quiet);
+            meet.HorizontalAlignment = HorizontalAlignment.Stretch;
+            meet.Margin = new Thickness(0, 16, 0, 0);
+            stack.Children.Add(meet);
         }
-        stack.Children.Add(row);
-        return stack;
+        return k.Card(stack, new Thickness(24, 20, 24, 20), 18);
     }
 
     UIElement Stat(string number, string label)

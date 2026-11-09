@@ -262,6 +262,42 @@ public static class CatSprites
                 E: 0x2E7D5B, W: 0xBFF2D8, P: 0xE08AA0, s: 0xA3AAB7, B: 0x8C93A1),
             Markings = [(4, 8, "pppp"), (5, 9, "pp")],
         },
+        new CatSkin
+        {
+            Id = "sumi",
+            Name = "Sumi",
+            Description = "Tuxedo, white bib and socks",
+            Palette = Colors(k: 0x0B0A0E, b: 0x1F1D24, w: 0xF4F1EA, f: 0xF4F1EA, p: 0x1F1D24, e: 0xF29BB5,
+                E: 0x9BD45A, W: 0x16141A, P: 0xF29BB5, s: 0x2C2A32, B: 0xF4F1EA),
+            // A white blaze down the face, round the nose and mouth, into the bib.
+            Markings =
+            [
+                (8, 9, "BB"), (9, 7, "BB"), (9, 11, "BB"), (10, 6, "BB"), (10, 9, "BB"), (10, 12, "BB"),
+                (11, 7, "BB"), (11, 11, "BB"), (12, 6, "BBBBBBBB"), (13, 6, "BBBBBBBB"),
+            ],
+        },
+        new CatSkin
+        {
+            Id = "maple",
+            Name = "Maple",
+            Description = "Tortoiseshell, amber eyes",
+            Palette = Colors(k: 0x120C0A, b: 0x2E211C, w: 0x4A3328, f: 0xD9772E, p: 0xD9772E, e: 0xE8A0A0,
+                E: 0xE8A13A, W: 0x1A120E, P: 0xC9786E, s: 0x3A2A22, B: 0xE8B27A),
+            Markings =
+            [
+                (4, 4, "pp"), (5, 2, "ppp"), (6, 2, "pp"), (5, 14, "BBB"), (6, 15, "BB"),
+                (11, 13, "ppp"), (12, 14, "pp"), (14, 5, "pp"), (15, 13, "BB"), (16, 4, "pp"),
+            ],
+        },
+        new CatSkin
+        {
+            Id = "biscuit",
+            Name = "Biscuit",
+            Description = "Cream tabby, honey stripes",
+            Palette = Colors(k: 0x4A3418, b: 0xF2D29B, w: 0xFFF4E2, f: 0xFFF4E2, p: 0xD9A55B, e: 0xF5A9A0,
+                E: 0x4A3418, W: 0x4A3418, P: 0xE58A80, s: 0xE8C083, B: 0xD9A55B),
+            Markings = [(4, 7, "p.pp.p"), (5, 8, "p..p"), (6, 1, "p"), (9, 1, "pp"), (10, 1, "p"), (6, 18, "p"), (9, 17, "pp"), (10, 18, "p")],
+        },
     ];
 
     public static CatSkin Skin(string? id) => Skins.FirstOrDefault(s => s.Id == id) ?? Skins[0];

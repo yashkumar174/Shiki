@@ -49,6 +49,8 @@ public sealed class DashboardHost
     /// <summary>The cat's level and points (it grows with use), and what it wears.</summary>
     public Func<int>? Level { get; init; }
     public Func<int>? Points { get; init; }
+    /// <summary>What's been done with Shiki, for the level tasks on the Cats page.</summary>
+    public Func<CatStats>? Stats { get; init; }
     public Action<string?>? SetAccessory { get; init; }
     /// <summary>Talking to the cat (Claude); null hides the Ask page.</summary>
     public Core.Ai.CatChat? Chat { get; init; }
@@ -68,22 +70,21 @@ public sealed class DashboardHost
     public Action<string>? Play { get; set; }
 }
 
-public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks, Skills }
+public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks, Skills, Cats }
 
 /// <summary>
-/// The main window: a sidebar on the left, one big rounded panel on the right, and a title bar
-/// drawn into the window itself, the way Wispr Flow does it. The cat and the wheel stay the
-/// quick way in; this is where everything lives.
+/// The main window: a folder. Its tab (the cat and Shiki) sits top left and flows down into one
+/// big panel; the pages are pills beside the tab, the current one filled in. The cat and the
+/// wheel stay the quick way in; this is where everything lives.
 /// </summary>
 public sealed class DashboardWindow : Window
 {
-    const double SidebarWidth = 252, SidebarCollapsed = 72, TitleHeight = 52;
+    const double TitleHeight = 72;
 
     readonly DashboardHost _host;
     DashPalette _p = DashPalette.Light;
     DashKit _k = new(DashPalette.Light);
     DashPage _page = DashPage.Home;
-    bool _collapsed;
     readonly Grid _root = new();
     string? _historySearch;
     string? _meetingId;
@@ -143,6 +144,7 @@ public sealed class DashboardWindow : Window
             _root.Margin = WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
             if (_maxButton?.Child is TextBlock glyph) glyph.Text = WindowState == WindowState.Maximized ? "\uE923" : "\uE922";
         };
+        SizeChanged += (_, _) => FitPills();
         History.Changed += OnHistoryChanged;
         Todos.Changed += OnListsChanged;
         Core.Meetings.MeetingStore.Changed += OnListsChanged;
@@ -232,29 +234,41 @@ public sealed class DashboardWindow : Window
             _root.Children.Add(new Border { Background = DashKit.B(_p.Panel), Child = _player.Root });
             return;
         }
-        _root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(_collapsed ? SidebarCollapsed : SidebarWidth) });
-        _root.ColumnDefinitions.Add(new ColumnDefinition());
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(TitleHeight) });
         _root.RowDefinitions.Add(new RowDefinition());
 
-        _root.Children.Add(TitleLeft());
+        // The folder: one shape, a tab on the top left that flows down into the panel.
+        var tab = TabContent();
+        tab.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double tabWidth = Math.Ceiling(tab.DesiredSize.Width) + 2 * TabPadding;
+        var folder = new System.Windows.Shapes.Path { Fill = DashKit.B(_p.Panel), Stroke = DashKit.B(_p.Line), StrokeThickness = 1, IsHitTestVisible = false };
+        var frame = new Grid { Margin = new Thickness(Edge, FrameTop, Edge, Edge) };
+        frame.SizeChanged += (_, e) => folder.Data = Folder(e.NewSize.Width, e.NewSize.Height, tabWidth, TitleHeight - FrameTop);
+        frame.Children.Add(folder);
+        Grid.SetRowSpan(frame, 2);
+        _root.Children.Add(frame);
+
+        tab.Margin = new Thickness(Edge + TabPadding, FrameTop, 0, 0);
+        tab.HorizontalAlignment = HorizontalAlignment.Left;
+        tab.VerticalAlignment = VerticalAlignment.Center;
+        _root.Children.Add(tab);
+
+        // The pages, as pills beside the tab; the window's own buttons on the right.
         var right = TitleRight();
-        Grid.SetColumn(right, 1);
+        right.Margin = new Thickness(0, FrameTop, 10, 0);
         _root.Children.Add(right);
+        right.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double left = Edge + tabWidth + Shoulder + 14;
+        double room = (ActualWidth > 0 ? ActualWidth : Width) - left - right.DesiredSize.Width - 24;
+        var pills = Pills(compact: false);
+        pills.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        _navFull = pills.DesiredSize.Width;
+        _navRoom = room;
+        _navFixed = left + right.DesiredSize.Width + 24;
+        if (_navFull > room) pills = Pills(compact: true);
+        pills.Margin = new Thickness(left, FrameTop, 0, 0);
+        _root.Children.Add(pills);
 
-        var sidebar = Sidebar();
-        Grid.SetRow(sidebar, 1);
-        _root.Children.Add(sidebar);
-
-        var panel = new Border
-        {
-            Background = DashKit.B(_p.Panel),
-            BorderBrush = DashKit.B(_p.Line),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(20),
-            Margin = new Thickness(0, 0, 14, 14),
-            ClipToBounds = true,
-        };
         var scroll = new ScrollViewer
         {
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -262,7 +276,7 @@ public sealed class DashboardWindow : Window
             Content = Page(),
         };
         scroll.Resources.Add(typeof(ScrollBar), ThinScrollBar());
-        // Pages open at the top, even if something inside takes focus and asks to be shown.
+        // Pages open at the top (or where they were, after a redraw), even if something inside asks to be shown.
         _pageScroll = scroll;
         scroll.Loaded += (_, _) =>
         {
@@ -271,6 +285,7 @@ public sealed class DashboardWindow : Window
             _keepOffset = null;
         };
         scroll.RequestBringIntoView += (_, e) => { if (!scroll.IsMouseOver) e.Handled = true; };
+        var panel = new Border { Margin = new Thickness(Edge + 1, 0, Edge + 1, Edge + 1) };
         if (_onPlayer && _player != null)
         {
             if (_player.Root.Parent is Decorator old) old.Child = null;
@@ -291,15 +306,69 @@ public sealed class DashboardWindow : Window
             panel.Child = ask;
         }
         else panel.Child = scroll;
-        // Round the content's corners to match the panel (ClipToBounds alone clips square).
+        // The content's corners follow the panel's: square under the tab, round elsewhere.
         panel.SizeChanged += (_, _) =>
         {
             if (panel.Child is FrameworkElement inner)
-                inner.Clip = new RectangleGeometry(new Rect(0, 0, Math.Max(0, panel.ActualWidth - 2), Math.Max(0, panel.ActualHeight - 2)), 23, 23);
+                inner.Clip = Corners(Math.Max(0, panel.ActualWidth), Math.Max(0, panel.ActualHeight), 0, Radius - 1, Radius - 1, Radius - 1);
         };
         Grid.SetRow(panel, 1);
-        Grid.SetColumn(panel, 1);
         _root.Children.Add(panel);
+    }
+
+    // The folder's measurements: its distance from the window edge, where the tab starts, the
+    // tab's padding, the curve from the tab down to the panel, and the corners.
+    const double Edge = 14, FrameTop = 12, TabPadding = 24, Shoulder = 30, Radius = 22;
+    double _navFull, _navRoom, _navFixed;
+
+    /// <summary>The window got wider or narrower: the pills keep or drop their labels to fit.</summary>
+    void FitPills()
+    {
+        if (_navFixed == 0 || _root.RowDefinitions.Count == 0) return;
+        double room = ActualWidth - _navFixed;
+        if ((_navFull > room) != (_navFull > _navRoom)) RebuildInPlace();
+    }
+
+    /// <summary>The folder's outline: a tab top left, an S-curve down to the panel's top edge, round corners.</summary>
+    static Geometry Folder(double w, double h, double tab, double top)
+    {
+        const double r = Radius, s = Shoulder;
+        var g = new StreamGeometry();
+        using (var c = g.Open())
+        {
+            c.BeginFigure(new Point(0, r), true, true);
+            c.ArcTo(new Point(r, 0), new Size(r, r), 0, false, SweepDirection.Clockwise, true, true);
+            c.LineTo(new Point(tab - s, 0), true, true);
+            c.BezierTo(new Point(tab, 0), new Point(tab, top), new Point(tab + s, top), true, true);
+            c.LineTo(new Point(w - r, top), true, true);
+            c.ArcTo(new Point(w, top + r), new Size(r, r), 0, false, SweepDirection.Clockwise, true, true);
+            c.LineTo(new Point(w, h - r), true, true);
+            c.ArcTo(new Point(w - r, h), new Size(r, r), 0, false, SweepDirection.Clockwise, true, true);
+            c.LineTo(new Point(r, h), true, true);
+            c.ArcTo(new Point(0, h - r), new Size(r, r), 0, false, SweepDirection.Clockwise, true, true);
+        }
+        g.Freeze();
+        return g;
+    }
+
+    /// <summary>A rectangle with its own radius at each corner (top left, top right, bottom right, bottom left).</summary>
+    static Geometry Corners(double w, double h, double tl, double tr, double br, double bl)
+    {
+        var g = new StreamGeometry();
+        using (var c = g.Open())
+        {
+            c.BeginFigure(new Point(tl, 0), true, true);
+            c.LineTo(new Point(w - tr, 0), true, true);
+            if (tr > 0) c.ArcTo(new Point(w, tr), new Size(tr, tr), 0, false, SweepDirection.Clockwise, true, true);
+            c.LineTo(new Point(w, h - br), true, true);
+            if (br > 0) c.ArcTo(new Point(w - br, h), new Size(br, br), 0, false, SweepDirection.Clockwise, true, true);
+            c.LineTo(new Point(bl, h), true, true);
+            if (bl > 0) c.ArcTo(new Point(0, h - bl), new Size(bl, bl), 0, false, SweepDirection.Clockwise, true, true);
+            c.LineTo(new Point(0, tl), true, true);
+            if (tl > 0) c.ArcTo(new Point(tl, 0), new Size(tl, tl), 0, false, SweepDirection.Clockwise, true, true);
+        }
+        g.Freeze();
+        return g;
     }
 
     // ---- The media player ----
@@ -532,7 +601,9 @@ public sealed class DashboardWindow : Window
         DashPage.Meetings => new MeetingsPage(_k, _host, _meetingId, id => { _meetingId = id; Rebuild(); }, Rebuild).Build(),
         DashPage.Tasks => new TasksPage(_k, _host, Rebuild).Build(),
         DashPage.Skills => new SkillsPage(_k, _host).Build(),
-        _ => new HomePage(_k, _host, () => Show(DashPage.History), () => { _historySearch = ""; Show(DashPage.History); }, RebuildInPlace).Build(),
+        DashPage.Cats => new CatsPage(_k, _host, RebuildInPlace).Build(),
+        _ => new HomePage(_k, _host, () => Show(DashPage.History), () => { _historySearch = ""; Show(DashPage.History); }, RebuildInPlace,
+            SetupCard, () => Show(DashPage.Cats)).Build(),
     };
 
     /// <summary>The cat's head scaled up with hard pixel edges, for the window and taskbar icon.</summary>
@@ -583,22 +654,110 @@ public sealed class DashboardWindow : Window
         return (Style)System.Windows.Markup.XamlReader.Parse(xaml);
     }
 
-    // ---- Title bar ----
+    // ---- The tab and the pills ----
 
-    UIElement TitleLeft()
+    /// <summary>The tab's label: the cat's face and Shiki in pixel type. Clicking it opens the cats.</summary>
+    FrameworkElement TabContent()
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(16, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        var toggle = _k.IconButton("\uE700", () => { _collapsed = !_collapsed; Rebuild(); }, _collapsed ? "Show the sidebar" : "Hide the sidebar", 15, _p.Muted);
-        WindowChrome.SetIsHitTestVisibleInChrome(toggle, true);
-        row.Children.Add(toggle);
+        var head = new Image { Source = CatSprites.Head(CatSprites.Dressed(CatSprites.Skin(_host.Settings.Cat), _host.Settings.Accessory)), Width = 32, Height = 32 };
+        RenderOptions.SetBitmapScalingMode(head, BitmapScalingMode.NearestNeighbor);
+        var name = _k.Text("Shiki", 27, font: DashKit.Pixel);
+        name.Margin = new Thickness(11, -3, 0, 0);
+        name.VerticalAlignment = VerticalAlignment.Center;
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Background = Brushes.Transparent, Cursor = Cursors.Hand, ToolTip = "Your cats", Children = { head, name } };
+        row.MouseLeftButtonUp += (_, e) => { e.Handled = true; Show(DashPage.Cats); };
+        WindowChrome.SetIsHitTestVisibleInChrome(row, true);
         return row;
     }
 
-    UIElement TitleRight()
+    /// <summary>
+    /// Every page as a pill, the one you're on filled in. Short of room, only the current one
+    /// keeps its label (the rest show their icon, and their name on hover).
+    /// </summary>
+    StackPanel Pills(bool compact)
     {
-        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
+        if (_player is { } player)
+        {
+            var playing = System.IO.Path.GetFileNameWithoutExtension(player.Path);
+            if (playing.Length > 18) playing = playing[..17] + "\u2026";
+            row.Children.Add(Pill("\uE768", playing, _onPlayer, () => { _showing = null; Play(player.Path); }, compact, player.Path));
+        }
+        if (_editor is { } editor)
+        {
+            // The open editor, one click away after looking at another page.
+            var name = editor.Window.Title.Split(':')[0].Trim();
+            if (name.Length > 18) name = name[..17] + "\u2026";
+            row.Children.Add(Pill("\uE70F", name, _showing == editor && !_onPlayer, () => { ParkPlayer(); _showing = editor; Rebuild(); }, compact, editor.Window.Title));
+        }
+        row.Children.Add(PagePill("\uE80F", "Home", DashPage.Home, compact));
+        if (_host.Chat != null) row.Children.Add(PagePill("\uE8BD", $"Ask {_host.CatName()}", DashPage.Ask, compact));
+        row.Children.Add(PagePill("\uE90F", "Tools", DashPage.Tools, compact));
+        row.Children.Add(PagePill("\uE81C", "History", DashPage.History, compact));
+        if (_host.ToggleNotes != null) row.Children.Add(PagePill("\uE8F2", "Meetings", DashPage.Meetings, compact));
+        if (_host.Chat != null) row.Children.Add(PagePill("\uE897", $"What {_host.CatName()} can do", DashPage.Skills, compact));
+        int due = Todos.All.Count(t => !t.Done && t.Due is { } d && d.Date <= DateTime.Today);
+        row.Children.Add(PagePill("\uE762", due > 0 ? $"Tasks ({due})" : "Tasks", DashPage.Tasks, compact));
+        row.Children.Add(Pill(null, "Cats", OnPage(DashPage.Cats), () => Show(DashPage.Cats), compact, "Cats",
+            CatSprites.Head(CatSprites.Skin(_host.Settings.Cat))));
+        row.Children.Add(Pill("\uE713", "Settings", !_onPlayer && _showing != null && _showing == _settingsPage, _host.OpenSettings, compact, "Settings"));
+        return row;
+    }
+
+    bool OnPage(DashPage page) => _page == page && _showing == null && !_onPlayer;
+
+    Border PagePill(string glyph, string label, DashPage page, bool compact) => Pill(glyph, label, OnPage(page), () => Show(page), compact, label);
+
+    Border Pill(string? glyph, string label, bool selected, Action onClick, bool compact, string tooltip, ImageSource? picture = null)
+    {
+        var fill = selected ? _p.Accent : _p.Card;
+        var ink = selected ? _p.AccentText : _p.Text;
+        var background = new SolidColorBrush(fill);
+        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        if (picture != null)
+        {
+            var image = new Image { Source = picture, Width = 20, Height = 20 };
+            RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
+            row.Children.Add(image);
+        }
+        else row.Children.Add(_k.Icon(glyph!, 15, selected ? ink : _p.Muted));
+        bool labelled = !compact || selected;
+        if (labelled)
+        {
+            var text = _k.Text(label, 14, ink, selected ? FontWeights.Bold : FontWeights.Medium);
+            text.Margin = new Thickness(8, 0, 0, 1);
+            text.VerticalAlignment = VerticalAlignment.Center;
+            row.Children.Add(text);
+        }
+        var pill = new Border
+        {
+            Background = background,
+            BorderBrush = DashKit.B(selected ? _p.Accent : _p.Line),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(20),
+            Height = 40,
+            Padding = new Thickness(labelled ? 14 : 12, 0, labelled ? 17 : 12, 0),
+            Margin = new Thickness(0, 0, 7, 0),
+            Cursor = Cursors.Hand,
+            Child = row,
+            ToolTip = labelled ? null : tooltip,
+        };
+        if (!selected)
+        {
+            pill.MouseEnter += (_, _) => background.Color = _p.Hover;
+            pill.MouseLeave += (_, _) => background.Color = fill;
+        }
+        DashKit.Press(pill);
+        pill.MouseLeftButtonUp += (_, e) => { e.Handled = true; onClick(); };
+        WindowChrome.SetIsHitTestVisibleInChrome(pill, true);
+        return pill;
+    }
+
+    StackPanel TitleRight()
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center };
         var theme = _k.IconButton(_p.Dark ? "\uE706" : "\uE708", ToggleTheme, _p.Dark ? "Light mode" : "Dark mode", 15, _p.Muted);
-        theme.Margin = new Thickness(0, 0, 18, 0);
+        theme.Margin = new Thickness(0, 0, 14, 0);
         var min = _k.IconButton("\uE921", () => WindowState = WindowState.Minimized, "Minimise", 10, _p.Muted, 40);
         var max = _k.IconButton(WindowState == WindowState.Maximized ? "\uE923" : "\uE922",
             () => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized, "Maximise", 10, _p.Muted, 40);
@@ -619,117 +778,11 @@ public sealed class DashboardWindow : Window
         ApplyTheme();
     }
 
-    // ---- Sidebar ----
-
-    UIElement Sidebar()
-    {
-        var dock = new DockPanel { Margin = new Thickness(_collapsed ? 12 : 18, 6, _collapsed ? 12 : 18, 18), LastChildFill = false };
-
-        var top = new StackPanel();
-        top.Children.Add(Logo());
-        if (_player is { } player)
-        {
-            var playing = System.IO.Path.GetFileNameWithoutExtension(player.Path);
-            if (playing.Length > 22) playing = playing[..21] + "\u2026";
-            top.Children.Add(NavItem("\uE768", playing, _onPlayer, () => { _showing = null; Play(player.Path); }, null, player.Path));
-        }
-        if (_editor is { } editor)
-        {
-            // The open editor, so it's one click away after looking at another page.
-            var name = editor.Window.Title.Split(':')[0].Trim();
-            if (name.Length > 24) name = name[..23] + "\u2026";
-            top.Children.Add(NavItem("\uE70F", name, _showing == editor && !_onPlayer, () => { ParkPlayer(); _showing = editor; Rebuild(); }, null, editor.Window.Title));
-        }
-        top.Children.Add(Nav("\uE80F", "Home", DashPage.Home));
-        if (_host.Chat != null) top.Children.Add(Nav("\uE8BD", $"Ask {_host.CatName()}", DashPage.Ask));
-        top.Children.Add(Nav("\uE90F", "Tools", DashPage.Tools));
-        top.Children.Add(Nav("\uE81C", "History", DashPage.History));
-        if (_host.ToggleNotes != null) top.Children.Add(Nav("\uE8F2", "Meetings", DashPage.Meetings));
-        if (_host.Chat != null) top.Children.Add(Nav("\uE897", $"What {_host.CatName()} can do", DashPage.Skills));
-        top.Children.Add(Nav("\uE762", Todos.All.Count(t => !t.Done && t.Due is { } d && d.Date <= DateTime.Today) is > 0 and var due ? $"Tasks ({due})" : "Tasks", DashPage.Tasks));
-        top.Children.Add(NavItem("\uE713", "Settings", !_onPlayer && _showing != null && _showing == _settingsPage, _host.OpenSettings, null, "Settings"));
-        if (!_collapsed && SetupCard() is { } setup) top.Children.Add(setup);
-        DockPanel.SetDock(top, Dock.Top);
-        dock.Children.Add(top);
-
-        var bottom = new StackPanel();
-        bottom.Children.Add(new Border { Height = 1, Background = DashKit.B(_p.Line), Margin = new Thickness(4, 0, 4, 10) });
-        var skin = CatSprites.Skin(_host.Settings.Cat);
-        bottom.Children.Add(NavItem(null, skin.Name, false, () =>
-        {
-            // Click the cat to meet the next one.
-            var skins = CatSprites.Skins.Where(c => CatLevel.CatUnlocked(c.Id, _host.Level?.Invoke() ?? 1)).ToList();
-            var next = skins[(skins.ToList().FindIndex(s => s.Id == skin.Id) + 1) % skins.Count];
-            _host.SetCat(next.Id);
-            Rebuild();
-        }, CatSprites.Head(skin), "Switch cat"));
-        DockPanel.SetDock(bottom, Dock.Bottom);
-        dock.Children.Add(bottom);
-        return dock;
-    }
-
-    UIElement Logo()
-    {
-        var head = new Image { Source = CatSprites.Head(CatSprites.Skin(_host.Settings.Cat)), Width = 30, Height = 30 };
-        RenderOptions.SetBitmapScalingMode(head, BitmapScalingMode.NearestNeighbor);
-        var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(_collapsed ? 9 : 8, 10, 0, 22) };
-        row.Children.Add(head);
-        if (!_collapsed)
-        {
-            var name = _k.Text("Shiki", 26, font: DashKit.Pixel);
-            name.Margin = new Thickness(10, -3, 0, 0);
-            name.VerticalAlignment = VerticalAlignment.Center;
-            row.Children.Add(name);
-        }
-        return row;
-    }
-
-    Border Nav(string glyph, string label, DashPage page) =>
-        NavItem(glyph, label, _page == page && _showing == null && !_onPlayer, () => Show(page), null, label);
-
-    Border NavAction(string glyph, string label, Action action) => NavItem(glyph, label, false, action, null, label);
-
-    Border NavItem(string? glyph, string label, bool selected, Action onClick, ImageSource? picture, string tooltip)
-    {
-        // The page you're on: a moonlight tint, its icon in the accent.
-        var rest = selected ? DashKit.A(_p.Accent, _p.Dark ? (byte)0x1F : (byte)0x1A) : Colors.Transparent;
-        var background = new SolidColorBrush(rest);
-        var row = new StackPanel { Orientation = Orientation.Horizontal };
-        if (picture != null)
-        {
-            var image = new Image { Source = picture, Width = 20, Height = 20 };
-            RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
-            row.Children.Add(image);
-        }
-        else row.Children.Add(new Border { Width = 20, Child = _k.Icon(glyph!, 17, selected ? (_p.Dark ? _p.Accent : _p.AccentEdge) : _p.Muted) });
-        if (!_collapsed)
-        {
-            var text = _k.Text(label, 15, weight: selected ? FontWeights.Bold : FontWeights.Medium);
-            text.Margin = new Thickness(13, 0, 0, 1);
-            text.VerticalAlignment = VerticalAlignment.Center;
-            row.Children.Add(text);
-        }
-        var item = new Border
-        {
-            Background = background,
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(_collapsed ? 14 : 12, 10, 12, 10),
-            Margin = new Thickness(0, 0, 0, 3),
-            Cursor = Cursors.Hand,
-            Child = row,
-            ToolTip = _collapsed ? tooltip : null,
-        };
-        item.MouseEnter += (_, _) => { if (!selected) background.Color = _p.Hover; };
-        item.MouseLeave += (_, _) => background.Color = rest;
-        item.MouseLeftButtonUp += (_, e) => { e.Handled = true; onClick(); };
-        return item;
-    }
-
     /// <summary>
     /// "Set up Shiki": the few things that make it feel built in. Each line is checked
     /// against the real state and does the thing when clicked; the card goes away when all are done.
     /// </summary>
-    UIElement? SetupCard()
+    internal UIElement? SetupCard()
     {
         var s = _host.Settings;
         var steps = new List<(string Label, bool Done, Action Do)>
@@ -750,13 +803,14 @@ public sealed class DashboardWindow : Window
         stack.Children.Add(_k.Text("Set up Shiki", 14, weight: FontWeights.SemiBold));
         var track = new Grid { Height = 4, Margin = new Thickness(0, 12, 0, 14) };
         track.Children.Add(new Border { Background = DashKit.B(_p.Hover), CornerRadius = new CornerRadius(2) });
-        track.Children.Add(new Border
+        var bar = new Border
         {
             Background = DashKit.B(_p.Accent),
             CornerRadius = new CornerRadius(2),
             HorizontalAlignment = HorizontalAlignment.Left,
-            Width = (SidebarWidth - 36 - 34) * done / steps.Count,
-        });
+        };
+        track.SizeChanged += (_, e) => bar.Width = e.NewSize.Width * done / steps.Count;
+        track.Children.Add(bar);
         stack.Children.Add(track);
         foreach (var (label, isDone, action) in steps)
         {
@@ -772,8 +826,8 @@ public sealed class DashboardWindow : Window
             if (!isDone) row.MouseLeftButtonUp += (_, e) => { e.Handled = true; action(); };
             stack.Children.Add(row);
         }
-        var card = _k.Card(stack, new Thickness(16, 16, 16, 14), 16);
-        card.Margin = new Thickness(0, 18, 0, 0);
+        var card = _k.Card(stack, new Thickness(24, 20, 24, 18), 18);
+        card.Margin = new Thickness(0, 0, 0, 18);
         return card;
     }
 

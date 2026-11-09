@@ -1099,7 +1099,12 @@ public partial class App : Application
 
     int Points() => CatLevel.Points(_settings, MeetingStore.All().Count, Todos.All.Count(t => t.Done), History.Streak());
 
-    int Level() => CatLevel.LevelFor(Points());
+    /// <summary>What's been done with Shiki, for the level tasks.</summary>
+    CatStats Stats() => new(_settings.FilesDone, _settings.AiRequests, MeetingStore.All().Count, Todos.All.Count(t => t.Done), History.Streak(),
+        Routines.All.Count, Preferences.All.Count, (Core.Phone.PhoneLink.Current?.Phones.Count ?? 0) > 0, _settings.WakeVariants.Count > 0);
+
+    /// <summary>The level reached (kept), plus any next levels whose tasks are now all done.</summary>
+    int Level() => CatLevel.LevelNow(Stats(), _settings.CatLevel > 0 ? _settings.CatLevel : CatLevel.LevelFor(Points()));
 
     /// <summary>A new level: a party, and a card saying what it unlocked. The first check only remembers where it is.</summary>
     void CheckLevel()
@@ -1117,7 +1122,7 @@ public partial class App : Application
         _settings.Save();
         _buddy?.Party();
         var what = unlocked.Count == 0 ? "Keep going: there's more to unlock."
-            : "Unlocked: " + string.Join(", ", unlocked.Select(u => u.IsCat ? $"{u.Name} (a new cat)" : u.Name)) + ". Pick it on the Home page.";
+            : "Unlocked: " + string.Join(", ", unlocked.Select(u => u.IsCat ? $"{u.Name} (a new cat)" : u.Name)) + ". Pick it on the Cats page.";
         ToastHost.Show(ToastWindow.Message($"{CatName} reached level {level}!", what));
     }
 
@@ -1460,6 +1465,7 @@ public partial class App : Application
                 SetCat = SetCat,
                 Level = Level,
                 Points = Points,
+                Stats = Stats,
                 SetAccessory = SetAccessory,
                 Chat = Chat,
                 Voice = Voice,
