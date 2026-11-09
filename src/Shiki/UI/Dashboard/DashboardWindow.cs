@@ -52,6 +52,8 @@ public sealed class DashboardHost
     public Func<int>? Points { get; init; }
     /// <summary>What's been done with Shiki, for the level tasks on the Cats page.</summary>
     public Func<CatStats>? Stats { get; init; }
+    /// <summary>Gives a cat its own name (an empty name gives it back its own).</summary>
+    public Action<string, string>? RenameCat { get; init; }
     /// <summary>Opens "Connect your phone".</summary>
     public Action? ConnectPhone { get; init; }
     public Action<string?>? SetAccessory { get; init; }

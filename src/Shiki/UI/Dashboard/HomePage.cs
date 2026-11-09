@@ -192,7 +192,7 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
         stack.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         var top = new StackPanel { Margin = new Thickness(0, 0, 40, 0) };
         top.Children.Add(k.Text("Your cat", 13, DashKit.A(ink, 0xB0), FontWeights.Bold));
-        top.Children.Add(k.Text(skin.Name, 36, ink, font: DashKit.Pixel));
+        top.Children.Add(k.Text(CatsPage.NameOf(skin, s), 36, ink, font: DashKit.Pixel));
         stack.Children.Add(top);
         var cat = new Image
         {
@@ -246,7 +246,8 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
                 row.Children.Add(image);
             }
             var words = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-            words.Children.Add(k.Text(reward != null ? $"Next: {reward.Name}" : $"Next: level {level + 1}", 15, ink, FontWeights.Bold));
+            var brings = reward is { IsCat: true } ? CatsPage.NameOf(CatSprites.Skin(reward.Id), host.Settings) : reward?.Name;
+            words.Children.Add(k.Text(brings != null ? $"Next: {brings}" : $"Next: level {level + 1}", 15, ink, FontWeights.Bold));
             words.Children.Add(k.Text($"{next.Quests.Count(q => q.Done(stats))} of {next.Quests.Count} tasks done", 13.5, DashKit.A(ink, 0xC0)));
             row.Children.Add(words);
             stack.Children.Add(row);

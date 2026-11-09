@@ -329,9 +329,9 @@ public sealed class LevelsPage(DashKit k, DashboardHost host)
     string Reward(int level)
     {
         var unlock = CatLevel.NewAt(level).FirstOrDefault();
-        var what = unlock is { IsCat: true } ? $"Brings {unlock.Name}, a new cat"
+        var what = unlock is { IsCat: true } ? $"Brings {CatsPage.NameOf(CatSprites.Skin(unlock.Id), host.Settings)}, a new cat"
             : unlock != null ? $"Brings the {unlock.Name.ToLowerInvariant()}"
-            : level == 1 ? "Mochi, Latte and Sky"
+            : level == 1 ? string.Join(", ", CatLevel.Starters.Select(id => CatsPage.NameOf(CatSprites.Skin(id), host.Settings)))
             : level == CatLevel.Max ? "The legend title"
             : "";
         var state = level <= Level ? "Reached" : level == Level + 1 ? "Up next" : "";

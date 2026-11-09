@@ -33,6 +33,12 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh, Acti
         ["biscuit"] = (Rgb(0xF2C14E), Rgb(0x2B1D08), "Soft, sunny and always a little hungry. Turns any bad day into a good nap."),
     };
 
+    /// <summary>The name a cat goes by: the one given to it, or its own.</summary>
+    public static string NameOf(CatSkin skin, Settings settings) =>
+        settings.CatNames.TryGetValue(skin.Id, out var name) && !string.IsNullOrWhiteSpace(name) ? name.Trim() : skin.Name;
+
+    string Called(CatSkin skin) => NameOf(skin, host.Settings);
+
     /// <summary>A cat's card colour, the ink on it and its nature (Home shows them too).</summary>
     public static (Color Fill, Color Ink, string Nature) Look(CatSkin skin) =>
         Looks.TryGetValue(skin.Id, out var look) ? look : (Color.FromRgb(0x14, 0x1A, 0x27), Color.FromRgb(0xE9, 0xED, 0xF3), skin.Description);
@@ -97,7 +103,8 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh, Acti
             var next = CatLevel.Goal(level + 1);
             int done = next.Quests.Count(q => q.Done(stats));
             var reward = CatLevel.NewAt(level + 1).FirstOrDefault();
-            text.Children.Add(k.Text($"{done} of {next.Quests.Count} tasks done for level {level + 1}" + (reward != null ? $", which brings {reward.Name}." : "."), 14, P.Muted));
+            var brings = reward is { IsCat: true } ? Called(CatSprites.Skin(reward.Id)) : reward?.Name;
+            text.Children.Add(k.Text($"{done} of {next.Quests.Count} tasks done for level {level + 1}" + (brings != null ? $", which brings {brings}." : "."), 14, P.Muted));
             var track = Bar(CatLevel.TowardNext(stats, level), DashPalette.Eye, 8);
             track.Margin = new Thickness(0, 12, 0, 0);
             text.Children.Add(track);
@@ -131,13 +138,67 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh, Acti
         stack.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         stack.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        // Top: the name, and what it is (or how to get it).
+        // Top: the name (with a pencil to change it), and what it is (or how to get it).
+        var called = Called(skin);
+        bool editing = false;
         var top = new DockPanel();
         var badge = Badge(chosen ? "With you" : open ? "" : $"Level {needs}", ink, fill, chosen, !open);
         if (badge != null) { DockPanel.SetDock(badge, Dock.Right); top.Children.Add(badge); }
         var names = new StackPanel();
-        names.Children.Add(k.Text(skin.Name, 30, ink, font: DashKit.Pixel));
-        names.Children.Add(k.Text(skin.Description, 13, DashKit.A(ink, 0xB0), wrap: true));
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+        var title = k.Text(called, 30, ink, font: DashKit.Pixel);
+        nameRow.Children.Add(title);
+        var pencil = new Border
+        {
+            Width = 30, Height = 30, CornerRadius = new CornerRadius(15),
+            Background = DashKit.B(DashKit.A(ink, 0x1C)),
+            Margin = new Thickness(10, 2, 0, 0), VerticalAlignment = VerticalAlignment.Center,
+            Cursor = Cursors.Hand, ToolTip = $"Rename {called}",
+            Child = k.Icon("\uE70F", 12, ink),
+        };
+        nameRow.Children.Add(pencil);
+        var box = new TextBox
+        {
+            Text = called, MaxLength = 24, MinWidth = 170,
+            FontFamily = DashKit.Pixel, FontSize = 26,
+            Foreground = DashKit.B(ink), CaretBrush = DashKit.B(ink), SelectionBrush = DashKit.B(DashKit.A(ink, 0x60)),
+            Background = DashKit.B(DashKit.A(ink, 0x14)), BorderBrush = DashKit.B(DashKit.A(ink, 0x66)), BorderThickness = new Thickness(0, 0, 0, 2),
+            Padding = new Thickness(4, 0, 4, 2), HorizontalAlignment = HorizontalAlignment.Left,
+            Visibility = Visibility.Collapsed, ToolTip = "Enter to keep it, Esc to leave it as it was. Empty gives back its own name.",
+        };
+        void Begin()
+        {
+            editing = true;
+            nameRow.Visibility = Visibility.Collapsed;
+            box.Visibility = Visibility.Visible;
+            box.Focus();
+            box.SelectAll();
+        }
+        void End(bool keep)
+        {
+            if (!editing) return;
+            editing = false;
+            if (keep && box.Text.Trim() != called && host.RenameCat != null)
+            {
+                host.RenameCat(skin.Id, box.Text);
+                refresh();
+                return;
+            }
+            box.Visibility = Visibility.Collapsed;
+            nameRow.Visibility = Visibility.Visible;
+        }
+        pencil.MouseLeftButtonUp += (_, e) => { e.Handled = true; Begin(); };
+        box.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter) { e.Handled = true; End(true); }
+            else if (e.Key == Key.Escape) { e.Handled = true; End(false); }
+        };
+        box.LostKeyboardFocus += (_, _) => End(true);
+        box.MouseLeftButtonUp += (_, e) => e.Handled = true;
+        names.Children.Add(nameRow);
+        names.Children.Add(box);
+        // A cat given a name keeps showing what it is underneath.
+        names.Children.Add(k.Text(called == skin.Name ? skin.Description : $"{skin.Name}: {skin.Description.ToLowerInvariant()}", 13, DashKit.A(ink, 0xB0), wrap: true));
         top.Children.Add(names);
         stack.Children.Add(top);
 
@@ -165,7 +226,7 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh, Acti
         // Bottom: its nature, and the way to pick it.
         var bottom = new StackPanel();
         bottom.Children.Add(k.Text(nature, 14, DashKit.A(ink, 0xE6), wrap: true));
-        string action = chosen ? $"{skin.Name} is on your desktop" : open ? $"Choose {skin.Name}" : $"Reach level {needs} to meet {skin.Name}";
+        string action = chosen ? $"{called} is on your desktop" : open ? $"Choose {called}" : $"Reach level {needs} to meet {called}";
         var foot = k.Text(action, 13.5, ink, chosen || open ? FontWeights.Bold : FontWeights.SemiBold, wrap: true);
         foot.Margin = new Thickness(0, 14, 0, 0);
         bottom.Children.Add(foot);
@@ -189,6 +250,8 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh, Acti
             DashKit.Press(card);
             card.MouseLeftButtonUp += (_, e) =>
             {
+                // Typing a name isn't choosing the cat.
+                if (editing || e.Handled) return;
                 e.Handled = true;
                 host.SetCat(skin.Id);
                 refresh();

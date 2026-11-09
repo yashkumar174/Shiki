@@ -231,6 +231,12 @@ public partial class App : Application
         _instance.MessageReceived += a => Dispatcher.BeginInvoke(() => Handle(a));
         _instance.StartServer();
         _settings = Settings.Load();
+        // There used to be one name for every cat; now each has its own, and the old one goes to the cat on the desktop.
+        if (_settings.CatNames.Count == 0 && !string.IsNullOrWhiteSpace(_settings.CatName))
+        {
+            _settings.CatNames[_settings.Cat] = _settings.CatName.Trim();
+            _settings.Save();
+        }
         Theme.EditorDark = _settings.DashboardDark ?? DashPalette.WindowsIsDark();
         SmoothScroll.Install();
         OutputPaths.Folder = _settings.OutputFolder;
@@ -1074,6 +1080,9 @@ public partial class App : Application
     {
         if (!CatLevel.CatUnlocked(id, Level())) return;
         _settings.Cat = id;
+        // The new cat brings its own name, and that's the one used everywhere now.
+        _settings.CatName = CatName;
+        RefreshKeyTerms();
         _settings.Save();
         DressCat();
         _tray?.SetCat(Skin);
@@ -1288,7 +1297,7 @@ public partial class App : Application
                 () => Core.Mail.Gmail.HasCalendar,
                 () => Core.Mail.Gmail.HasContacts),
             new CatSetting(
-                () => CatSprites.Skins.Where(c => CatLevel.CatUnlocked(c.Id, Level())).Select(c => (c.Id, c.Name, (ImageSource)CatSprites.Head(c))).ToList(),
+                () => CatSprites.Skins.Where(c => CatLevel.CatUnlocked(c.Id, Level())).Select(c => (c.Id, CatsPage.NameOf(c, _settings), (ImageSource)CatSprites.Head(c))).ToList(),
                 () => _settings.Cat, SetCat,
                 () => _settings.Style, SetStyle,
                 () => _settings.CatLife, life => { _settings.CatLife = life; _settings.Save(); _buddy?.SetLife(life); }),
@@ -1467,6 +1476,7 @@ public partial class App : Application
                 Points = Points,
                 Stats = Stats,
                 ConnectPhone = () => ShowPhoneConnect(),
+                RenameCat = RenameCat,
                 SetAccessory = SetAccessory,
                 Chat = Chat,
                 Voice = Voice,
@@ -1623,6 +1633,7 @@ public partial class App : Application
         _teach = new WakeSetupWindow(CatName, _settings.WakeVariants, _settings.WakeWord, (name, learned, listen) =>
         {
             _settings.CatName = name;
+            _settings.CatNames[_settings.Cat] = name.Trim();
             _settings.WakeVariants = learned;
             _settings.WakeWord = listen;
             _settings.Save();
@@ -1646,7 +1657,31 @@ public partial class App : Application
         if (_bubble != null && !Chat.Busy) _ = Voice.Listen();
     }
 
-    string CatName => string.IsNullOrWhiteSpace(_settings.CatName) ? Skin.Name : _settings.CatName.Trim();
+    /// <summary>The name of the cat on the desktop: used everywhere (Ask, the voice, the pages).</summary>
+    string CatName => CatsPage.NameOf(Skin, _settings);
+
+    /// <summary>
+    /// A cat gets a name of its own (empty, or its own name: back to that). If it's the cat on the
+    /// desktop, the new name is used everywhere at once.
+    /// </summary>
+    void RenameCat(string id, string name)
+    {
+        name = string.Join(" ", name.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        if (name.Length > 24) name = name[..24];
+        var skin = CatSprites.Skin(id);
+        bool onDesktop = id == _settings.Cat;
+        var before = CatName;
+        if (name.Length == 0 || name == skin.Name) _settings.CatNames.Remove(id);
+        else _settings.CatNames[id] = name;
+        if (onDesktop) _settings.CatName = CatName;
+        _settings.Save();
+        AiLog.Write("named", $"{skin.Name} is now called {CatsPage.NameOf(skin, _settings)}");
+        if (!onDesktop || before == CatName) return;
+        RefreshKeyTerms();
+        // "Hey <old name>" was what it learned: offer to teach the new one.
+        if (_settings.WakeWord && _settings.WakeVariants.Count > 0)
+            ToastHost.Show(ToastWindow.Message($"Now called {CatName}", $"Teach it \"Hey {CatName}\" so it wakes to its new name.", null, ("Teach it", TeachName)));
+    }
 
     CatChat Chat => _chat ??= new CatChat(new CatHands
     {

@@ -44,8 +44,10 @@ public sealed class Settings
     public bool AiEnabled { get; set; } = true;
     /// <summary>Global shortcut that opens the ask bubble by the cat.</summary>
     public string AskHotkey { get; set; } = "Ctrl+Alt+A";
-    /// <summary>What the person calls their cat; null uses the skin's own name.</summary>
+    /// <summary>The name of the cat on the desktop (kept in step with CatNames); null uses the skin's own name.</summary>
     public string? CatName { get; set; }
+    /// <summary>The name each cat goes by, by its skin id ("mochi" → "bro"); a cat not here keeps its own name.</summary>
+    public System.Collections.Generic.Dictionary<string, string> CatNames { get; set; } = [];
     /// <summary>What asking the cat has cost so far, in US dollars, and how many requests that was.</summary>
     public double AiSpentUsd { get; set; }
     public int AiRequests { get; set; }
