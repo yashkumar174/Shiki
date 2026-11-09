@@ -1650,6 +1650,31 @@ public sealed class CatChat(CatHands hands)
                 if (playing.StartsWith("Playing") && Str(input, "asked_for") is { Length: > 0 } asked) Spotify.Remember(asked, uri, label);
                 return playing;
             }
+            case "phone_get":
+            {
+                if (Core.Phone.PhoneLink.Current is not { } link) return "The phone link isn't running.";
+                int count = input.TryGetProperty("count", out var n) && n.ValueKind == JsonValueKind.Number ? n.GetInt32() : 1;
+                var kind = Str(input, "kind") ?? "photo";
+                bool today = input.TryGetProperty("today", out var t) && t.ValueKind == JsonValueKind.True;
+                var (got, saved) = await link.GetRecent(count, kind, today);
+                if (saved.Count > 0)
+                    _items.Add(new PlanItem(saved.Count == 1 ? $"Got {Path.GetFileName(saved[0])} from your phone" : $"Got {saved.Count} files from your phone", [])
+                    {
+                        State = PlanState.Done,
+                        Outcome = $"Full quality, in {Path.GetDirectoryName(saved[0])}",
+                        Outputs = saved,
+                    });
+                else _items.Add(new CatDid("\uE8EA", got.Length > 90 ? got[..90] + "…" : got));
+                return got + (saved.Count > 0 ? " Full paths: " + string.Join(" | ", saved) : "");
+            }
+            case "phone_send":
+            {
+                if (Core.Phone.PhoneLink.Current is not { } link) return "The phone link isn't running.";
+                var paths = Strings(input, "files").ToList();
+                var sent = await link.SendToPhone(paths);
+                _items.Add(new CatDid("\uE8EA", sent.Length > 90 ? sent[..90] + "…" : sent));
+                return sent;
+            }
             case "learn_correction":
             {
                 var heard = (Str(input, "heard") ?? "").Trim();

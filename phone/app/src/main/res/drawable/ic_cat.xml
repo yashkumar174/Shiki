@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A pixel cat's head (the icon's middle 66 of 108 units is what launchers show). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- ears -->
+    <path android:fillColor="#FF2B2B2B" android:pathData="M34,34h8v6h6v6h-14z" />
+    <path android:fillColor="#FF2B2B2B" android:pathData="M74,34h-8v6h-6v6h14z" />
+    <!-- head -->
+    <path android:fillColor="#FF2B2B2B" android:pathData="M30,44h48v28h-6v6h-36v-6h-6z" />
+    <!-- eyes -->
+    <path android:fillColor="#FFF2C14E" android:pathData="M40,54h8v8h-8z" />
+    <path android:fillColor="#FFF2C14E" android:pathData="M60,54h8v8h-8z" />
+    <path android:fillColor="#FF2B2B2B" android:pathData="M43,56h3v5h-3z" />
+    <path android:fillColor="#FF2B2B2B" android:pathData="M63,56h3v5h-3z" />
+    <!-- nose -->
+    <path android:fillColor="#FFE58A9A" android:pathData="M51,64h6v4h-6z" />
+</vector>

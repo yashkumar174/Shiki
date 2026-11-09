@@ -115,6 +115,8 @@ public sealed class Settings
     public string TalkBack { get; set; } = "spoken";
     /// <summary>The cat's voice: "dg:aura-2-…" (Deepgram) or "win:&lt;id&gt;" (Windows); empty picks one.</summary>
     public string TalkVoice { get; set; } = "";
+    /// <summary>Where photos and videos from the phone go; null is Pictures\From phone.</summary>
+    public string? PhoneFolder { get; set; }
     /// <summary>Characters read aloud by Deepgram so far.</summary>
     public long DeepgramSpokenChars { get; set; }
 

@@ -1285,7 +1285,14 @@ public partial class App : Application
                 () => _settings.Cat, SetCat,
                 () => _settings.Style, SetStyle,
                 () => _settings.CatLife, life => { _settings.CatLife = life; _settings.Save(); _buddy?.SetLife(life); }),
-            new IndexSetting(() => _settings.SearchInsideFiles, ToggleIndex, IndexStatus, () => { if (_settings.SearchInsideFiles) { _index ??= new ContentIndex(); _index.Rebuild(); } }));
+            new IndexSetting(() => _settings.SearchInsideFiles, ToggleIndex, IndexStatus, () => { if (_settings.SearchInsideFiles) { _index ??= new ContentIndex(); _index.Rebuild(); } }),
+            _phone == null ? null : new PhoneSetting(
+                () => _phone.Phones.Select(p => (p.Id, p.Name, _phone.IsConnected(p) ? "Connected now"
+                    : p.LastSeen is { } seen ? $"Last seen {seen:d MMM, HH:mm}" : "Not seen yet")).ToList(),
+                () => ShowPhoneConnect(),
+                id => _phone.Remove(id),
+                () => _phone.PhotoFolder,
+                () => OpenFolder(_phone.PhotoFolder)));
 
     /// <summary>Tries a new shortcut from the settings window; puts the old one back if it's taken.</summary>
     bool ChangeHotkey(string text, Func<string> get, Action<string> set)
@@ -1351,6 +1358,7 @@ public partial class App : Application
         BindHotkeys(quiet: false);
         ApplyWake();
         StartReminders();
+        StartPhoneLink();
         WatchPc();
         _calls = new CallWatcher();
         _calls.Started += OfferNotes;
@@ -3662,6 +3670,7 @@ public partial class App : Application
             case "pick_colour": StartColourPicker(); return true;
             case "paw_to_ask": Dispatcher.BeginInvoke(() => StartPaw(listen: _voice?.FollowingUp == true || _voice?.Active == true)); return true;
             case "make_qr": ShowQr(text ?? ""); return true;
+            case "connect_phone": Dispatcher.BeginInvoke(() => ShowPhoneConnect()); return true;
             case "paste_clipboard": PasteToCat(); return true;
             case "open_history": ShowDashboard(DashPage.History); return true;
             case "open_settings": ShowSettings(); return true;
@@ -3754,6 +3763,62 @@ public partial class App : Application
     // ---- QR codes ----
 
     QrWindow? _qr;
+
+    // ---- The phone (Shiki for Android, over the Wi-Fi) ----
+
+    Core.Phone.PhoneLink? _phone;
+    PhoneLinkWindow? _phoneWindow;
+
+    void StartPhoneLink()
+    {
+        try
+        {
+            _phone = Core.Phone.PhoneLink.Start(_settings);
+            _phone.PairRequested += request => Dispatcher.BeginInvoke(() => ShowPhoneConnect(request));
+            _phone.JobFinished += job => Dispatcher.BeginInvoke(() => PhoneFilesArrived(job));
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Phone link didn't start", ex);
+        }
+    }
+
+    /// <summary>The connect window (a phone asking to pair opens it, with the code to check).</summary>
+    void ShowPhoneConnect(Core.Phone.PairRequest? request = null)
+    {
+        if (_phone == null) return;
+        _menu?.CloseAnimated();
+        if (_phoneWindow == null)
+        {
+            _phoneWindow = new PhoneLinkWindow(_phone);
+            _phoneWindow.Closed += (_, _) => _phoneWindow = null;
+            InDashboard(_phoneWindow);
+        }
+        else _phoneWindow.Activate();
+        if (request != null) _phoneWindow.ShowRequest(request);
+    }
+
+    /// <summary>Files came from the phone by themselves (shared, or new photos): say so, with a way to see them.</summary>
+    void PhoneFilesArrived(Core.Phone.PhoneJob job)
+    {
+        if (job.Quiet || job.Saved.Count == 0 && job.Failed == 0) return;
+        var phone = _phone?.Phones.FirstOrDefault(p => p.Id == job.Phone)?.Name ?? "your phone";
+        int photos = job.Saved.Count(f => Path.GetExtension(f).ToLowerInvariant() is ".jpg" or ".jpeg" or ".png" or ".heic" or ".heif" or ".webp" or ".dng" or ".gif");
+        int videos = job.Saved.Count(f => Path.GetExtension(f).ToLowerInvariant() is ".mp4" or ".mov" or ".3gp" or ".mkv" or ".webm" or ".m4v");
+        int others = job.Saved.Count - photos - videos;
+        var parts = new List<string>();
+        if (photos > 0) parts.Add(photos == 1 ? "1 photo" : $"{photos} photos");
+        if (videos > 0) parts.Add(videos == 1 ? "1 video" : $"{videos} videos");
+        if (others > 0) parts.Add(others == 1 ? "1 file" : $"{others} files");
+        var what = parts.Count == 0 ? "Nothing" : string.Join(" and ", parts);
+        var line = job.Saved.Count > 0 ? $"Full quality, each checked. {Path.GetFileName(job.Saved[^1])}" : "";
+        if (job.Failed > 0) line += (line.Length > 0 ? " " : "") + $"{job.Failed} didn't come through.";
+        AiLog.Write("phone", $"{what} from {phone}");
+        var folder = job.Saved.Count > 0 ? Path.GetDirectoryName(job.Saved[^1]) : null;
+        ToastHost.Show(ToastWindow.Message($"{what} from {phone}", line, null,
+            ("Open folder", () => { if (folder != null) OpenFolder(folder); }),
+            ("Show", () => { if (job.Saved.Count > 0) Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{job.Saved[^1]}\"") { UseShellExecute = true })?.Dispose(); })));
+    }
 
     void ShowQr(string text)
     {

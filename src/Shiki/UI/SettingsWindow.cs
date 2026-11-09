@@ -46,6 +46,10 @@ public sealed record GmailSetting(Func<string?> Account, Func<bool> HasClient, A
     Func<System.Threading.Tasks.Task<string>> Connect, Func<System.Threading.Tasks.Task> Disconnect, Action<string> OpenLink,
     Func<bool> HasCalendar, Func<bool> HasContacts);
 
+/// <summary>Phones connected to Shiki: each one (and whether it's there now), connecting one, removing one, where files go.</summary>
+public sealed record PhoneSetting(Func<IReadOnlyList<(string Id, string Name, string Status)>> Phones, Action Connect, Action<string> Remove,
+    Func<string> Folder, Action OpenFolder);
+
 /// <summary>
 /// Settings, in tabs: General, Voice, AI and accounts, Meetings, Automation, Shortcuts. The tab
 /// last open is the one that opens next time.
@@ -67,7 +71,7 @@ public sealed class SettingsWindow : Window
     readonly TextBlock _folderPath = new() { TextTrimming = TextTrimming.CharacterEllipsis };
     string _lastFolder;
 
-    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null, RoutineSetting? routines = null, GmailSetting? gmail = null, CatSetting? cat = null, IndexSetting? index = null)
+    public SettingsWindow(OutputSetting output, IReadOnlyList<ShortcutSetting> shortcuts, IReadOnlyList<SettingSwitch> switches, AiSetting? ai = null, RoutineSetting? routines = null, GmailSetting? gmail = null, CatSetting? cat = null, IndexSetting? index = null, PhoneSetting? phone = null)
     {
         _output = output;
         _lastFolder = output.GetFolder() ?? Core.OutputPaths.DefaultFolder;
@@ -171,6 +175,9 @@ public sealed class SettingsWindow : Window
             foreach (var setting in On("automation")) automation.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
         }
         if (routines != null) AddRoutines(automation, routines);
+
+        // ---- Phone ----
+        if (phone != null) AddPhone(Tab("phone", "Phone"), phone);
 
         // ---- Shortcuts ----
         var keys = Tab("shortcuts", "Shortcuts");
@@ -775,6 +782,42 @@ public sealed class SettingsWindow : Window
         ((TextBlock)chip.Child).Text = "Press keys…";
         UiKit.Select(chip, true);
         _error.Visibility = Visibility.Collapsed;
+    }
+
+    void AddPhone(StackPanel stack, PhoneSetting phone)
+    {
+        stack.Children.Add(UiKit.Heading("Your phone"));
+        stack.Children.Add(UiKit.Body("Photos, videos and files from your Android phone, at full quality, over your Wi-Fi: share them to Shiki on the phone, or ask the cat (\"get my last 5 photos from my phone\"). New photos come over by themselves."));
+        var list = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
+        stack.Children.Add(list);
+        void Show()
+        {
+            list.Children.Clear();
+            var phones = phone.Phones();
+            if (phones.Count == 0) list.Children.Add(UiKit.Body("No phone connected yet.", 12.5));
+            foreach (var (id, name, status) in phones)
+            {
+                var remove = UiKit.Button("Remove", () =>
+                {
+                    if (MessageBox.Show(this, $"Remove {name}? It won't be able to send to this PC until you connect it again.", "Remove phone",
+                        MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+                    phone.Remove(id);
+                    Show();
+                });
+                list.Children.Add(Line(name, status, remove));
+            }
+        }
+        Show();
+        var connect = UiKit.Button("Connect a phone", () => { phone.Connect(); }, primary: true);
+        var refresh = UiKit.Button("Refresh", Show);
+        var buttons = UiKit.Row(connect, refresh);
+        buttons.Margin = new Thickness(0, 10, 0, 0);
+        stack.Children.Add(buttons);
+        stack.Children.Add(UiKit.Heading("Where they go"));
+        stack.Children.Add(UiKit.Body($"Photos and videos: {phone.Folder()}. Other files: Downloads\\From phone.", 12.5));
+        var open = UiKit.Button("Open the folder", phone.OpenFolder);
+        open.Margin = new Thickness(0, 8, 0, 0);
+        stack.Children.Add(open);
     }
 
     void OnKey(object sender, KeyEventArgs e)

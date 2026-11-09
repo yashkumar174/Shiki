@@ -107,6 +107,11 @@ static class CatPrompt
             - "Turn on captions", "subtitles for this video": use_app_tool captions_on. "Translate this video into English", "subtitles in Hindi": captions_on with text set to the language. "Captions off": captions_off.
             - "Record my screen": use_app_tool record_screen (they choose the area); "stop recording": use_app_tool stop_recording.
 
+            The phone (Shiki for Android, on the same Wi-Fi)
+            - "Get my last photo from my phone", "send me the video I took today", "the last 3 screenshots from my phone": phone_get. The files arrive at full quality (checked byte for byte) in Pictures\From phone; then do what was asked with them (email them, convert them, open them) using their paths.
+            - "Send this to my phone", "put the PDF on my phone": phone_send with the full paths (selected_files or find_files first). They land in the phone's Download/Shiki folder.
+            - "Connect my phone", or a phone tool says no phone is connected yet: use_app_tool connect_phone (a window with a QR code to get the app; it's done once).
+
             Meetings and tasks
             - "Take notes" (a call is starting) and "stop notes": use_app_tool with take_notes or stop_notes. The app records the call, writes it down and, at the end, writes a summary, decisions and tasks.
             - "Remind me to…", "add a task…": add_task, with the due date worked out from now (YYYY-MM-DD, or YYYY-MM-DDTHH:MM when a time is said). "What do I have to do?": list_tasks.
@@ -427,6 +432,33 @@ static class CatPrompt
     [
         new Tool
         {
+            Name = "phone_get",
+            Description = "Get the newest photos, videos or screenshots from the person's own phone (Shiki for Android, paired) onto this PC at full quality, and wait for them. Returns where they were saved.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["count"] = J(new { type = "integer", description = "How many, newest first (1 to 100). \"My last photo\" is 1." }),
+                    ["kind"] = J(new { type = "string", @enum = new[] { "photo", "video", "screenshot", "any" }, description = "photo (camera photos, the default), video, screenshot, or any (photos and videos)." }),
+                    ["today"] = J(new { type = "boolean", description = "Only ones taken today." }),
+                },
+            },
+        },
+        new Tool
+        {
+            Name = "phone_send",
+            Description = "Send files from this PC to the person's own phone (Shiki for Android, paired): they land in the phone's Download/Shiki folder, checked byte for byte.",
+            InputSchema = new()
+            {
+                Properties = new Dictionary<string, JsonElement>
+                {
+                    ["files"] = J(new { type = "array", items = new { type = "string" }, description = "Full paths of the files." }),
+                },
+                Required = ["files"],
+            },
+        },
+        new Tool
+        {
             Name = "tidy_folder",
             Description = "Offer to sort a folder's loose files into subfolders by kind (Images, Videos, Music, PDFs, Documents, Archives, Installers). Shows a card with the counts; runs after Do it; Undo puts everything back.",
             InputSchema = new()
@@ -699,7 +731,7 @@ static class CatPrompt
             {
                 Properties = new Dictionary<string, JsonElement>
                 {
-                    ["tool"] = J(new { type = "string", @enum = new[] { "snip", "record_screen", "pick_colour", "make_qr", "paste_clipboard", "open_history", "open_settings", "paw_to_ask", "take_notes", "stop_notes", "open_tasks", "open_meetings", "stop_recording", "captions_on", "captions_off" } }),
+                    ["tool"] = J(new { type = "string", @enum = new[] { "snip", "record_screen", "pick_colour", "make_qr", "paste_clipboard", "open_history", "open_settings", "paw_to_ask", "take_notes", "stop_notes", "open_tasks", "open_meetings", "stop_recording", "captions_on", "captions_off", "connect_phone" } }),
                     ["text"] = J(new { type = "string", description = "For make_qr: the link or text to put in the code. For captions_on: a language to translate into (leave out for none)." }),
                 },
                 Required = ["tool"],
