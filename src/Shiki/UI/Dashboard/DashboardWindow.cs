@@ -8,6 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Shell;
 using Shiki.Core;
 
@@ -708,6 +709,11 @@ public sealed class DashboardWindow : Window
 
     Border PagePill(string glyph, string label, DashPage page, bool compact) => Pill(glyph, label, OnPage(page), () => Show(page), compact, label);
 
+    /// <summary>
+    /// A page's pill. Under the mouse it swells a little with a soft spring and, if it's only an
+    /// icon, slides open to show its name (the pills beside it glide aside); pressed, it dips.
+    /// With Windows' animations off, it changes at once.
+    /// </summary>
     Border Pill(string? glyph, string label, bool selected, Action onClick, bool compact, string tooltip, ImageSource? picture = null)
     {
         var fill = selected ? _p.Accent : _p.Card;
@@ -721,14 +727,18 @@ public sealed class DashboardWindow : Window
             row.Children.Add(image);
         }
         else row.Children.Add(_k.Icon(glyph!, 15, selected ? ink : _p.Muted));
+
+        // The name sits in a window that opens and closes: full width when shown, none when not.
+        var text = _k.Text(label, 14, ink, selected ? FontWeights.Bold : FontWeights.Medium);
+        text.Margin = new Thickness(8, 0, 5, 1);
+        text.VerticalAlignment = VerticalAlignment.Center;
+        text.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double open = Math.Ceiling(text.DesiredSize.Width);
         bool labelled = !compact || selected;
-        if (labelled)
-        {
-            var text = _k.Text(label, 14, ink, selected ? FontWeights.Bold : FontWeights.Medium);
-            text.Margin = new Thickness(8, 0, 0, 1);
-            text.VerticalAlignment = VerticalAlignment.Center;
-            row.Children.Add(text);
-        }
+        var reveal = new Border { Child = text, ClipToBounds = true, Width = labelled ? open : 0, Opacity = labelled ? 1 : 0, VerticalAlignment = VerticalAlignment.Center };
+        row.Children.Add(reveal);
+
+        var scale = new ScaleTransform(1, 1);
         var pill = new Border
         {
             Background = background,
@@ -736,18 +746,46 @@ public sealed class DashboardWindow : Window
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(20),
             Height = 40,
-            Padding = new Thickness(labelled ? 14 : 12, 0, labelled ? 17 : 12, 0),
+            Padding = new Thickness(12, 0, 12, 0),
             Margin = new Thickness(0, 0, 7, 0),
             Cursor = Cursors.Hand,
             Child = row,
-            ToolTip = labelled ? null : tooltip,
+            RenderTransformOrigin = new Point(0.5, 0.5),
+            RenderTransform = scale,
         };
-        if (!selected)
+
+        bool motion = SystemParameters.ClientAreaAnimation;
+        var smooth = new CubicEase { EasingMode = EasingMode.EaseOut };
+        var spring = new BackEase { EasingMode = EasingMode.EaseOut, Amplitude = 0.4 };
+        Duration For(int ms) => new(TimeSpan.FromMilliseconds(motion ? ms : 0));
+        void Grow(double to, int ms, IEasingFunction ease)
         {
-            pill.MouseEnter += (_, _) => background.Color = _p.Hover;
-            pill.MouseLeave += (_, _) => background.Color = fill;
+            scale.BeginAnimation(ScaleTransform.ScaleXProperty, new DoubleAnimation(to, For(ms)) { EasingFunction = ease });
+            scale.BeginAnimation(ScaleTransform.ScaleYProperty, new DoubleAnimation(to, For(ms)) { EasingFunction = ease });
         }
-        DashKit.Press(pill);
+        void Reveal(bool shown)
+        {
+            if (labelled) return;
+            reveal.BeginAnimation(WidthProperty, new DoubleAnimation(shown ? open : 0, For(shown ? 260 : 200)) { EasingFunction = smooth });
+            reveal.BeginAnimation(OpacityProperty, new DoubleAnimation(shown ? 1 : 0, For(shown ? 220 : 120)) { EasingFunction = smooth });
+        }
+        pill.MouseEnter += (_, _) =>
+        {
+            // Drawn over its neighbours while it's bigger.
+            Panel.SetZIndex(pill, 1);
+            if (!selected) background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(_p.Hover, For(140)));
+            Grow(1.08, 240, spring);
+            Reveal(true);
+        };
+        pill.MouseLeave += (_, _) =>
+        {
+            Panel.SetZIndex(pill, 0);
+            if (!selected) background.BeginAnimation(SolidColorBrush.ColorProperty, new ColorAnimation(fill, For(180)));
+            Grow(1, 220, smooth);
+            Reveal(false);
+        };
+        pill.PreviewMouseLeftButtonDown += (_, _) => Grow(0.95, 90, smooth);
+        pill.PreviewMouseLeftButtonUp += (_, _) => Grow(1.08, 180, spring);
         pill.MouseLeftButtonUp += (_, e) => { e.Handled = true; onClick(); };
         WindowChrome.SetIsHitTestVisibleInChrome(pill, true);
         return pill;
