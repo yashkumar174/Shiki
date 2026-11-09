@@ -34,6 +34,7 @@ export default function App() {
   const pairingRef = useRef<Store.Pairing | null>(null);
   const queue = useRef<Promise<void>>(Promise.resolve());
   const scanned = useRef(false);
+  const lastRead = useRef('');
   const loopGeneration = useRef(0);
 
   const note = useCallback((line: string) => setEvents((e) => [line, ...e].slice(0, 8)), []);
@@ -163,7 +164,8 @@ export default function App() {
 
   const onScan = useCallback(async ({ data }: { data: string }) => {
     if (scanned.current) return;
-    console.log('[shiki] camera read:', data.slice(0, 120));
+    // The camera reports the same code many times a second: note it once.
+    if (lastRead.current !== data) { lastRead.current = data; console.log('[shiki] camera read:', data.slice(0, 120)); }
     const code = Store.parseQr(data);
     if (!code) {
       setSeen(data.length > 60 ? data.slice(0, 60) + '…' : data);
