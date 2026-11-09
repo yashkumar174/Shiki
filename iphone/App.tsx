@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, KeyboardAvoidingView, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as DocumentPicker from 'expo-document-picker';
@@ -20,6 +20,12 @@ export default function App() {
   const [status, setStatus] = useState('');
   const [connected, setConnected] = useState(false);
   const [scanning, setScanning] = useState(false);
+  // What the camera last read that wasn't Shiki's code (so you can tell it's seeing something).
+  const [seen, setSeen] = useState('');
+  // Typing the PC's address and six digits, when the camera can't scan.
+  const [typing, setTyping] = useState(false);
+  const [address, setAddress] = useState('');
+  const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(0);
   const [events, setEvents] = useState<string[]>([]);
   const [fromPc, setFromPc] = useState<{ name: string; uri: string }[]>([]);
@@ -157,8 +163,12 @@ export default function App() {
 
   const onScan = useCallback(async ({ data }: { data: string }) => {
     if (scanned.current) return;
+    console.log('[shiki] camera read:', data.slice(0, 120));
     const code = Store.parseQr(data);
-    if (!code) return;
+    if (!code) {
+      setSeen(data.length > 60 ? data.slice(0, 60) + '…' : data);
+      return;
+    }
     scanned.current = true;
     setScanning(false);
     const current = pairingRef.current;
@@ -179,12 +189,32 @@ export default function App() {
     }
   }, [remember]);
 
+  /** Pairing with the address and six digits the PC shows under its code. */
+  const pairByHand = useCallback(async () => {
+    const host = address.trim().replace(/^https?:\/\//, '').split(/[/:]/)[0];
+    const digits = pin.replace(/\D/g, '');
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) { setStatus('Type the address the PC shows, like 192.168.1.5.'); return; }
+    if (digits.length !== 6) { setStatus('The code is six digits.'); return; }
+    setStatus('Connecting…');
+    try {
+      const p = await Link.pair({ host, port: 47814, pin: digits }, 'iPhone');
+      await remember(p);
+      setTyping(false);
+      setPin('');
+      setStatus(`Connected to ${p.pcName}`);
+      await MediaLibrary.requestPermissionsAsync();
+    } catch (e) {
+      setStatus(`Couldn't connect: ${String((e as Error)?.message ?? e)}`);
+    }
+  }, [address, pin, remember]);
+
   const startScan = useCallback(async () => {
     if (!camera?.granted && !(await askCamera()).granted) {
       Alert.alert('Camera needed', 'Shiki uses the camera only to scan the code on your PC.');
       return;
     }
     scanned.current = false;
+    setSeen('');
     setScanning(true);
   }, [camera, askCamera]);
 
@@ -230,16 +260,53 @@ export default function App() {
   if (scanning) {
     return (
       <View style={styles.scanner}>
-        <CameraView style={StyleSheet.absoluteFill} facing="back" barcodeScannerSettings={{ barcodeTypes: ['qr'] }} onBarcodeScanned={onScan} />
+        <CameraView
+          style={StyleSheet.absoluteFill}
+          facing="back"
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+          onBarcodeScanned={onScan}
+          onCameraReady={() => console.log('[shiki] camera ready')}
+          onMountError={(e) => { console.log('[shiki] camera error:', e.message); setSeen(`The camera couldn't start: ${e.message}`); }}
+        />
         <View style={styles.scanHint}>
           <Text style={styles.scanText}>Point at the code in Shiki on your PC</Text>
-          <Text style={styles.scanSub}>Settings → Phone → Connect a phone → iPhone</Text>
+          <Text style={styles.scanSub}>Settings → Accounts → Your phone → Connect a phone → iPhone</Text>
         </View>
-        <Pressable style={[styles.button, styles.scanCancel]} onPress={() => setScanning(false)}>
-          <Text style={styles.buttonText}>Cancel</Text>
-        </Pressable>
+        <View style={styles.scanFoot}>
+          {seen ? <Text style={styles.scanSeen}>Seen: {seen}{seen.startsWith('The camera') ? '' : ' (not Shiki\'s code)'}</Text> : null}
+          <Pressable style={[styles.button, styles.primary]} onPress={() => { setScanning(false); setTyping(true); setStatus(''); }}>
+            <Text style={[styles.buttonText, styles.primaryText]}>Type the code instead</Text>
+          </Pressable>
+          <Pressable style={styles.button} onPress={() => setScanning(false)}>
+            <Text style={styles.buttonText}>Cancel</Text>
+          </Pressable>
+        </View>
         <StatusBar style="light" />
       </View>
+    );
+  }
+
+  if (typing) {
+    return (
+      <KeyboardAvoidingView style={styles.page} behavior="padding">
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <Text style={styles.title}>Type the code</Text>
+          <Text style={styles.body}>On the PC, under the QR code in Connect a phone (iPhone), there's an address and six digits. Type them here.</Text>
+          <Text style={styles.label}>The PC's address</Text>
+          <TextInput style={styles.input} value={address} onChangeText={setAddress} placeholder="192.168.1.5" placeholderTextColor="#9AA3AF"
+            keyboardType="numbers-and-punctuation" autoCapitalize="none" autoCorrect={false} />
+          <Text style={styles.label}>The six digits</Text>
+          <TextInput style={[styles.input, styles.pin]} value={pin} onChangeText={setPin} placeholder="123 456" placeholderTextColor="#9AA3AF"
+            keyboardType="number-pad" maxLength={7} />
+          <Pressable style={[styles.button, styles.primary]} onPress={pairByHand}>
+            <Text style={[styles.buttonText, styles.primaryText]}>Connect</Text>
+          </Pressable>
+          <Pressable style={styles.button} onPress={() => { setTyping(false); setStatus(''); }}>
+            <Text style={styles.buttonText}>Back</Text>
+          </Pressable>
+          {status ? <Text style={styles.status}>{status}</Text> : null}
+        </ScrollView>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -251,6 +318,9 @@ export default function App() {
           <Text style={styles.body}>Sends your photos, videos and files to your PC at full quality, over your Wi-Fi. On the PC, open Connect a phone (Settings → Phone), choose iPhone, then scan its code.</Text>
           <Pressable style={[styles.button, styles.primary]} onPress={startScan}>
             <Text style={[styles.buttonText, styles.primaryText]}>Scan the code on your PC</Text>
+          </Pressable>
+          <Pressable style={styles.button} onPress={() => { setTyping(true); setStatus(''); }}>
+            <Text style={styles.buttonText}>Type the code instead</Text>
           </Pressable>
           {status ? <Text style={styles.status}>{status}</Text> : null}
         </>
@@ -338,5 +408,9 @@ const styles = StyleSheet.create({
   scanHint: { position: 'absolute', top: 80, left: 24, right: 24, alignItems: 'center' },
   scanText: { color: '#fff', fontSize: 19, fontWeight: '600', textAlign: 'center' },
   scanSub: { color: '#ddd', fontSize: 14, marginTop: 6, textAlign: 'center' },
-  scanCancel: { position: 'absolute', bottom: 60, left: 24, right: 24 },
+  scanFoot: { position: 'absolute', bottom: 48, left: 24, right: 24 },
+  scanSeen: { color: '#fff', fontSize: 13, textAlign: 'center', marginBottom: 6, backgroundColor: 'rgba(0,0,0,0.55)', padding: 8, borderRadius: 10, overflow: 'hidden' },
+  label: { fontSize: 14, fontWeight: '600', color: ink, marginTop: 16, marginBottom: 6 },
+  input: { borderWidth: 1.5, borderColor: '#D9D3CA', borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 18, color: ink },
+  pin: { fontSize: 24, letterSpacing: 4 },
 });

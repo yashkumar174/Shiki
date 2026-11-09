@@ -27,20 +27,23 @@ async function withTimeout(url: string, init: RequestInit, ms: number): Promise<
   }
 }
 
-/** Pairs with the PC whose code was scanned; the token works once. */
-export async function pair(scanned: Scanned, phoneName: string): Promise<Pairing> {
-  const r = await withTimeout(`${base(scanned)}/v1/pair`, {
+/** The way to the PC for pairing: from its QR code (a token), or typed in (its address and six digits). */
+export type PairTarget = Pick<Scanned, 'host' | 'port'> & { token?: string; pin?: string; pcName?: string };
+
+/** Pairs with the PC; the token (or the six digits) works once. */
+export async function pair(target: PairTarget, phoneName: string): Promise<Pairing> {
+  const r = await withTimeout(`${base(target)}/v1/pair`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: scanned.token, name: phoneName }),
+    body: JSON.stringify({ token: target.token ?? '', pin: target.pin ?? '', name: phoneName }),
   }, 15000);
   const json = await r.json();
   if (!json.ok) throw new Error(json.error || 'The PC said no.');
   return {
     pcId: json.pc,
-    pcName: json.name || scanned.pcName,
-    host: scanned.host,
-    port: scanned.port,
+    pcName: json.name || target.pcName || 'your PC',
+    host: target.host,
+    port: target.port,
     phone: json.phone,
     key: json.key,
     autoSince: Date.now(),

@@ -26,6 +26,12 @@ public sealed partial class PhoneLink
     TcpListener? _web;
     string? _pairToken;
     DateTime _pairTokenUntil;
+    // The same pairing, typed instead of scanned: six digits, five tries.
+    string _pairPin = "";
+    int _pinTries;
+
+    /// <summary>While pairing is open: this PC's address and the six digits to type in the app (when the camera can't scan).</summary>
+    public (string Host, string Pin)? PairingByHand { get; private set; }
     // The phone's own name for a file it sent (its photo id and date) → where it is here.
     readonly Dictionary<string, string> _receivedIds = new(StringComparer.Ordinal);
     bool _idsLoaded;
@@ -59,10 +65,17 @@ public sealed partial class PhoneLink
         if (ip == null) return null;
         _pairToken = Base64Url(RandomNumberGenerator.GetBytes(16));
         _pairTokenUntil = DateTime.Now.AddMinutes(15);
+        _pairPin = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        _pinTries = 0;
+        PairingByHand = (ip, _pairPin);
         return $"shiki://pair?h={ip}&p={WebPort}&t={_pairToken}&id={_state.PcId}&n={Uri.EscapeDataString(PcName)}";
     }
 
-    public void StopIphonePairing() => _pairToken = null;
+    public void StopIphonePairing()
+    {
+        _pairToken = null;
+        PairingByHand = null;
+    }
 
     sealed class WebRequest
     {
@@ -128,16 +141,26 @@ public sealed partial class PhoneLink
     {
         var body = await ReadJson(stream, request);
         var token = Str(body, "token") ?? "";
+        var pin = (Str(body, "pin") ?? "").Trim();
         var wanted = _pairToken;
-        bool ok = wanted != null && DateTime.Now < _pairTokenUntil
-            && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(token), Encoding.UTF8.GetBytes(wanted));
-        if (!ok)
+        bool open = wanted != null && DateTime.Now < _pairTokenUntil;
+        bool scanned = open && token.Length > 0 && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(token), Encoding.UTF8.GetBytes(wanted!));
+        // Typed: right six digits, and fewer than five wrong tries (after that the code is spent).
+        bool typed = open && !scanned && pin.Length == 6 && _pinTries < 5 && CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(pin), Encoding.UTF8.GetBytes(_pairPin));
+        if (open && !scanned && pin.Length > 0 && !typed) _pinTries++;
+        if (!scanned && !typed)
         {
-            await Json(stream, 403, new JsonObject { ["ok"] = false, ["error"] = "That code has expired. Open Connect a phone on the PC and scan the new one." });
+            var why = !open ? "That code has expired. Open Connect a phone on the PC and use the new one."
+                : pin.Length > 0 && _pinTries >= 5 ? "Too many wrong codes. Close Connect a phone on the PC and open it again for a new one."
+                : pin.Length > 0 ? "That code isn't right. Check the six digits on the PC."
+                : "That code has expired. Open Connect a phone on the PC and use the new one.";
+            Log.Info($"iPhone pairing from {ip} refused ({(pin.Length > 0 ? "typed code" : "scanned code")})");
+            await Json(stream, 403, new JsonObject { ["ok"] = false, ["error"] = why });
             return;
         }
-        // The token works once: scanning it means being in front of this PC's screen.
+        // It works once: scanning it (or typing it) means being in front of this PC's screen.
         _pairToken = null;
+        PairingByHand = null;
         var phone = new PairedPhone
         {
             Id = Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant(),

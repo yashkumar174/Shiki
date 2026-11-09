@@ -57,6 +57,21 @@ public sealed class PhoneLinkWindow : Window
         {
             _iphone.Children.Add(Qr(pairing, 9));
             _iphone.Children.Add(UiKit.Body("The code works once, for 15 minutes. Your iPhone needs to be on the same Wi-Fi as this PC (or this PC on its hotspot).", 12));
+            if (link.PairingByHand is { } hand)
+            {
+                _iphone.Children.Add(UiKit.Heading("Can't scan it? Type it instead"));
+                _iphone.Children.Add(UiKit.Body("In the app, tap Type the code instead, and enter:", 12.5));
+                var digits = new TextBlock
+                {
+                    Text = $"{hand.Host}    {hand.Pin[..3]} {hand.Pin[3..]}",
+                    FontFamily = Theme.PixelFont,
+                    FontSize = 26,
+                    Foreground = Theme.Brush(Theme.Editor.Text),
+                    Margin = new Thickness(0, 8, 0, 0),
+                };
+                _iphone.Children.Add(digits);
+                _iphone.Children.Add(UiKit.Body("The address first, then the six digits.", 11.5));
+            }
         }
         else _iphone.Children.Add(UiKit.Body("This PC doesn't seem to be on a home network right now. Connect it to your Wi-Fi (or your iPhone's hotspot), then open this again."));
 
