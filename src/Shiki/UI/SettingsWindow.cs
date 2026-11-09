@@ -28,7 +28,7 @@ public sealed record AiSetting(string CatName, Func<bool> IsOn, Action Toggle,
     Func<bool> VoiceLock, Action ToggleVoiceLock, Func<string> GetVoiceLockLevel, Action<string> SetVoiceLockLevel,
     Func<string> GetSpeechLanguage, Action<string> SetSpeechLanguage, Func<string> GetHindiScript, Action<string> SetHindiScript,
     Func<string> GetTalkBack, Action<string> SetTalkBack, Func<string> GetTalkVoice, Action<string> SetTalkVoice, Func<string> SpokenUsage,
-    Func<string> Spent, Action OpenLog);
+    Func<string> Spent, Action OpenLog, Func<string>? TalkShortcut = null);
 
 /// <summary>The routines: run one now, or remove it. New ones are made by telling the cat.</summary>
 public sealed record RoutineSetting(string CatName, Func<IReadOnlyList<Core.Routine>> All, Action<Core.Routine> Run, Action<string> Remove,
@@ -94,15 +94,18 @@ public sealed class SettingsWindow : Window
         }
         IEnumerable<SettingSwitch> On(string tab) => switches.Where(s => s.Tab == tab);
 
-        // ---- General ----
+        // ---- General: the cat, files, Windows ----
         var stack = Tab("general", "General");
-        stack.Children.Add(UiKit.Heading("Where results go"));
+        if (cat != null) AddCat(stack, cat);
+        foreach (var setting in On("cat")) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+
+        stack.Children.Add(UiKit.Heading("Files"));
+        stack.Children.Add(Line("Where results go", "Converted, compressed and edited files.", new Border()));
         _nextTo = UiKit.Button("Next to the original", () => SetMode(false));
         _oneFolder = UiKit.Button("One folder", () => SetMode(true));
         var modes = UiKit.Row(_nextTo, _oneFolder);
-        modes.Margin = new Thickness(0, 2, 0, 6);
+        modes.Margin = new Thickness(0, 0, 0, 6);
         stack.Children.Add(modes);
-
         _folderPath.FontFamily = Theme.TextFont;
         _folderPath.FontSize = 13;
         _folderPath.Foreground = Theme.Brush(_p.Text);
@@ -121,63 +124,53 @@ public sealed class SettingsWindow : Window
         _folderPart.Children.Add(Line(sort.Label, sort.Hint, Toggle(sort)));
         stack.Children.Add(_folderPart);
         ShowMode();
-
         if (index != null)
         {
-            stack.Children.Add(UiKit.Heading("Search inside files"));
-            var status = UiKit.Body(index.Status(), 11.5);
-            stack.Children.Add(Line("Find documents by what's in them", "\"The PDF where I signed the rental agreement\". A private index of Documents, Desktop and Downloads, kept only on this PC.",
-                Toggle(new SettingSwitch("", "", index.IsOn, () => { index.Toggle(); status.Text = index.Status(); }))));
-            stack.Children.Add(status);
-            var rebuild = UiKit.Button("Read everything again", () => { index.Rebuild(); status.Text = index.Status(); });
-            rebuild.Margin = new Thickness(0, 6, 0, 0);
-            stack.Children.Add(rebuild);
+            Grid? indexLine = null;
+            stack.Children.Add(Line("Search inside files", "\"The PDF where I signed the rental agreement\". A private index of Documents, Desktop and Downloads, only on this PC.",
+                Toggle(new SettingSwitch("", "", index.IsOn, () => { index.Toggle(); SetHint(indexLine!, index.Status()); }))));
+            indexLine = Line("The index", index.Status(), UiKit.Button("Read again", () => { index.Rebuild(); SetHint(indexLine!, index.Status()); }));
+            indexLine.Margin = new Thickness(16, 0, 0, 6);
+            stack.Children.Add(indexLine);
         }
-        if (cat != null) AddCat(stack, cat);
-        foreach (var setting in On("cat")) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+        foreach (var setting in On("files")) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+
         stack.Children.Add(UiKit.Heading("Windows"));
         foreach (var setting in On("general")) stack.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
 
         // ---- Voice ----
-        if (ai != null) AddVoice(Tab("voice", "Voice"), ai);
+        if (ai != null) AddVoice(Tab("voice", "Voice"), ai, On("voiceadvanced"));
 
-        // ---- AI and accounts ----
-        var accounts = Tab("ai", "AI and accounts");
-        if (ai != null) AddAi(accounts, ai);
-        if (On("ai").Any())
+        // ---- Automation: how the cat goes about things by itself ----
+        var automation = Tab("automation", "Automation");
+        if (On("sending").Any())
         {
-            accounts.Children.Add(UiKit.Heading("Privacy"));
-            foreach (var setting in On("ai")) accounts.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+            automation.Children.Add(UiKit.Heading("Sending"));
+            foreach (var setting in On("sending")) automation.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
         }
-        if (gmail != null) AddGmail(accounts, gmail);
-        if (ai != null)
+        if (On("day").Any())
         {
-            var spent = UiKit.Body(ai.Spent());
-            spent.Margin = new Thickness(0, 22, 0, 8);
-            accounts.Children.Add(spent);
-            accounts.Children.Add(UiKit.Button("Open the cat's log", ai.OpenLog));
+            automation.Children.Add(UiKit.Heading("Your day"));
+            foreach (var setting in On("day")) automation.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
         }
-
-        // ---- Meetings ----
         if (On("meetings").Any())
         {
-            var meetings = Tab("meetings", "Meetings");
-            meetings.Children.Add(UiKit.Heading("Meeting notes"));
-            meetings.Children.Add(UiKit.Body("Notes for any call: say \"take notes\" or use the shortcut, and at the end you get a summary, the decisions and everyone's tasks."));
-            foreach (var setting in On("meetings")) meetings.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
-        }
-
-        // ---- Automation ----
-        var automation = Tab("automation", "Automation");
-        if (On("automation").Any())
-        {
-            automation.Children.Add(UiKit.Heading("Suggestions"));
-            foreach (var setting in On("automation")) automation.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+            automation.Children.Add(UiKit.Heading("Meetings"));
+            foreach (var setting in On("meetings")) automation.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
         }
         if (routines != null) AddRoutines(automation, routines);
 
-        // ---- Phone ----
-        if (phone != null) AddPhone(Tab("phone", "Phone"), phone);
+        // ---- Accounts: Claude, Google, your phone ----
+        var accounts = Tab("accounts", "Accounts");
+        if (ai != null) AddAi(accounts, ai);
+        foreach (var setting in On("privacy")) accounts.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+        if (ai != null)
+        {
+            var row = UiKit.Row(UiKit.Button("Open the cat's log", ai.OpenLog));
+            accounts.Children.Add(Line(ai.Spent(), "Everything the cat was asked and did, in plain words.", row));
+        }
+        if (gmail != null) AddGmail(accounts, gmail);
+        if (phone != null) AddPhone(accounts, phone);
 
         // ---- Shortcuts ----
         var keys = Tab("shortcuts", "Shortcuts");
@@ -196,6 +189,7 @@ public sealed class SettingsWindow : Window
         var chips = new List<(string Id, Border Chip)>();
         void ShowTab(string id)
         {
+            id = id switch { "ai" or "phone" => "accounts", "meetings" => "automation", _ => id };
             if (pages.All(p => p.Id != id)) id = pages[0].Id;
             _tab = id;
             foreach (var (pageId, _, page) in pages) page.Visibility = pageId == id ? Visibility.Visible : Visibility.Collapsed;
@@ -224,7 +218,7 @@ public sealed class SettingsWindow : Window
     void AddAi(StackPanel stack, AiSetting ai)
     {
         stack.Children.Add(UiKit.Heading($"Ask {ai.CatName} (Claude)"));
-        stack.Children.Add(UiKit.Body($"{ai.CatName} understands what you say with Claude Haiku 5.5 and your own API key. Only what a request needs goes to Claude: your words, file names, and a document, picture or email when you ask about it. Nothing is sent while this is off."));
+        stack.Children.Add(UiKit.Body($"{ai.CatName} understands you with Claude Haiku 5.5 and your own API key. Only what a request needs is sent; nothing while this is off.", 11.5));
         stack.Children.Add(Line($"Ask {ai.CatName}", "The Ask page, voice, and the Ask shortcut.", Toggle(new SettingSwitch("", "", ai.IsOn, ai.Toggle))));
 
         var status = UiKit.Body("");
@@ -269,179 +263,86 @@ public sealed class SettingsWindow : Window
     }
 
     /// <summary>
-    /// Voice: which engine writes down commands (Whisper here, Deepgram, Wispr Flow later) and
-    /// which hears the wake word (Whisper here, or Deepgram for the speech bursts), plus their keys.
+    /// Voice, everyday things first: how you talk to the cat, the language, how it talks back.
+    /// Which engines write your words down (and their keys) are folded away under one button.
     /// </summary>
-    void AddVoice(StackPanel stack, AiSetting ai)
+    void AddVoice(StackPanel stack, AiSetting ai, IEnumerable<SettingSwitch> advancedSwitches)
     {
-        stack.Children.Add(UiKit.Heading("Speech"));
-        stack.Children.Add(UiKit.Body($"Press the mic or the talk shortcut and speak. The microphone is only on while {ai.CatName} is listening, unless \"Hey {ai.CatName}\" is on."));
+        var cat = ai.CatName;
 
-        Action refresh = () => { };
-
-        // ---- Commands ----
-        var cmdWhisper = UiKit.Button("On this PC", () => { ai.SetVoiceEngine("whisper"); refresh(); });
-        var cmdDeepgram = UiKit.Button("Deepgram", () => { ai.SetVoiceEngine("deepgram"); refresh(); });
-        var cmdWispr = UiKit.Button("Wispr Flow", () => { ai.SetVoiceEngine("wispr"); refresh(); });
-        var cmdScribe = UiKit.Button("ElevenLabs Scribe", () => { ai.SetVoiceEngine("elevenlabs"); refresh(); });
-        stack.Children.Add(Line("What you say", "Who writes down your requests.", new Border()));
-        var cmdRow = UiKit.Row(cmdWhisper, cmdDeepgram, cmdScribe, cmdWispr);
-        cmdRow.Margin = new Thickness(0, 0, 0, 4);
-        stack.Children.Add(cmdRow);
-        var cmdNote = UiKit.Body("");
-        stack.Children.Add(cmdNote);
-
-        // ---- Wake word ----
-        var wakeWhisper = UiKit.Button("On this PC", () => { ai.SetWakeEngine("whisper"); refresh(); });
-        var wakeDeepgram = UiKit.Button("Deepgram", () => { ai.SetWakeEngine("deepgram"); refresh(); });
-        stack.Children.Add(Line($"\"Hey {ai.CatName}\"", "Who listens for the name.", new Border()));
-        var wakeRow = UiKit.Row(wakeWhisper, wakeDeepgram);
-        wakeRow.Margin = new Thickness(0, 0, 0, 4);
-        stack.Children.Add(wakeRow);
-        var wakeNote = UiKit.Body("");
-        stack.Children.Add(wakeNote);
-
-        var deepgramKey = KeyPart("Deepgram", Core.Voice.Deepgram.Key, Core.Voice.Deepgram.TestKey, () =>
+        // ---- Talking to the cat ----
+        stack.Children.Add(UiKit.Heading($"Talking to {cat}"));
+        var how = UiKit.Body("");
+        stack.Children.Add(how);
+        var wakeGroup = new StackPanel { Margin = new Thickness(16, 0, 0, 4) };
+        void ShowHow()
         {
-            // Saving a Deepgram key means wanting Deepgram: use it for both, unless already chosen.
-            if (ai.GetVoiceEngine() == "whisper") ai.SetVoiceEngine("deepgram");
-            if (ai.GetWakeEngine() == "whisper") ai.SetWakeEngine("deepgram");
-        }, "Create one at console.deepgram.com.");
-        var wisprKey = KeyPart("Wispr", Core.Voice.WisprFlow.Key, null, null, "");
-        stack.Children.Add(deepgramKey.Root);
-        stack.Children.Add(wisprKey.Root);
-        var usage = UiKit.Body("");
-        stack.Children.Add(usage);
-
-        void Show()
-        {
-            var cmd = ai.GetVoiceEngine();
-            var wake = ai.GetWakeEngine();
-            bool hasDeepgram = Core.Voice.Deepgram.HasKey;
-            UiKit.Select(cmdWhisper, cmd == "whisper");
-            UiKit.Select(cmdDeepgram, cmd == "deepgram");
-            UiKit.Select(cmdWispr, cmd == "wispr");
-            UiKit.Select(cmdScribe, cmd == "elevenlabs");
-            UiKit.Select(wakeWhisper, wake == "whisper");
-            UiKit.Select(wakeDeepgram, wake == "deepgram");
-            cmdNote.Text = cmd switch
-            {
-                "deepgram" => hasDeepgram
-                    ? "Deepgram Nova-3 writes your words down live, as you speak, and judges when you've finished. Your voice goes to Deepgram; if it can't be reached, Whisper here takes over."
-                    : "Add a Deepgram key below. Until then Whisper on this PC is used.",
-                "elevenlabs" => Core.Voice.ElevenLabs.HasKey
-                    ? "ElevenLabs Scribe v2 writes your words down live, careful with names and Hindi mixed with English, with background noise filtered out. Your voice goes to ElevenLabs; if it can't be reached, Deepgram (then Whisper here) takes over."
-                    : "Add your ElevenLabs key (Talking back, below). Until then Deepgram or Whisper is used.",
-                "wispr" => Core.Voice.WisprFlow.Available
-                    ? "What you say goes to Wispr Flow to be written down."
-                    : "Wispr Flow's API isn't open to Shiki yet (access has been asked for). Until it is, Whisper on this PC is used. You can save your Wispr key now.",
-                _ => $"Free and private: Whisper turns your voice into text on this PC (the graphics card when it can). It downloads once ({Core.Voice.WhisperLocal.DownloadSize}).",
-            };
-            wakeNote.Text = wake == "deepgram"
-                ? hasDeepgram
-                    ? $"This PC notices when someone talks; only those short bits of speech (under six seconds) go to Deepgram to check for the name. That includes anyone talking near the PC while listening is on. Silence never leaves the PC. Offline, Whisper here takes over."
-                    : "Add a Deepgram key below. Until then Whisper on this PC listens."
-                : "Free and private: short bits of speech are checked for the name on this PC and then forgotten.";
-            deepgramKey.Root.Visibility = cmd == "deepgram" || wake == "deepgram" ? Visibility.Visible : Visibility.Collapsed;
-            wisprKey.Root.Visibility = cmd == "wispr" ? Visibility.Visible : Visibility.Collapsed;
-            usage.Text = ai.DeepgramUsage();
-            usage.Visibility = usage.Text.Length > 0 && deepgramKey.Root.Visibility == Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
+            var shortcut = ai.TalkShortcut?.Invoke() ?? "the talk shortcut";
+            how.Text = ai.WakeOn()
+                ? $"Press {shortcut} and talk, or just say \"Hey {cat}\"."
+                : $"Press {shortcut} anywhere and talk. The microphone is on only while {cat} is listening.";
+            wakeGroup.Visibility = ai.WakeOn() ? Visibility.Visible : Visibility.Collapsed;
         }
-        refresh = Show;
-        deepgramKey.Changed += Show;
-        Show();
-
-        // Hindi and Hinglish.
-        stack.Children.Add(UiKit.Heading("Language"));
-        stack.Children.Add(Line("I speak", "Hindi + English understands Hindi, English and Hinglish, even mixed in one sentence. With Deepgram it's live; Whisper on this PC downloads a 190 MB model for it once.", new Border()));
-        var languages = new List<(string Id, Border Chip)>();
-        void ShowLanguage() { foreach (var (id, chip) in languages) UiKit.Select(chip, ai.GetSpeechLanguage() == id); }
-        var languageRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-        foreach (var (id, label) in new[] { ("en", "English"), ("hi-en", "Hindi + English (Hinglish)") })
-        {
-            var chip = UiKit.Button(label, () => { ai.SetSpeechLanguage(id); ShowLanguage(); });
-            languages.Add((id, chip));
-            languageRow.Children.Add(chip);
-        }
-        stack.Children.Add(languageRow);
-        ShowLanguage();
-        stack.Children.Add(UiKit.Body("Write Hindi as (what you say, and dictation):", 11.5));
-        var scripts = new List<(string Id, Border Chip)>();
-        void ShowScript() { foreach (var (id, chip) in scripts) UiKit.Select(chip, ai.GetHindiScript() == id); }
-        var scriptRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 6) };
-        foreach (var (id, label) in new[] { ("devanagari", "\u0939\u093F\u0902\u0926\u0940 (Devanagari)"), ("roman", "Roman (aap kaise ho)") })
-        {
-            var chip = UiKit.Button(label, () => { ai.SetHindiScript(id); ShowScript(); });
-            scripts.Add((id, chip));
-            scriptRow.Children.Add(chip);
-        }
-        stack.Children.Add(scriptRow);
-        ShowScript();
-
-        stack.Children.Add(UiKit.Heading("Listening"));
-        stack.Children.Add(Line("Answer plans by voice", "After a spoken request, listen for \"yes\" or \"no\" when a plan card shows.",
-            Toggle(new SettingSwitch("", "", ai.VoiceAnswers, ai.ToggleVoiceAnswers))));
-
-        // A conversation: after a spoken request and the reply, keep listening for the next one.
-        stack.Children.Add(Line("Keep listening after a reply", $"Say the next thing without \"Hey {ai.CatName}\". Nothing is sent anywhere while it waits; \"thanks\" or \"that's all\" ends it.", new Border()));
-        var waits = new System.Collections.Generic.List<(int Seconds, Border Chip)>();
-        void ShowWait()
-        {
-            foreach (var (seconds, chip) in waits) UiKit.Select(chip, ai.GetFollowUp() == seconds);
-        }
-        var waitRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-        foreach (var (seconds, label) in new[] { (0, "Off"), (5, "5 seconds"), (8, "8 seconds"), (15, "15 seconds") })
-        {
-            var chip = UiKit.Button(label, () => { ai.SetFollowUp(seconds); ShowWait(); });
-            waits.Add((seconds, chip));
-            waitRow.Children.Add(chip);
-        }
-        stack.Children.Add(waitRow);
-        ShowWait();
-
-        stack.Children.Add(Line($"Listen for \"Hey {ai.CatName}\"", "The mic stays on while this is on (Windows shows its mic icon). Pauses while you record the screen.",
-            Toggle(new SettingSwitch("", "", ai.WakeOn, ai.ToggleWake))));
-        stack.Children.Add(Line($"Only my voice wakes {ai.CatName}", Core.Voice.VoicePrint.HasPrint
-                ? "\"Hey " + ai.CatName + "\" from a video, a call or someone else is ignored. Checked on this PC."
+        stack.Children.Add(Line($"Listen for \"Hey {cat}\"", "Wake the cat by saying its name. The mic then stays on (Windows shows its mic icon).",
+            Toggle(new SettingSwitch("", "", ai.WakeOn, () => { ai.ToggleWake(); ShowHow(); }))));
+        // Only matters while the name is listened for.
+        wakeGroup.Children.Add(Line($"Only my voice wakes {cat}", Core.Voice.VoicePrint.HasPrint
+                ? $"\"Hey {cat}\" from a video, a call or someone else is ignored. Checked on this PC."
                 : "Teach your cat its name again to record your voice (one extra sentence).",
             Toggle(new SettingSwitch("", "", ai.VoiceLock, ai.ToggleVoiceLock))));
-        var levels = new List<(string Id, Border Chip)>();
-        void ShowLevel() { foreach (var (id, chip) in levels) UiKit.Select(chip, ai.GetVoiceLockLevel() == id); }
-        var levelRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-        foreach (var (id, label) in new[] { ("relaxed", "Relaxed"), ("normal", "Normal"), ("strict", "Strict") })
-        {
-            var chip = UiKit.Button(label, () => { ai.SetVoiceLockLevel(id); ShowLevel(); });
-            levels.Add((id, chip));
-            levelRow.Children.Add(chip);
-        }
-        stack.Children.Add(levelRow);
-        stack.Children.Add(UiKit.Body("Relaxed if it sometimes ignores you (a noisy room, a different mic); Strict if other voices still wake it.", 11.5));
-        ShowLevel();
-        var teach = UiKit.Button("Name your cat and teach it…", ai.TeachName);
-        teach.Margin = new Thickness(0, 4, 0, 0);
+        wakeGroup.Children.Add(Chips("How strict", "Relaxed if it sometimes ignores you; Strict if other voices still wake it.",
+            [("relaxed", "Relaxed"), ("normal", "Normal"), ("strict", "Strict")], ai.GetVoiceLockLevel, ai.SetVoiceLockLevel));
+        stack.Children.Add(wakeGroup);
+        ShowHow();
+
+        stack.Children.Add(Chips("Keep listening after a reply", $"Say the next thing straight away. \"Thanks\" or \"that's all\" ends it.",
+            [("0", "Off"), ("5", "5 s"), ("8", "8 s"), ("15", "15 s")],
+            () => ai.GetFollowUp().ToString(), v => ai.SetFollowUp(int.Parse(v))));
+        stack.Children.Add(Line("Answer cards by voice", "When a card asks to send or do something, say \"yes\" or \"no\".",
+            Toggle(new SettingSwitch("", "", ai.VoiceAnswers, ai.ToggleVoiceAnswers))));
+        var teach = UiKit.Button($"Rename {cat}…", ai.TeachName);
+        teach.Margin = new Thickness(0, 6, 0, 0);
         stack.Children.Add(teach);
 
-        // The cat's own voice.
+        // ---- Language ----
+        stack.Children.Add(UiKit.Heading("Language"));
+        var script = Chips("Write Hindi as", "In what you say and in dictation.",
+            [("roman", "Roman (aap kaise ho)"), ("devanagari", "हिंदी")], ai.GetHindiScript, ai.SetHindiScript);
+        void ShowScript() => script.Visibility = ai.GetSpeechLanguage() == "hi-en" ? Visibility.Visible : Visibility.Collapsed;
+        stack.Children.Add(Chips("I speak", "Hindi + English understands Hinglish, even mixed in one sentence.",
+            [("en", "English"), ("hi-en", "Hindi + English")], ai.GetSpeechLanguage, v => { ai.SetSpeechLanguage(v); ShowScript(); }));
+        stack.Children.Add(script);
+        ShowScript();
+
+        // ---- Talking back ----
         stack.Children.Add(UiKit.Heading("Talking back"));
-        stack.Children.Add(Line($"{ai.CatName} talks back", "Replies are read aloud. The mic waits until it's done, so it never hears itself; press the mic or the shortcut to cut it short.", new Border()));
-        var talks = new List<(string Id, Border Chip)>();
-        void ShowTalk() { foreach (var (id, chip) in talks) UiKit.Select(chip, ai.GetTalkBack() == id); }
-        var talkRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 6) };
-        foreach (var (id, label) in new[] { ("spoken", "When I speak"), ("always", "Always"), ("off", "Off") })
-        {
-            var chip = UiKit.Button(label, () => { ai.SetTalkBack(id); ShowTalk(); });
-            talks.Add((id, chip));
-            talkRow.Children.Add(chip);
-        }
-        stack.Children.Add(talkRow);
-        ShowTalk();
-        stack.Children.Add(UiKit.Body("Voice (pick one to hear it):", 11.5));
-        var voices = new List<(string Id, Border Chip)>();
+        stack.Children.Add(Chips($"{cat} reads replies aloud", "The mic waits until it's done; press the shortcut to cut it short.",
+            [("spoken", "When I speak"), ("always", "Always"), ("off", "Off")], ai.GetTalkBack, ai.SetTalkBack));
         var current = Core.Voice.Speaker.Pick(ai.GetTalkVoice());
-        void ShowVoice() { foreach (var (id, chip) in voices) UiKit.Select(chip, current == id); }
+        var voiceName = new TextBlock();
+        var voicePanel = new StackPanel { Visibility = Visibility.Collapsed };
+        Border? changeVoice = null;
+        changeVoice = UiKit.Button("Change", () =>
+        {
+            bool open = voicePanel.Visibility != Visibility.Visible;
+            voicePanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+            ((TextBlock)changeVoice!.Child).Text = open ? "Done" : "Change";
+        });
+        var voiceLine = Line("Voice", "", changeVoice);
+        stack.Children.Add(voiceLine);
         var voiceRow = new WrapPanel { Margin = new Thickness(0, 4, 0, 6) };
         var voiceNote = UiKit.Body("", 11.5);
-        // The chips, again whenever the ElevenLabs key or its voice list changes.
+        voicePanel.Children.Add(UiKit.Body("Pick one to hear it.", 11.5));
+        voicePanel.Children.Add(voiceRow);
+        voicePanel.Children.Add(voiceNote);
+        stack.Children.Add(voicePanel);
+        var voices = new List<(string Id, Border Chip)>();
+        void ShowVoice()
+        {
+            foreach (var (id, chip) in voices) UiKit.Select(chip, current == id);
+            var label = Core.Voice.Speaker.Voices().FirstOrDefault(v => v.Id == current)?.Label ?? "Windows voice";
+            if (voiceLine.Children[0] is StackPanel text && text.Children[1] is TextBlock hint) hint.Text = label;
+        }
         void FillVoices()
         {
             voiceRow.Children.Clear();
@@ -455,18 +356,56 @@ public sealed class SettingsWindow : Window
             }
             ShowVoice();
             var notes = new List<string>();
-            if (Core.Voice.ElevenLabs.HasKey) notes.Add($"ElevenLabs voices (Flash v2.5, Hindi too) use your ElevenLabs credit; if it runs out or can't be reached, {(Core.Voice.Deepgram.HasKey ? "Deepgram's voice carries on" : "a Windows voice carries on")}.");
-            if (Core.Voice.Deepgram.HasKey) notes.Add("Deepgram's voices sound natural and cost about $0.03 per 1,000 characters (a short reply is a fraction of a cent).");
+            if (Core.Voice.ElevenLabs.HasKey) notes.Add($"ElevenLabs voices use your ElevenLabs credit; if it runs out, {(Core.Voice.Deepgram.HasKey ? "Deepgram's voice carries on" : "a Windows voice carries on")}.");
+            if (Core.Voice.Deepgram.HasKey) notes.Add("Deepgram's voices cost about $0.03 per 1,000 characters.");
             notes.Add("Windows voices are free and stay on this PC.");
-            if (!Core.Voice.Deepgram.HasKey && !Core.Voice.ElevenLabs.HasKey) notes.Add("With a Deepgram key (above) or an ElevenLabs key (below), natural voices are offered too.");
             if (Core.Voice.Deepgram.HasKey && ai.SpokenUsage() is { Length: > 0 } spoken) notes.Add(spoken);
             voiceNote.Text = string.Join(" ", notes);
         }
         FillVoices();
-        stack.Children.Add(voiceRow);
-        stack.Children.Add(voiceNote);
 
-        // ElevenLabs: only for the cat's voice (listening stays as chosen above).
+        // ---- Folded away: engines and keys ----
+        var advanced = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 4, 0, 0) };
+        Border? more = null;
+        more = UiKit.Button("Speech engines and keys", () =>
+        {
+            bool open = advanced.Visibility != Visibility.Visible;
+            advanced.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+            ((TextBlock)more!.Child).Text = open ? "Hide speech engines and keys" : "Speech engines and keys";
+        });
+        more.Margin = new Thickness(0, 22, 0, 0);
+        stack.Children.Add(more);
+        stack.Children.Add(advanced);
+
+        Action refresh = () => { };
+        var cmdWhisper = UiKit.Button("On this PC", () => { ai.SetVoiceEngine("whisper"); refresh(); });
+        var cmdDeepgram = UiKit.Button("Deepgram", () => { ai.SetVoiceEngine("deepgram"); refresh(); });
+        var cmdScribe = UiKit.Button("ElevenLabs Scribe", () => { ai.SetVoiceEngine("elevenlabs"); refresh(); });
+        var cmdWispr = UiKit.Button("Wispr Flow", () => { ai.SetVoiceEngine("wispr"); refresh(); });
+        advanced.Children.Add(Line("Writes down what you say", "", new Border()));
+        var cmdRow = new WrapPanel { Margin = new Thickness(0, 0, 0, 4) };
+        foreach (var chip in new[] { cmdWhisper, cmdDeepgram, cmdScribe, cmdWispr }) { chip.Margin = new Thickness(0, 0, 6, 6); cmdRow.Children.Add(chip); }
+        advanced.Children.Add(cmdRow);
+        var cmdNote = UiKit.Body("", 11.5);
+        advanced.Children.Add(cmdNote);
+
+        var wakePart = new StackPanel();
+        var wakeWhisper = UiKit.Button("On this PC", () => { ai.SetWakeEngine("whisper"); refresh(); });
+        var wakeDeepgram = UiKit.Button("Deepgram", () => { ai.SetWakeEngine("deepgram"); refresh(); });
+        wakePart.Children.Add(Line($"Listens for \"Hey {cat}\"", "", new Border()));
+        var wakeRow = UiKit.Row(wakeWhisper, wakeDeepgram);
+        wakeRow.Margin = new Thickness(0, 0, 0, 4);
+        wakePart.Children.Add(wakeRow);
+        var wakeNote = UiKit.Body("", 11.5);
+        wakePart.Children.Add(wakeNote);
+        advanced.Children.Add(wakePart);
+
+        advanced.Children.Add(UiKit.Heading("Keys"));
+        var deepgramKey = KeyPart("Deepgram", Core.Voice.Deepgram.Key, Core.Voice.Deepgram.TestKey, () =>
+        {
+            if (ai.GetVoiceEngine() == "whisper") ai.SetVoiceEngine("deepgram");
+            if (ai.GetWakeEngine() == "whisper") ai.SetWakeEngine("deepgram");
+        }, "Create one at console.deepgram.com.");
         var elevenKey = KeyPart("ElevenLabs", Core.Voice.ElevenLabs.Key, Core.Voice.ElevenLabs.TestKey, () =>
         {
             // A new key: try its first voice straight away (it plays, so you hear it).
@@ -475,16 +414,81 @@ public sealed class SettingsWindow : Window
                 current = "el:" + first.Id;
                 ai.SetTalkVoice(current);
             }
-        }, "For your ElevenLabs voices: elevenlabs.io, Developers, API keys (with Text to Speech and Voices read access).");
+        }, "elevenlabs.io, Developers, API keys (Speech to Text, Text to Speech and Voices read access).");
+        var wisprKey = KeyPart("Wispr", Core.Voice.WisprFlow.Key, null, null, "");
+        advanced.Children.Add(deepgramKey.Root);
+        advanced.Children.Add(elevenKey.Root);
+        advanced.Children.Add(wisprKey.Root);
+        var usage = UiKit.Body("", 11.5);
+        advanced.Children.Add(usage);
+        foreach (var setting in advancedSwitches) advanced.Children.Add(Line(setting.Label, setting.Hint, Toggle(setting)));
+
+        void Show()
+        {
+            var cmd = ai.GetVoiceEngine();
+            var wake = ai.GetWakeEngine();
+            bool hasDeepgram = Core.Voice.Deepgram.HasKey;
+            UiKit.Select(cmdWhisper, cmd == "whisper");
+            UiKit.Select(cmdDeepgram, cmd == "deepgram");
+            UiKit.Select(cmdScribe, cmd == "elevenlabs");
+            UiKit.Select(cmdWispr, cmd == "wispr");
+            UiKit.Select(wakeWhisper, wake == "whisper");
+            UiKit.Select(wakeDeepgram, wake == "deepgram");
+            cmdNote.Text = cmd switch
+            {
+                "deepgram" => hasDeepgram
+                    ? "Deepgram Nova-3 writes your words down live and judges when you've finished. If it can't be reached, Whisper on this PC takes over."
+                    : "Add a Deepgram key below. Until then Whisper on this PC is used.",
+                "elevenlabs" => Core.Voice.ElevenLabs.HasKey
+                    ? "ElevenLabs Scribe v2 writes your words down live, careful with names and Hinglish, with background noise filtered out. If it can't be reached, Deepgram (then Whisper) takes over."
+                    : "Add your ElevenLabs key below. Until then Deepgram or Whisper is used.",
+                "wispr" => Core.Voice.WisprFlow.Available
+                    ? "What you say goes to Wispr Flow to be written down."
+                    : "Wispr Flow's API isn't open to Shiki yet. Until it is, Whisper on this PC is used.",
+                _ => $"Free and private: Whisper turns your voice into text on this PC. It downloads once ({Core.Voice.WhisperLocal.DownloadSize}).",
+            };
+            wakePart.Visibility = ai.WakeOn() ? Visibility.Visible : Visibility.Collapsed;
+            wakeNote.Text = wake == "deepgram"
+                ? hasDeepgram
+                    ? "Short bits of speech (under six seconds) go to Deepgram to check for the name; silence never leaves the PC."
+                    : "Add a Deepgram key below. Until then Whisper on this PC listens."
+                : "Free and private: short bits of speech are checked for the name on this PC.";
+            wisprKey.Root.Visibility = cmd == "wispr" || Core.Voice.WisprFlow.Key.Exists ? Visibility.Visible : Visibility.Collapsed;
+            usage.Text = ai.DeepgramUsage();
+            usage.Visibility = usage.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        refresh = () => { Show(); ShowHow(); };
+        deepgramKey.Changed += Show;
         elevenKey.Changed += () =>
         {
             current = Core.Voice.Speaker.Pick(ai.GetTalkVoice());
             FillVoices();
+            Show();
         };
-        stack.Children.Add(elevenKey.Root);
-        // Voices added on the website show up the next time Settings opens.
+        Show();
+        // Voices added on the ElevenLabs website show up the next time Settings opens.
         if (Core.Voice.ElevenLabs.HasKey)
             _ = Core.Voice.ElevenLabs.Refresh().ContinueWith(_ => Dispatcher.BeginInvoke(FillVoices), System.Threading.Tasks.TaskScheduler.Default);
+    }
+
+    /// <summary>A labelled row of chips, one picked; picking calls set.</summary>
+    StackPanel Chips(string label, string hint, (string Id, string Label)[] options, Func<string> get, Action<string> set)
+    {
+        var panel = new StackPanel();
+        panel.Children.Add(Line(label, hint, new Border()));
+        var chips = new List<(string Id, Border Chip)>();
+        void Show() { foreach (var (id, chip) in chips) UiKit.Select(chip, get() == id); }
+        var row = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
+        foreach (var (id, text) in options)
+        {
+            var chip = UiKit.Button(text, () => { set(id); Show(); });
+            chip.Margin = new Thickness(0, 0, 6, 6);
+            chips.Add((id, chip));
+            row.Children.Add(chip);
+        }
+        panel.Children.Add(row);
+        Show();
+        return panel;
     }
 
     sealed class KeyBox
@@ -739,6 +743,12 @@ public sealed class SettingsWindow : Window
         stack.Children.Add(memory);
     }
 
+    /// <summary>Changes the small grey line under a setting's name.</summary>
+    static void SetHint(Grid line, string hint)
+    {
+        if (line.Children[0] is StackPanel text && text.Children[1] is TextBlock sub) sub.Text = hint;
+    }
+
     Grid Line(string label, string hint, UIElement control)
     {
         var grid = new Grid { Margin = new Thickness(0, 6, 0, 6) };
@@ -787,7 +797,7 @@ public sealed class SettingsWindow : Window
     void AddPhone(StackPanel stack, PhoneSetting phone)
     {
         stack.Children.Add(UiKit.Heading("Your phone"));
-        stack.Children.Add(UiKit.Body("Photos, videos and files from your Android phone, at full quality, over your Wi-Fi: share them to Shiki on the phone, or ask the cat (\"get my last 5 photos from my phone\"). New photos come over by themselves."));
+        stack.Children.Add(UiKit.Body("Photos, videos and files from your iPhone or Android, at full quality, over your Wi-Fi. Send them from Shiki on the phone, or ask the cat: \"get my last 5 photos from my phone\".", 11.5));
         var list = new StackPanel { Margin = new Thickness(0, 10, 0, 0) };
         stack.Children.Add(list);
         void Show()
@@ -808,16 +818,12 @@ public sealed class SettingsWindow : Window
             }
         }
         Show();
-        var connect = UiKit.Button("Connect a phone", () => { phone.Connect(); }, primary: true);
+        var connect = UiKit.Button("Connect a phone", () => { phone.Connect(); });
         var refresh = UiKit.Button("Refresh", Show);
         var buttons = UiKit.Row(connect, refresh);
-        buttons.Margin = new Thickness(0, 10, 0, 0);
+        buttons.Margin = new Thickness(0, 4, 0, 4);
         stack.Children.Add(buttons);
-        stack.Children.Add(UiKit.Heading("Where they go"));
-        stack.Children.Add(UiKit.Body($"Photos and videos: {phone.Folder()}. Other files: Downloads\\From phone.", 12.5));
-        var open = UiKit.Button("Open the folder", phone.OpenFolder);
-        open.Margin = new Thickness(0, 8, 0, 0);
-        stack.Children.Add(open);
+        stack.Children.Add(Line("Where they go", $"Photos and videos: {phone.Folder()}. Other files: Downloads\\From phone.", UiKit.Button("Open", phone.OpenFolder)));
     }
 
     void OnKey(object sender, KeyEventArgs e)
