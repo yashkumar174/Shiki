@@ -76,7 +76,7 @@ public sealed class SettingsWindow : Window
         _output = output;
         _lastFolder = output.GetFolder() ?? Core.OutputPaths.DefaultFolder;
         Title = "Shiki settings";
-        Width = 520;
+        Width = 680;
         SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize;
         UiKit.Prepare(this);
@@ -183,6 +183,9 @@ public sealed class SettingsWindow : Window
             keys.Children.Add(Line(shortcut.Label, "", chip));
         }
         keys.Children.Add(_error);
+
+        // Each section becomes a card of its own, so a tab reads as a few clear groups.
+        foreach (var (_, _, tabPage) in pages) Group(tabPage);
 
         // The tabs: one page shows at a time.
         var shownPages = new StackPanel();
@@ -741,6 +744,42 @@ public sealed class SettingsWindow : Window
         }
         FillMemory();
         stack.Children.Add(memory);
+    }
+
+    /// <summary>
+    /// Gathers what follows each heading into a rounded card, with a thin line between its
+    /// settings. Anything before the first heading stays as it is.
+    /// </summary>
+    void Group(StackPanel page)
+    {
+        var items = page.Children.Cast<UIElement>().ToList();
+        page.Children.Clear();
+        StackPanel? card = null;
+        foreach (var item in items)
+        {
+            if (item is TextBlock { Tag: "heading" } heading)
+            {
+                heading.Margin = new Thickness(4, page.Children.Count == 0 ? 6 : 28, 0, 10);
+                page.Children.Add(heading);
+                card = new StackPanel();
+                page.Children.Add(new Border
+                {
+                    Background = Theme.Brush(_p.WedgeRest),
+                    BorderBrush = Theme.Brush(_p.SurfaceBorder),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(_p.Pixel ? 0 : 16),
+                    Padding = new Thickness(20, 10, 20, 14),
+                    Child = card,
+                });
+                continue;
+            }
+            if (card == null) { page.Children.Add(item); continue; }
+            // A setting (its name and switch, or its name and choices) gets a line above it.
+            bool setting = item is Grid || item is StackPanel { Children.Count: > 0 } panel && panel.Children[0] is Grid;
+            if (setting && card.Children.Count > 0)
+                card.Children.Add(new Border { Height = 1, Background = Theme.Brush(_p.SurfaceBorder), Margin = new Thickness(0, 6, 0, 6) });
+            card.Children.Add(item);
+        }
     }
 
     /// <summary>Changes the small grey line under a setting's name.</summary>

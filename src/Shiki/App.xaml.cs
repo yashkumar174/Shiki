@@ -1466,6 +1466,7 @@ public partial class App : Application
                 Level = Level,
                 Points = Points,
                 Stats = Stats,
+                ConnectPhone = () => ShowPhoneConnect(),
                 SetAccessory = SetAccessory,
                 Chat = Chat,
                 Voice = Voice,

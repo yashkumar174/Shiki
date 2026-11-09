@@ -52,6 +52,8 @@ public sealed class DashboardHost
     public Func<int>? Points { get; init; }
     /// <summary>What's been done with Shiki, for the level tasks on the Cats page.</summary>
     public Func<CatStats>? Stats { get; init; }
+    /// <summary>Opens "Connect your phone".</summary>
+    public Action? ConnectPhone { get; init; }
     public Action<string?>? SetAccessory { get; init; }
     /// <summary>Talking to the cat (Claude); null hides the Ask page.</summary>
     public Core.Ai.CatChat? Chat { get; init; }
@@ -71,7 +73,7 @@ public sealed class DashboardHost
     public Action<string>? Play { get; set; }
 }
 
-public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks, Skills, Cats }
+public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks, Skills, Cats, Levels }
 
 /// <summary>
 /// The main window: a folder. Its tab (the cat and Shiki) sits top left and flows down into one
@@ -602,9 +604,10 @@ public sealed class DashboardWindow : Window
         DashPage.Meetings => new MeetingsPage(_k, _host, _meetingId, id => { _meetingId = id; Rebuild(); }, Rebuild).Build(),
         DashPage.Tasks => new TasksPage(_k, _host, Rebuild).Build(),
         DashPage.Skills => new SkillsPage(_k, _host).Build(),
-        DashPage.Cats => new CatsPage(_k, _host, RebuildInPlace).Build(),
+        DashPage.Cats => new CatsPage(_k, _host, RebuildInPlace, () => Show(DashPage.Levels)).Build(),
+        DashPage.Levels => new LevelsPage(_k, _host).Build(),
         _ => new HomePage(_k, _host, () => Show(DashPage.History), () => { _historySearch = ""; Show(DashPage.History); }, RebuildInPlace,
-            SetupCard, () => Show(DashPage.Cats)).Build(),
+            SetupCard, () => Show(DashPage.Cats), Show).Build(),
     };
 
     /// <summary>The cat's head scaled up with hard pixel edges, for the window and taskbar icon.</summary>
@@ -701,6 +704,7 @@ public sealed class DashboardWindow : Window
         row.Children.Add(PagePill("\uE762", due > 0 ? $"Tasks ({due})" : "Tasks", DashPage.Tasks, compact));
         row.Children.Add(Pill(null, "Cats", OnPage(DashPage.Cats), () => Show(DashPage.Cats), compact, "Cats",
             CatSprites.Head(CatSprites.Skin(_host.Settings.Cat))));
+        row.Children.Add(PagePill("\uE7C1", "Levels", DashPage.Levels, compact));
         row.Children.Add(Pill("\uE713", "Settings", !_onPlayer && _showing != null && _showing == _settingsPage, _host.OpenSettings, compact, "Settings"));
         return row;
     }

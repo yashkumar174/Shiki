@@ -60,6 +60,8 @@ public static class UiKit
         FontWeight = FontWeights.Bold,
         Foreground = Theme.Brush(P.Text),
         Margin = new Thickness(0, 26, 0, 6),
+        // Settings gathers everything under a heading into one card.
+        Tag = "heading",
     };
 
     public static TextBlock Error() => new()

@@ -15,7 +15,7 @@ namespace Shiki.UI.Dashboard;
 /// to have it on your desktop. Then things to wear, and the levels: every task that brings the
 /// next cat, with how far along it is.
 /// </summary>
-public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh)
+public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh, Action? openLevels = null)
 {
     DashPalette P => k.P;
 
@@ -33,6 +33,10 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh)
         ["biscuit"] = (Rgb(0xF2C14E), Rgb(0x2B1D08), "Soft, sunny and always a little hungry. Turns any bad day into a good nap."),
     };
 
+    /// <summary>A cat's card colour, the ink on it and its nature (Home shows them too).</summary>
+    public static (Color Fill, Color Ink, string Nature) Look(CatSkin skin) =>
+        Looks.TryGetValue(skin.Id, out var look) ? look : (Color.FromRgb(0x14, 0x1A, 0x27), Color.FromRgb(0xE9, 0xED, 0xF3), skin.Description);
+
     static Color Rgb(int rgb) => Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
 
     int Level => host.Level?.Invoke() ?? 1;
@@ -43,7 +47,7 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh)
     {
         var page = new StackPanel { Margin = new Thickness(52, 44, 52, 56), MaxWidth = 1180, HorizontalAlignment = HorizontalAlignment.Stretch };
         page.Children.Add(k.Text("Cats", 34, font: DashKit.Pixel));
-        var intro = k.Text($"Pick who keeps you company. New cats join as {Name} levels up: the tasks for each level are below.", 15, P.Muted, wrap: true);
+        var intro = k.Text($"Pick who keeps you company. New cats join as {Name} levels up: the tasks for each level are on the Levels page.", 15, P.Muted, wrap: true);
         intro.Margin = new Thickness(0, 8, 0, 26);
         page.Children.Add(intro);
 
@@ -59,8 +63,12 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh)
         page.Children.Add(Section("Things to wear"));
         page.Children.Add(Wears());
 
-        page.Children.Add(Section("Levels"));
-        page.Children.Add(Path());
+        if (openLevels != null)
+        {
+            var levels = k.Button("See every level and its tasks", openLevels, DashKit.Pill.Accent);
+            levels.Margin = new Thickness(0, 30, 0, 0);
+            page.Children.Add(levels);
+        }
         return page;
     }
 
@@ -149,7 +157,7 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh)
         stack.Children.Add(cat);
         if (!open)
         {
-            var lockIcon = k.Icon("", 30, ink);
+            var lockIcon = k.Icon("\uE72E", 30, ink);
             Grid.SetRow(lockIcon, 1);
             stack.Children.Add(lockIcon);
         }
@@ -196,7 +204,7 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh)
         var row = new StackPanel { Orientation = Orientation.Horizontal };
         if (locked)
         {
-            var icon = k.Icon("", 11, solid ? fill : ink);
+            var icon = k.Icon("\uE72E", 11, solid ? fill : ink);
             icon.Margin = new Thickness(0, 1, 6, 0);
             row.Children.Add(icon);
         }
@@ -232,8 +240,8 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh)
                 RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
                 art.Children.Add(image);
             }
-            else art.Children.Add(k.Icon("", 18, P.Faint));
-            if (!open) art.Children.Add(k.Icon("", 16, P.Text));
+            else art.Children.Add(k.Icon("\uE711", 18, P.Faint));
+            if (!open) art.Children.Add(k.Icon("\uE72E", 16, P.Text));
             content.Children.Add(art);
             var label = k.Text(name, 13, chosen ? P.Text : P.Muted, chosen ? FontWeights.Bold : FontWeights.Medium);
             label.HorizontalAlignment = HorizontalAlignment.Center;
@@ -268,147 +276,6 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh)
             }
             row.Children.Add(tile);
         }
-        return row;
-    }
-
-    // ---- The levels, one after another, with their tasks ----
-
-    UIElement Path()
-    {
-        int level = Level;
-        var stats = Stats;
-        var list = new StackPanel();
-        foreach (var goal in CatLevel.Goals)
-        {
-            bool reached = goal.Level <= level;
-            bool next = goal.Level == level + 1;
-            list.Children.Add(LevelRow(goal, reached, next, stats, last: goal.Level == CatLevel.Max));
-        }
-        return list;
-    }
-
-    UIElement LevelRow(LevelGoal goal, bool reached, bool next, CatStats stats, bool last)
-    {
-        var grid = new Grid();
-        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(64) });
-        grid.ColumnDefinitions.Add(new ColumnDefinition());
-
-        // Left: the level's number on the path, joined to the next one by a line.
-        var rail = new Grid();
-        if (!last)
-            rail.Children.Add(new Border { Width = 2, Background = DashKit.B(reached ? P.Accent : P.Line), HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 22, 0, 0) });
-        var number = new Border
-        {
-            Width = 44,
-            Height = 44,
-            CornerRadius = new CornerRadius(12),
-            Background = DashKit.B(reached ? P.Accent : next ? P.Card : P.Panel),
-            BorderBrush = DashKit.B(reached ? P.Accent : next ? P.Accent : P.Line),
-            BorderThickness = new Thickness(2),
-            VerticalAlignment = VerticalAlignment.Top,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Child = new TextBlock
-            {
-                Text = goal.Level.ToString(),
-                FontFamily = DashKit.Pixel,
-                FontSize = 20,
-                Foreground = DashKit.B(reached ? P.AccentText : P.Text),
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-            },
-        };
-        rail.Children.Add(number);
-        grid.Children.Add(rail);
-
-        // Right: the level's name, what it brings, and its tasks.
-        var body = new StackPanel { Margin = new Thickness(8, 0, 0, last ? 0 : 22) };
-        var head = new DockPanel();
-        var reward = Reward(goal.Level);
-        if (reward != null) { DockPanel.SetDock(reward, Dock.Right); head.Children.Add(reward); }
-        var title = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        title.Children.Add(k.Text(goal.Title, 17, reached || next ? P.Text : P.Muted, FontWeights.Bold));
-        var state = reached ? "Reached" : next ? "Up next" : goal.Level == CatLevel.Max ? "The last level" : $"After level {goal.Level - 1}";
-        title.Children.Add(k.Text(state, 13, reached ? P.AccentEdge : P.Faint, FontWeights.SemiBold));
-        head.Children.Add(title);
-        body.Children.Add(head);
-
-        if (goal.Quests.Count == 0)
-            body.Children.Add(Spaced(k.Text($"Where every cat starts: Mochi, Latte and Sky are here from day one.", 14, P.Muted, wrap: true), 10));
-        foreach (var quest in goal.Quests)
-            body.Children.Add(QuestRow(quest, stats, reached));
-
-        UIElement content = body;
-        if (next)
-        {
-            // The level being worked on stands out: in a card, with the accent edge.
-            var card = k.Card(body, new Thickness(20, 16, 20, 18));
-            card.BorderBrush = DashKit.B(P.Accent);
-            card.BorderThickness = new Thickness(1.5);
-            card.Margin = new Thickness(8, 0, 0, 22);
-            body.Margin = new Thickness(0);
-            content = card;
-        }
-        Grid.SetColumn((FrameworkElement)content, 1);
-        grid.Children.Add(content);
-        if (!reached && !next) grid.Opacity = 0.72;
-        return grid;
-    }
-
-    static FrameworkElement Spaced(FrameworkElement element, double top)
-    {
-        element.Margin = new Thickness(0, top, 0, 0);
-        return element;
-    }
-
-    UIElement QuestRow(Quest quest, CatStats stats, bool reached)
-    {
-        bool done = reached || quest.Done(stats);
-        int have = reached ? quest.Need : quest.Progress(stats);
-        var row = new Grid { Margin = new Thickness(0, 10, 0, 0) };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
-        row.ColumnDefinitions.Add(new ColumnDefinition());
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(160) });
-        var mark = k.Icon(done ? "" : "", 15, done ? (P.Dark ? P.Accent : P.AccentEdge) : P.Faint);
-        mark.HorizontalAlignment = HorizontalAlignment.Left;
-        row.Children.Add(mark);
-        var text = k.Text(quest.Text.Replace("the cat", Name), 14.5, done ? P.Muted : P.Text, done ? FontWeights.Normal : FontWeights.Medium, wrap: true);
-        Grid.SetColumn(text, 1);
-        row.Children.Add(text);
-        var progress = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        var count = k.Text(quest.Need == 1 ? (done ? "Done" : "Not yet") : $"{have:N0} / {quest.Need:N0}", 12.5, P.Faint, FontWeights.SemiBold);
-        count.HorizontalAlignment = HorizontalAlignment.Right;
-        progress.Children.Add(count);
-        if (quest.Need > 1 && !done)
-        {
-            var bar = Bar(have / (double)quest.Need, P.Dark ? P.Accent : P.AccentEdge, 5);
-            bar.Margin = new Thickness(40, 5, 0, 0);
-            progress.Children.Add(bar);
-        }
-        Grid.SetColumn(progress, 2);
-        row.Children.Add(progress);
-        return row;
-    }
-
-    /// <summary>What a level brings, drawn: the new cat's face, the thing to wear on the current cat, or a star for the last.</summary>
-    UIElement? Reward(int level)
-    {
-        var unlock = CatLevel.NewAt(level).FirstOrDefault();
-        ImageSource? picture = null;
-        string label;
-        if (unlock is { IsCat: true }) { picture = CatSprites.Head(CatSprites.Skin(unlock.Id)); label = $"{unlock.Name}, a new cat"; }
-        else if (unlock != null) { picture = CatSprites.Frame(CatSprites.Dressed(CatSprites.Skin(host.Settings.Cat), unlock.Id), CatPose.Idle); label = unlock.Name; }
-        else if (level == CatLevel.Max) label = "The legend title";
-        else if (level == 1) label = "Mochi, Latte and Sky";
-        else return null;
-        var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        row.Children.Add(k.Text(label, 13.5, P.Muted, FontWeights.SemiBold));
-        if (picture != null)
-        {
-            var image = new Image { Source = picture, Width = 40, Height = 40, Margin = new Thickness(10, 0, 0, 0) };
-            RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
-            row.Children.Add(image);
-        }
-        else row.Children.Add(new Border { Margin = new Thickness(10, 0, 0, 0), Child = k.Icon("", 20, DashPalette.Eye) });
         return row;
     }
 }
