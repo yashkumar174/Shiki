@@ -489,7 +489,7 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
             connect.Margin = new Thickness(0, 14, 0, 0);
             stack.Children.Add(connect);
         }
-        return Tile(stack, P.Card, P.Line);
+        return Tile(stack, P.Card, P.Line, open: () => Go(DashPage.Phone));
     }
 
     /// <summary>Meetings: notes running now, or the last one, and the button to start.</summary>

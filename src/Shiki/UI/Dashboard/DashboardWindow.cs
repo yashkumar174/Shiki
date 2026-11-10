@@ -75,7 +75,7 @@ public sealed class DashboardHost
     public Action<string>? Play { get; set; }
 }
 
-public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks, Skills, Cats, Levels }
+public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks, Skills, Cats, Levels, Phone }
 
 /// <summary>
 /// The main window: a folder. Its tab (the cat and Shiki) sits top left and flows down into one
@@ -178,6 +178,9 @@ public sealed class DashboardWindow : Window
         KeyDown += (_, e) => { if (_showing != null && !e.Handled) Forward(e, Keyboard.KeyDownEvent); };
         ApplyTheme();
     }
+
+    /// <summary>The phone sent something: the gallery (and Home's phone tile) show it at once.</summary>
+    public void PhoneFilesChanged() => Dispatcher.BeginInvoke(() => { if (_page is DashPage.Phone or DashPage.Home && _showing == null && !_onPlayer && !IsTyping()) RebuildInPlace(); });
 
     // Tasks and meetings change from elsewhere (a reminder, notes being written): show it.
     void OnListsChanged() => Dispatcher.BeginInvoke(() => { if (_page is DashPage.Tasks or DashPage.Meetings && _showing == null && !_onPlayer && !IsTyping()) Rebuild(); });
@@ -608,6 +611,7 @@ public sealed class DashboardWindow : Window
         DashPage.Skills => new SkillsPage(_k, _host).Build(),
         DashPage.Cats => new CatsPage(_k, _host, RebuildInPlace, () => Show(DashPage.Levels)).Build(),
         DashPage.Levels => new LevelsPage(_k, _host).Build(),
+        DashPage.Phone => new PhonePage(_k, _host).Build(),
         _ => new HomePage(_k, _host, () => Show(DashPage.History), () => { _historySearch = ""; Show(DashPage.History); }, RebuildInPlace,
             SetupCard, () => Show(DashPage.Cats), Show).Build(),
     };
@@ -703,6 +707,7 @@ public sealed class DashboardWindow : Window
         if (_host.Chat != null) row.Children.Add(PagePill("\uE8BD", $"Ask {_host.CatName()}", DashPage.Ask, compact));
         row.Children.Add(PagePill("\uE90F", "Tools", DashPage.Tools, compact));
         row.Children.Add(PagePill("\uE81C", "History", DashPage.History, compact));
+        row.Children.Add(PagePill("\uE8EA", "Phone", DashPage.Phone, compact));
         if (_host.ToggleNotes != null) row.Children.Add(PagePill("\uE8F2", "Meetings", DashPage.Meetings, compact));
         if (_host.Chat != null) row.Children.Add(PagePill("\uE897", $"What {_host.CatName()} can do", DashPage.Skills, compact));
         int due = Todos.All.Count(t => !t.Done && t.Due is { } d && d.Date <= DateTime.Today);

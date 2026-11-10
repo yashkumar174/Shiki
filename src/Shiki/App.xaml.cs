@@ -3890,7 +3890,8 @@ public partial class App : Application
         var folder = job.Saved.Count > 0 ? Path.GetDirectoryName(job.Saved[^1]) : null;
         ToastHost.Show(ToastWindow.Message($"{what} from {phone}", line, null,
             ("Open folder", () => { if (folder != null) OpenFolder(folder); }),
-            ("Show", () => { if (job.Saved.Count > 0) Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{job.Saved[^1]}\"") { UseShellExecute = true })?.Dispose(); })));
+            ("See them", () => ShowDashboard(DashPage.Phone))));
+        _dashboard?.PhoneFilesChanged();
     }
 
     void ShowQr(string text)

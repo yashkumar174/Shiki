@@ -537,7 +537,8 @@ public sealed partial class PhoneLink : IDisposable
         if (taken > 0)
         {
             var when = DateTimeOffset.FromUnixTimeMilliseconds(taken).LocalDateTime;
-            try { File.SetCreationTime(target, when); File.SetLastWriteTime(target, when); } catch (Exception) { }
+            // Modified is when it was taken (what photo apps sort by); created stays when it arrived (the gallery's order).
+            try { File.SetLastWriteTime(target, when); } catch (Exception) { }
         }
         lock (_gate)
         {
