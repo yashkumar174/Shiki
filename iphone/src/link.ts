@@ -113,12 +113,18 @@ async function sendFile(p: Pairing, item: Sendable, job?: string): Promise<numbe
   }
   if (info?.exists) {
     const url = `${base(p)}/v1/put?${query({ id: item.id, name: item.name, size: info.size, taken: item.taken, md5: info.md5, job })}`;
-    const result = await FileSystem.uploadAsync(url, item.uri, {
-      httpMethod: 'PUT',
-      uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-      headers: { ...auth(p), 'Content-Type': 'application/octet-stream' },
-    });
-    return result.status;
+    try {
+      // In the foreground: iOS background transfers don't reach a plain-http address on the home network.
+      const result = await FileSystem.uploadAsync(url, item.uri, {
+        httpMethod: 'PUT',
+        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+        sessionType: FileSystem.FileSystemSessionType.FOREGROUND,
+        headers: { ...auth(p), 'Content-Type': 'application/octet-stream' },
+      });
+      return result.status;
+    } catch (e) {
+      console.log(`[shiki] ${item.name}: upload from disk failed (${String((e as Error)?.message ?? e)}), sending it another way`);
+    }
   }
   const blob = await (await fetch(item.uri)).blob();
   if (!blob.size) throw new Error('the photo came out empty');
