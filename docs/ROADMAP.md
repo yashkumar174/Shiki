@@ -103,14 +103,20 @@ In no fixed order yet; we pick as we go.
 - **The web and Gmail, fast** (v2.19): Claude web search and fetch; Gmail through Google's API (search, read, draft, send with a card).
 - **What can Sky do?** page (v2.20), Settings in tabs (v2.20.1), a short right-click menu (v2.20.2).
 - **Say it and it happens** (v2.38–v2.42): a 5-second countdown for people already written to, a box on the card for a new person's number or email, quick sends and reminders without waiting for Claude, several things on one card with one yes, habits learned from corrections, and the morning briefing.
+- **WhatsApp files and better listening** (v2.43–v2.44): files sent through WhatsApp Web in Chrome; ElevenLabs Scribe for listening, with voice clips kept to compare engines.
+- **Your phone, connected** (v2.45–v2.50.1): Shiki for Android and Shiki for iPhone (Expo) send photos and videos to the PC at full quality over Wi-Fi, each file checked. The iPhone pairs by QR or by typing the PC's address and six digits; it works on the user's iPhone.
+- **Night shift** (v2.47–v2.49): a redesign of Shiki's own. The window is a folder with pills that swell on hover; Home is a bento board; nine cats on a Cats page with their natures; 12 levels as a paw-print walk, each made of small tasks that unlock cats and things to wear; Settings in cards; smooth scrolling; Pixelify Sans and Manrope.
+- **Your cat, your name** (v2.50): every cat can be renamed on its card, and the name shows everywhere.
+- **From your phone** (v2.50.3): a Phone page in the dashboard showing everything the phone has sent, newest first, with thumbnails, a "New" badge, and "See them" on the arrival toast.
+- **The V3 ad** (November 2026): a 39 s cut, a 21 s fast cut on the beat and an Instagram cover, in `ad/shiki-ad` (pull request 1).
 
 ## Open
 
 - **WhatsApp files that attach by themselves** (built in v2.43 through WhatsApp Web; waiting for the first real send).
+- **The phone, next**: check the Phone page redraws while open; with an Apple developer account, a real iPhone build (Share → Send to PC, background uploads, pinned TLS like Android).
 - **Voice quality**: local speech-to-text (Whisper, Parakeet) against Deepgram, a faster "Hey Sky", dictation cleanup.
 - **Email triage** ("anything important?") and follow-up reminders, **clipboard history**.
 - **Wispr Flow**: waiting for their API.
-- **Phone link**: files between phone and PC.
 - **Mellow's skin**: needs her colours.
 - **One-click Gmail for other users**: build the Google client into Shiki; Google verification before a public launch.
 - **Sharing Shiki**: automatic updates, code signing, a small website.
