@@ -536,6 +536,8 @@ public sealed class HomePage(DashKit k, DashboardHost host, Action seeAll, Actio
             FontFamily = DashKit.Pixel,
             FontSize = 31,
             LineHeight = 38,
+            // The pixel face draws its capitals above its own line box; the padding gives them room.
+            Padding = new Thickness(0, 10, 0, 0),
             Foreground = DashKit.B(P.HeroText),
             TextWrapping = TextWrapping.Wrap,
         };

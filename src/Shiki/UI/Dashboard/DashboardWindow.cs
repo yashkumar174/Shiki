@@ -680,8 +680,11 @@ public sealed class DashboardWindow : Window
     /// Every page as a pill, the one you're on filled in. Short of room, only the current one
     /// keeps its label (the rest show their icon, and their name on hover).
     /// </summary>
+    readonly List<Border> _pills = [];
+
     StackPanel Pills(bool compact)
     {
+        _pills.Clear();
         var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Left, VerticalAlignment = VerticalAlignment.Center };
         if (_player is { } player)
         {
@@ -794,7 +797,40 @@ public sealed class DashboardWindow : Window
         pill.PreviewMouseLeftButtonUp += (_, _) => Grow(1.08, 180, spring);
         pill.MouseLeftButtonUp += (_, e) => { e.Handled = true; onClick(); };
         WindowChrome.SetIsHitTestVisibleInChrome(pill, true);
+        _pills.Add(pill);
         return pill;
+    }
+
+    // ---- Dev aids for recording the ad: they play the motion without the mouse or keyboard ----
+
+    /// <summary>Each pill swells and opens in turn, as if the mouse passed along the bar.</summary>
+    public async void DemoPills()
+    {
+        await System.Threading.Tasks.Task.Delay(800);
+        foreach (var pill in _pills.ToList())
+        {
+            pill.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.MouseEnterEvent });
+            await System.Threading.Tasks.Task.Delay(520);
+            pill.RaiseEvent(new MouseEventArgs(Mouse.PrimaryDevice, 0) { RoutedEvent = Mouse.MouseLeaveEvent });
+            await System.Threading.Tasks.Task.Delay(60);
+        }
+    }
+
+    /// <summary>The page glides from top to bottom over the given seconds (eased), then back up.</summary>
+    public async void DemoScroll(double seconds)
+    {
+        await System.Threading.Tasks.Task.Delay(700);
+        if (_pageScroll is not { } scroll) return;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        double end = scroll.ScrollableHeight;
+        while (watch.Elapsed.TotalSeconds < seconds)
+        {
+            double t = watch.Elapsed.TotalSeconds / seconds;
+            double eased = t < 0.5 ? 4 * t * t * t : 1 - Math.Pow(-2 * t + 2, 3) / 2;
+            scroll.ScrollToVerticalOffset(end * eased);
+            await System.Threading.Tasks.Task.Delay(8);
+        }
+        scroll.ScrollToVerticalOffset(end);
     }
 
     StackPanel TitleRight()

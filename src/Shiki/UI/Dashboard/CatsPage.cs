@@ -39,6 +39,9 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh, Acti
 
     string Called(CatSkin skin) => NameOf(skin, host.Settings);
 
+    /// <summary>Dev aid for the ad: a card's pencil opens and a name is typed into it, then let go (nothing saved).</summary>
+    public static readonly Dictionary<string, Func<string, System.Threading.Tasks.Task>> DemoRename = [];
+
     /// <summary>A cat's card colour, the ink on it and its nature (Home shows them too).</summary>
     public static (Color Fill, Color Ink, string Nature) Look(CatSkin skin) =>
         Looks.TryGetValue(skin.Id, out var look) ? look : (Color.FromRgb(0x14, 0x1A, 0x27), Color.FromRgb(0xE9, 0xED, 0xF3), skin.Description);
@@ -188,12 +191,28 @@ public sealed class CatsPage(DashKit k, DashboardHost host, Action refresh, Acti
             nameRow.Visibility = Visibility.Visible;
         }
         pencil.MouseLeftButtonUp += (_, e) => { e.Handled = true; Begin(); };
+        bool demo = false;
+        DemoRename[skin.Id] = async typed =>
+        {
+            demo = true;
+            Begin();
+            box.Text = "";
+            foreach (var letter in typed)
+            {
+                box.Text += letter;
+                box.CaretIndex = box.Text.Length;
+                await System.Threading.Tasks.Task.Delay(140);
+            }
+            await System.Threading.Tasks.Task.Delay(1200);
+            End(false);
+            demo = false;
+        };
         box.KeyDown += (_, e) =>
         {
             if (e.Key == Key.Enter) { e.Handled = true; End(true); }
             else if (e.Key == Key.Escape) { e.Handled = true; End(false); }
         };
-        box.LostKeyboardFocus += (_, _) => End(true);
+        box.LostKeyboardFocus += (_, _) => { if (!demo) End(true); };
         box.MouseLeftButtonUp += (_, e) => e.Handled = true;
         names.Children.Add(nameRow);
         names.Children.Add(box);

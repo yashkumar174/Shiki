@@ -634,6 +634,30 @@ public partial class App : Application
                 EnterBuddyMode();
                 ShowDashboard(args.Length > 1 && Enum.TryParse<DashPage>(args[1], true, out var page) ? page : DashPage.Home);
                 break;
+            case "demo-pills":
+                // Dev aid for the ad: the dashboard's pills swell and open one by one.
+                EnterBuddyMode();
+                ShowDashboard(DashPage.Home);
+                _dashboard?.DemoPills();
+                break;
+            case "demo-scroll" when args.Length >= 2 && Enum.TryParse<DashPage>(args[1], true, out var glidePage):
+                // Dev aid for the ad: a page glides from top to bottom ("demo-scroll levels 6").
+                EnterBuddyMode();
+                ShowDashboard(glidePage);
+                _dashboard?.DemoScroll(args.Length > 2 && double.TryParse(args[2], System.Globalization.CultureInfo.InvariantCulture, out var secs) ? secs : 5);
+                break;
+            case "demo-rename" when args.Length >= 3:
+                // Dev aid for the ad: on the Cats page, a cat's pencil opens and a name is typed (then let go).
+                EnterBuddyMode();
+                ShowDashboard(DashPage.Cats);
+                var who = args[1];
+                var newName = string.Join(" ", args[2..]);
+                Dispatcher.BeginInvoke(async () =>
+                {
+                    await System.Threading.Tasks.Task.Delay(900);
+                    if (UI.Dashboard.CatsPage.DemoRename.TryGetValue(who, out var demo)) await demo(newName);
+                }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                break;
             case "snapshot" when args.Length == 2:
                 // Dev aid: save what the dashboard shows to a PNG.
                 _dashboard?.Snapshot(args[1]);
