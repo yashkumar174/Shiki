@@ -7,3 +7,5 @@ publish/
 Releases/
 # Raw recordings, settings copies and demo files for the ad stay on this PC (they can hold personal details).
 ad/raw/
+# The handoff PDF holds personal details (phone numbers, emails); the Markdown handoff is the shared one.
+docs/Shiki-Handoff.pdf
