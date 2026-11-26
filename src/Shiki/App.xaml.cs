@@ -301,6 +301,7 @@ public partial class App : Application
             return;
         }
 
+        if (HandleShotVerb(args)) return;
         switch (args[0])
         {
             case "run" when args.Length >= 3:
@@ -1249,6 +1250,7 @@ public partial class App : Application
             [
                 new SettingSwitch("Right-click menu in Explorer", "Convert with Shiki, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu, "files"),
                 new SettingSwitch("Shift + drag opens the wheel", "Hold Shift while dragging any file.", () => _settings.ShiftDragSummon, ToggleShiftDrag, "files"),
+                new SettingSwitch("Collect screenshots", "After a screenshot (Win+Shift+S or Print Screen) the cat offers to keep collecting: take a few more, then paste them all at once. On a web page it can capture the whole page, in screen-sized parts.", () => _settings.CollectScreenshots, () => { _settings.CollectScreenshots = !_settings.CollectScreenshots; _settings.Save(); ApplyShotPile(); }, "files"),
                 new SettingSwitch("Glass follows what's behind", "Glass look only. Off shows popups in screen recordings.", () => _settings.LiveGlass, ToggleLiveGlass, "cat"),
                 new SettingSwitch("Start with Windows", "The cat is there when you sign in.", StartupRegistration.IsEnabled, () => StartupRegistration.Set(!StartupRegistration.IsEnabled(), ExePath)),
                 new SettingSwitch("Offer to take notes when a call starts", "Zoom, Teams, Meet in a browser and other calling apps. Asks once per call.", () => _settings.OfferNotes, () => { _settings.OfferNotes = !_settings.OfferNotes; _settings.Save(); }, "meetings"),
@@ -1399,6 +1401,7 @@ public partial class App : Application
         ApplyWake();
         StartReminders();
         StartPhoneLink();
+        ApplyShotPile();
         WatchPc();
         _calls = new CallWatcher();
         _calls.Started += OfferNotes;
