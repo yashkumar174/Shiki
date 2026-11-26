@@ -108,7 +108,8 @@ public sealed class ScribeLive : ILiveStream
         _outgoing.Writer.TryComplete();
         try
         {
-            if (_sending != null) await _sending;
+            // Sending can hang on a connection that dropped: a few seconds, then on with what's here.
+            if (_sending != null) await Task.WhenAny(_sending, Task.Delay(3000));
             // Everything already written down (it ended on a commit): nothing more to wait for.
             // Otherwise the words still being written down come with the last commit.
             if (_ended && _interim.Length == 0 && _finals.Count > 0) return Text;
@@ -223,8 +224,14 @@ public sealed class ScribeLive : ILiveStream
         _outgoing.Writer.TryComplete();
         try
         {
+            // A polite goodbye, but not forever: a connection that dropped never answers it.
+            using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(1.5));
             if (_socket.State == WebSocketState.Open)
-                await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+                await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", wait.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            _socket.Abort();
         }
         catch (Exception ex) when (ex is WebSocketException or ObjectDisposedException)
         {

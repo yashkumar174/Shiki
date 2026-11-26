@@ -204,7 +204,7 @@ public sealed class DeepgramLive : ILiveStream
         _outgoing.Writer.TryComplete();
         try
         {
-            if (_sending != null) await _sending;
+            if (_sending != null) await Task.WhenAny(_sending, Task.Delay(3000));
             if (_receiving != null) await Task.WhenAny(_receiving, Task.Delay(3000));
         }
         catch (Exception ex)
@@ -342,8 +342,14 @@ public sealed class DeepgramLive : ILiveStream
         _outgoing.Writer.TryComplete();
         try
         {
+            // A polite goodbye, but not forever: a connection that dropped never answers it.
+            using var wait = new CancellationTokenSource(TimeSpan.FromSeconds(1.5));
             if (_socket.State == WebSocketState.Open)
-                await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", CancellationToken.None);
+                await _socket.CloseAsync(WebSocketCloseStatus.NormalClosure, "", wait.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            _socket.Abort();
         }
         catch (Exception)
         {

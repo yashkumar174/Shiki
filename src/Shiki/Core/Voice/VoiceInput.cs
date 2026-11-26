@@ -176,7 +176,17 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             }
 
             Set(VoiceState.Understanding);
-            var text = streamed is { Length: > 0 } ? streamed : await Transcribe(engine, heard.Samples, ct);
+            // Writing it down never takes more than half a minute: after that, the box is yours again.
+            using var slow = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            slow.CancelAfter(TimeSpan.FromSeconds(30));
+            string text;
+            try { text = streamed is { Length: > 0 } ? streamed : await Transcribe(engine, heard.Samples, slow.Token); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                Log.Info("Writing down what was said took over 30 seconds; gave up");
+                chat.Say(new ChatProblem("Writing that down took too long (the speech service didn't answer). Try again, or type it."));
+                return;
+            }
             AiLog.Write("heard", text);
             // Kept on this PC (last 30), so engines can be compared on this voice.
             VoiceClips.Keep(heard.Samples, text);
@@ -200,13 +210,14 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
         }
         finally
         {
-            if (live != null) await live.DisposeAsync();
+            // The box is free again first; closing the speech connection comes after, and can't hold it.
             if (_mic == mic) _mic = null;
             _cancel = null;
             Answering = false;
             FollowingUp = false;
             Partial = "";
             if (State != VoiceState.Off) Set(VoiceState.Off);
+            if (live != null) await Task.WhenAny(live.DisposeAsync().AsTask(), Task.Delay(2000));
         }
         if (again)
         {

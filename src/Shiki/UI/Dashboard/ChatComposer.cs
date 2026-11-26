@@ -70,7 +70,16 @@ public sealed class ChatComposer
                 else Send();
             }
         };
-        var field = new Grid { VerticalAlignment = VerticalAlignment.Center, Children = { _hint, _status, Box } };
+        // While it listens or writes down, the words sit where the box was: a click there stops
+        // the voice and gives the box back, so typing is always one click away.
+        var field = new Grid { VerticalAlignment = VerticalAlignment.Center, Background = Brushes.Transparent, Cursor = Cursors.IBeam, Children = { _hint, _status, Box } };
+        field.PreviewMouseLeftButtonDown += (_, e) =>
+        {
+            if (_voice is not { Active: true }) return;
+            e.Handled = true;
+            _focusWhenFree = true;
+            _voice.Cancel();
+        };
 
         _sendButton = Round(button, P.Accent, k.Icon("\uE724", compact ? 13 : 15, P.AccentText), "Send (Enter)", Send);
         _micGlyph = k.Icon("\uE720", compact ? 14 : 16, P.Text);
@@ -111,6 +120,9 @@ public sealed class ChatComposer
         }
     }
 
+    /// <summary>The voice was stopped by a click on the box: give the box the keyboard once it's back.</summary>
+    bool _focusWhenFree;
+
     public void Detach()
     {
         if (_voice != null) _voice.Changed -= Refresh;
@@ -144,6 +156,12 @@ public sealed class ChatComposer
             _ => "",
         };
         _status.Visibility = listening ? Visibility.Visible : Visibility.Collapsed;
+        _status.ToolTip = listening ? "Click here to type instead" : null;
+        if (!listening && _focusWhenFree)
+        {
+            _focusWhenFree = false;
+            Box.Dispatcher.BeginInvoke(() => Box.Focus(), System.Windows.Threading.DispatcherPriority.Input);
+        }
         Box.Visibility = listening ? Visibility.Hidden : Visibility.Visible;
         ShowHint();
         _sendButton.Visibility = listening ? Visibility.Collapsed : Visibility.Visible;
