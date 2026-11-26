@@ -8,6 +8,10 @@ public sealed class Settings
 {
     /// <summary>Horizontal spot along the bottom edge where the cat lives (DIPs).</summary>
     public double? CatLeft { get; set; }
+    /// <summary>The screen edge the cat lives on: bottom (the taskbar), left, right or top.</summary>
+    public string CatEdge { get; set; } = "bottom";
+    /// <summary>Where along the left, right or top edge (its top or left, DIPs); the bottom edge uses CatLeft.</summary>
+    public double? CatAlong { get; set; }
     public string Cat { get; set; } = "mochi";
     /// <summary>"arcade" (pixel) or "glass".</summary>
     public string Style { get; set; } = "arcade";

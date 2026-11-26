@@ -497,7 +497,7 @@ public partial class App : Application
                 break;
             case "quip-shot" when args.Length >= 3:
                 // Dev aid: a quip bubble drawn off screen.
-                var bubbleShot = new QuipBubble(string.Join(" ", args[2..]), new Rect(0, 400, 100, 100));
+                var bubbleShot = new QuipBubble(string.Join(" ", args[2..]), new Rect(0, 400, 100, 100), new Vector(0, -1));
                 DashboardWindow.SaveElement((FrameworkElement)bubbleShot.Content, 320, args[1]);
                 bubbleShot.Close();
                 break;
@@ -2135,7 +2135,7 @@ public partial class App : Application
         if (DateTime.Now - _lastQuip < TimeSpan.FromMinutes(20)) return;
         _lastQuip = DateTime.Now;
         _quip?.Close();
-        _quip = new QuipBubble(text, new Rect(cat.Left, cat.Top, cat.ActualWidth, cat.ActualHeight));
+        _quip = new QuipBubble(text, cat.BodyDip(), cat.Away);
         _quip.Show();
         AiLog.Write("quip", text);
     }
@@ -3433,9 +3433,13 @@ public partial class App : Application
     {
         double scale = NativeMethods.SystemScale;
         var area = SystemParameters.WorkArea;
-        return at ?? (_buddy is { IsVisible: true } cat
-            ? new Point(cat.WheelSpotPx(0).X / scale, cat.WheelSpotPx(0).Y / scale)
-            : new Point(area.Right - 260, area.Bottom - 8));
+        if (at is { } given) return given;
+        if (_buddy is not { IsVisible: true } cat) return new Point(area.Right - 260, area.Bottom - 8);
+        // The bubble grows up from its bottom centre: above the cat on the bottom edge; beside or
+        // below it on the other edges, with room for a full-size bubble.
+        if (cat.Edge == CatEdge.Bottom) return new Point(cat.WheelSpotPx(0).X / scale, cat.WheelSpotPx(0).Y / scale);
+        var spot = CatWindow.Beside(cat.BodyDip(), cat.Away, new Size(440, 640), 12);
+        return new Point(spot.X + 220, Math.Min(area.Bottom - 8, spot.Y + 640));
     }
 
     /// <summary>

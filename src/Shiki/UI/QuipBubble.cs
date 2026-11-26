@@ -14,7 +14,7 @@ namespace Shiki.UI;
 /// <summary>A little speech bubble above the cat for a few seconds: never takes a click or the keyboard.</summary>
 public sealed class QuipBubble : Window
 {
-    public QuipBubble(string text, Rect cat)
+    public QuipBubble(string text, Rect cat, Vector away)
     {
         var k = new DashKit(DashPalette.Night);
         WindowStyle = WindowStyle.None;
@@ -49,9 +49,10 @@ public sealed class QuipBubble : Window
         };
         Loaded += (_, _) =>
         {
-            var area = SystemParameters.WorkArea;
-            Left = Math.Clamp(cat.Left + cat.Width / 2 - 24, area.Left, area.Right - ActualWidth);
-            Top = Math.Max(area.Top, cat.Top - ActualHeight + 6);
+            // On the open side of the cat, whichever edge it's on.
+            var spot = CatWindow.Beside(cat, away, new Size(ActualWidth, ActualHeight), 4);
+            Left = spot.X;
+            Top = spot.Y;
             BeginAnimation(OpacityProperty, new DoubleAnimation(1, TimeSpan.FromMilliseconds(SystemParameters.ClientAreaAnimation ? 180 : 0)));
         };
         // Long enough to read: a second per few words, at least four.

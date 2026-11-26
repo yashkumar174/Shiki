@@ -42,6 +42,8 @@ public sealed class ShotTray : Window
     public required Func<string?> SkinId { get; init; }
     /// <summary>Where the cat is (DIPs), to sit just above it.</summary>
     public Func<Rect?>? CatArea { get; init; }
+    /// <summary>The cat's open side (away from its edge), to sit on that side.</summary>
+    public Func<Vector>? CatAway { get; init; }
 
     public const double CardWidth = 372;
 
@@ -296,8 +298,10 @@ public sealed class ShotTray : Window
         double height = ActualHeight > 0 ? ActualHeight : 200;
         if (CatArea?.Invoke() is { } cat)
         {
-            Left = Math.Clamp(cat.Left - 10, area.Left, area.Right - Width);
-            Top = Math.Clamp(cat.Top - height + 18, area.Top, area.Bottom - height);
+            // The card has a 20 px see-through margin for its shadow; let that overlap the gap.
+            var spot = CatWindow.Beside(cat, CatAway?.Invoke() ?? new Vector(0, -1), new Size(Width, height), -14);
+            Left = spot.X;
+            Top = spot.Y;
         }
         else
         {

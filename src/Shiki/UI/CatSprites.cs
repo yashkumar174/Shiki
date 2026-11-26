@@ -37,6 +37,10 @@ public sealed class CatSkin
 public static class CatSprites
 {
     public const int Width = 20, Height = 20, PeekWidth = 26, PeekHeight = 7;
+    /// <summary>The hanging cat (from the top of the screen, or carried): arms up over the head, then the cat.</summary>
+    public const int HangArms = 6, HangHeight = Height + HangArms, HangPeekHeight = 4;
+    /// <summary>Where each arm sits across the hanging cat (columns of the 20-wide drawing).</summary>
+    public const int LeftArm = 4, RightArm = 12;
 
     static readonly string[] Body =
     [
@@ -338,6 +342,42 @@ public static class CatSprites
         return Render(grid, skin);
     });
 
+    // An arm reaching up: the paw (toe bean showing) at the top, gripping the edge, then fur.
+    static readonly string[] Arm = ["kffk", "kfek", "kffk", "kbbk", "kbbk", "kbbk", "kbbk", "kbbk", "kbbk"];
+
+    /// <summary>
+    /// Hanging by its front paws: both arms straight up, paws at the very top (where the edge is),
+    /// the cat below them with its feet dangling. Every face pose works here too.
+    /// </summary>
+    public static BitmapSource Hang(CatSkin skin, CatPose pose) => Cached($"{skin.Id}/hang/{pose}", () =>
+    {
+        var cat = Body.Select(r => r.ToCharArray()).ToArray();
+        Apply(cat, skin.Markings);
+        Apply(cat, Poses[pose]);
+        var grid = Enumerable.Range(0, HangHeight).Select(_ => new string('.', Width).ToCharArray()).ToArray();
+        for (int r = 0; r < Height; r++) grid[r + HangArms] = cat[r];
+        // The arms only fill empty pixels, so the ears stay in front of them.
+        foreach (int col in new[] { LeftArm, RightArm })
+            for (int r = 0; r < Arm.Length; r++)
+                for (int c = 0; c < 4; c++)
+                    if (grid[r][col + c] == '.') grid[r][col + c] = Arm[r][c];
+        return Render(grid, skin);
+    });
+
+    /// <summary>
+    /// Hiding at the top of the screen: only the two paws, hooked over the edge where the hanging
+    /// cat's paws are. LeftPaw / RightPaw let one dangle a pixel lower, like a tap.
+    /// </summary>
+    public static BitmapSource HangPeek(CatSkin skin, PeekPose pose) => Cached($"{skin.Id}/hangpeek/{pose}", () =>
+    {
+        var grid = Enumerable.Range(0, HangPeekHeight).Select(_ => new string('.', PeekWidth).ToCharArray()).ToArray();
+        int x = (PeekWidth - Width) / 2;
+        var paw = Arm.Take(3).ToArray();
+        Blit(grid, paw, x + LeftArm, pose == PeekPose.LeftPaw ? 1 : 0);
+        Blit(grid, paw, x + RightArm, pose == PeekPose.RightPaw ? 1 : 0);
+        return Render(grid, skin);
+    });
+
     /// <summary>A floating sprite; its outline uses the cat's own outline colour.</summary>
     public static BitmapSource Float(CatSkin skin, Floater kind) => Cached($"{skin.Id}/float/{kind}", () =>
     {
@@ -373,6 +413,8 @@ public static class CatSprites
         {
             foreach (var pose in Enum.GetValues<CatPose>()) Save(Frame(skin, pose), $"{skin.Id}-{pose}");
             foreach (var pose in Enum.GetValues<PeekPose>()) Save(Peek(skin, pose), $"{skin.Id}-peek-{pose}");
+            foreach (var pose in Enum.GetValues<CatPose>()) Save(Hang(skin, pose), $"{skin.Id}-hang-{pose}");
+            foreach (var pose in Enum.GetValues<PeekPose>()) Save(HangPeek(skin, pose), $"{skin.Id}-hangpeek-{pose}");
             foreach (var kind in Enum.GetValues<Floater>()) Save(Float(skin, kind), $"{skin.Id}-float-{kind}");
             Save(Head(skin), $"{skin.Id}-head");
             Save(PawPrint(skin), $"{skin.Id}-pawprint");

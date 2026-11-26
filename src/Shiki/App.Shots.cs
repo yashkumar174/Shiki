@@ -63,7 +63,8 @@ public partial class App
         Remove = ShotStack.Remove,
         StopCapture = () => _pageCapture?.Cancel(),
         SkinId = () => _settings.Cat,
-        CatArea = () => _buddy is { IsVisible: true } b ? new Rect(b.Left, b.Top, b.Width, b.Height) : null,
+        CatArea = () => _buddy is { IsVisible: true } b ? b.BodyDip() : null,
+        CatAway = () => _buddy?.Away ?? new Vector(0, -1),
     };
 
     string? PageApp => _shotWindow != IntPtr.Zero && PageCapture.IsPage(_shotWindow) ? PageCapture.AppName(_shotWindow) : null;
@@ -195,6 +196,11 @@ public partial class App
                 // Dev aid: a picture arrives as if just snipped (offers to collect, or joins the pile).
                 EnterBuddyMode();
                 OnPictureCopied(new CopiedPicture(File.ReadAllBytes(args[1]), true, PageCapture.PageWindow(NativeMethods.GetForegroundWindow())));
+                return true;
+            case "cat-drop" when args.Length == 3 && double.TryParse(args[1], System.Globalization.CultureInfo.InvariantCulture, out var dropX) && double.TryParse(args[2], System.Globalization.CultureInfo.InvariantCulture, out var dropY):
+                // Dev aid: the cat let go at this point on screen (DIPs), as if dragged there: it jumps to the nearest edge.
+                EnterBuddyMode();
+                _buddy?.DropAt(new Point(dropX, dropY));
                 return true;
             case "shot-collect":
                 // Dev aid: presses "Collect more" on the offer.
