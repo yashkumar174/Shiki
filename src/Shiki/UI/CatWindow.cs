@@ -22,9 +22,11 @@ public enum CatEdge { Bottom, Left, Right, Top }
 /// The pixel cat on an edge of the screen. On the bottom (the taskbar) and the sides it sits on
 /// the edge while there's something to do (a drag, a conversion, the mouse on it) and otherwise
 /// ducks behind it so only its ears and paws peek over; on the sides the whole picture is turned,
-/// so it peeks in from the wall. From the top it hangs by its front paws and swings, and hides by
-/// climbing up, leaving its paws hooked over the edge. Drag it anywhere: it dangles from the
-/// pointer, swinging, and jumps to the nearest edge when let go.
+/// so it peeks in from the wall, but only for a moment: with nothing to hold, its claws give way and it scrabbles down the
+/// wall to the taskbar. From the top it rides a little trapeze (a wooden bar on two strings of
+/// yarn): it drops down with a bungee bounce and swings, and hides by leaning back over the edge to
+/// look at you upside down. Drag it anywhere: it dangles from the pointer, swinging, and jumps to
+/// the nearest edge when let go.
 /// </summary>
 public sealed class CatWindow : Window
 {
@@ -64,6 +66,24 @@ public sealed class CatWindow : Window
     readonly RotateTransform _swing = new();
     readonly DispatcherTimer _physics = new() { Interval = TimeSpan.FromMilliseconds(16) };
     double _swingVelocity, _swingPull;
+
+    // The trapeze (top edge): the cat, its bar and strings move and swing together as one rig.
+    const int TrapezeDrop = 9; // art pixels from the edge down to the bar
+    const int HangStageWidth = 50, HangStageHeight = TrapezeDrop + CatSprites.HangHeight + 3;
+    readonly Canvas _rig = new();
+    readonly Rectangle _stringLeft = new(), _stringRight = new(), _bar = new(), _barShade = new();
+    bool Trapeze => _edge == CatEdge.Top && !_carried;
+    int BarDrop => Trapeze ? TrapezeDrop : 0;
+    /// <summary>The stage's size in art pixels: bigger when hanging, so the swing has room.</summary>
+    int SW => Hanging ? HangStageWidth : StageWidth;
+    int SH => Hanging ? HangStageHeight : StageHeight;
+    int CX => (SW - CatSprites.Width) / 2;
+
+    // The wall slide: on a side edge there's nothing to hold, so after a moment it slides down.
+    readonly DispatcherTimer _wallTimer = new() { Interval = TimeSpan.FromMilliseconds(16) };
+    bool _sliding;
+    int _wallVersion;
+    double _wallSpeed;
 
     // Phase 4 moods: sleep, surprise, effort, petting.
     readonly Canvas _floats = new() { IsHitTestVisible = false };
@@ -124,7 +144,13 @@ public sealed class CatWindow : Window
         foreach (var image in new[] { _cat, _peek }) RenderOptions.SetBitmapScalingMode(image, BitmapScalingMode.NearestNeighbor);
         _cat.Width = CatSprites.Width * _cell;
         _cat.Height = CatSprites.Height * _cell;
-        _cat.RenderTransform = new TransformGroup { Children = { _swing, _catShift } };
+        _rig.RenderTransform = new TransformGroup { Children = { _swing, _catShift } };
+        var yarn = new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D));
+        _stringLeft.Fill = yarn;
+        _stringRight.Fill = yarn;
+        _bar.Fill = new SolidColorBrush(Color.FromRgb(0xD9, 0x9A, 0x55));
+        _barShade.Fill = new SolidColorBrush(Color.FromRgb(0x6B, 0x43, 0x22));
+        foreach (var part in new UIElement[] { _stringLeft, _stringRight, _bar, _barShade, _cat }) _rig.Children.Add(part);
         Canvas.SetLeft(_cat, CatX * _cell);
         Canvas.SetTop(_cat, CatTop * _cell);
         _peek.Width = CatSprites.PeekWidth * _cell;
@@ -133,7 +159,7 @@ public sealed class CatWindow : Window
         Canvas.SetTop(_peek, (StageHeight - CatSprites.PeekHeight) * _cell);
         stage.Children.Add(_hit);
         stage.Children.Add(_peek);
-        stage.Children.Add(_cat);
+        stage.Children.Add(_rig);
         stage.Children.Add(_floats);
         Content = stage;
 
@@ -142,6 +168,7 @@ public sealed class CatWindow : Window
         ApplyLayout();
         Place();
         _physics.Tick += (_, _) => SwingStep();
+        _wallTimer.Tick += (_, _) => WallStep();
 
         SourceInitialized += (_, _) =>
         {
@@ -152,6 +179,7 @@ public sealed class CatWindow : Window
         Loaded += (_, _) =>
         {
             _ticker.Start();
+            if (_edge is CatEdge.Left or CatEdge.Right) SlideDownSoon();
             var hello = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
             hello.Tick += (_, _) => { hello.Stop(); _greeting = false; Evaluate(); };
             hello.Start();
@@ -502,9 +530,10 @@ public sealed class CatWindow : Window
         int sign = -1;
         if (Hanging)
         {
+            column += (SW - StageWidth) / 2;
             int fromEdge = StageHeight - row;
-            row = Math.Clamp(fromEdge - h + (_out ? CatSprites.HangArms : 0), 0, StageHeight - h);
-            rise = Math.Min(rise, StageHeight - h - row);
+            row = Math.Clamp(fromEdge - h + (_out ? BarDrop + CatSprites.HangArms : CatSprites.HangPeekHeight - CatSprites.PeekHeight), 0, SH - h);
+            rise = Math.Min(rise, SH - h - row);
             sign = 1;
         }
         var image = new Image { Source = CatSprites.Float(_skin, kind), Width = w * _cell, Height = h * _cell };
@@ -512,7 +541,7 @@ public sealed class CatWindow : Window
         var shift = new TranslateTransform();
         // On the sides the stage is turned; turn the sprite back so a Z still reads as a Z.
         image.RenderTransform = _turn.Angle == 0 ? shift : new TransformGroup { Children = { new RotateTransform(-_turn.Angle, w * _cell / 2, h * _cell / 2), shift } };
-        Canvas.SetLeft(image, Math.Clamp(column, 0, StageWidth - w) * _cell);
+        Canvas.SetLeft(image, Math.Clamp(column, 0, SW - w) * _cell);
         Canvas.SetTop(image, Math.Max(0, row) * _cell);
         _floats.Children.Add(image);
 
@@ -594,7 +623,7 @@ public sealed class CatWindow : Window
         }
     }
 
-    bool WantsOut => _hover || _dragOver || _noticing || _busy > 0 || _celebrating || _greeting || _dragging || _startled > 0 || _yawn > 0 || _grumpy > 0 || Petting || _listening || _talking || _pointing > 0;
+    bool WantsOut => _sliding || _hover || _dragOver || _noticing || _busy > 0 || _celebrating || _greeting || _dragging || _startled > 0 || _yawn > 0 || _grumpy > 0 || Petting || _listening || _talking || _pointing > 0;
 
     void Evaluate()
     {
@@ -612,7 +641,7 @@ public sealed class CatWindow : Window
 
     // Hanging (from the top, or carried) everything moves the other way: in is up, out is down.
     bool Hanging => _edge == CatEdge.Top || _carried;
-    double CatIn => Hanging ? -CatSprites.HangHeight : CatSprites.Height;
+    double CatIn => Hanging ? -(BarDrop + CatSprites.HangHeight + 1) : CatSprites.Height;
     double PeekAway => Hanging ? -CatSprites.HangPeekHeight : CatSprites.PeekHeight;
     int Toward => Hanging ? 1 : -1; // the direction "out of hiding", in stage pixels
     bool Tucked => Hanging ? _catShift.Y <= CatIn * _cell + 0.5 : _catShift.Y >= CatIn * _cell - 0.5;
@@ -629,9 +658,20 @@ public sealed class CatWindow : Window
         Slide(_peekShift, PeekAway, 90, new QuadraticEase { EasingMode = EasingMode.EaseIn }, () =>
         {
             if (version != _moveVersion) return;
+            if (Trapeze)
+            {
+                // A bungee drop on the trapeze: down fast, a stretch past the rest point, a bounce, then a swing.
+                Slide(_catShift, 4, 260, new QuadraticEase { EasingMode = EasingMode.EaseIn }, () =>
+                {
+                    if (version != _moveVersion) return;
+                    Kick(_random.Next(2) == 0 ? 6 : -6);
+                    Slide(_catShift, -2, 160, new CubicEase { EasingMode = EasingMode.EaseOut },
+                        () => { if (version == _moveVersion) Slide(_catShift, 0, 140, new QuadraticEase()); });
+                });
+                return;
+            }
             Slide(_catShift, 2 * Toward, 200, new CubicEase { EasingMode = EasingMode.EaseOut },
                 () => { if (version == _moveVersion) Slide(_catShift, 0, 90, new QuadraticEase()); });
-            if (Hanging) Later(180, () => Kick(_random.Next(2) == 0 ? 7 : -7));
         });
     }
 
@@ -708,17 +748,40 @@ public sealed class CatWindow : Window
     void ApplyLayout()
     {
         bool hang = Hanging;
+        if (_stage != null) { _stage.Width = SW * _cell; _stage.Height = SH * _cell; }
+        _rig.Width = SW * _cell;
+        _rig.Height = SH * _cell;
         _cat.Height = (hang ? CatSprites.HangHeight : CatSprites.Height) * _cell;
-        Canvas.SetTop(_cat, (hang ? 0 : CatTop) * _cell);
+        Canvas.SetLeft(_cat, CX * _cell);
+        Canvas.SetTop(_cat, (hang ? BarDrop : CatTop) * _cell);
         _peek.Height = (hang ? CatSprites.HangPeekHeight : CatSprites.PeekHeight) * _cell;
+        Canvas.SetLeft(_peek, (SW - CatSprites.PeekWidth) / 2 * _cell);
         Canvas.SetTop(_peek, hang ? 0 : (StageHeight - CatSprites.PeekHeight) * _cell);
-        _swing.CenterX = CatSprites.Width * _cell / 2;
+        // The trapeze: strings from far above the edge (so a bounce never shows their ends) to the bar under the paws.
+        var trapeze = Trapeze ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var part in new FrameworkElement[] { _stringLeft, _stringRight, _bar, _barShade }) part.Visibility = trapeze;
+        const int Above = 60;
+        foreach (var (line, col) in new[] { (_stringLeft, CX + CatSprites.LeftArm + 1), (_stringRight, CX + CatSprites.RightArm + 2) })
+        {
+            line.Width = _cell;
+            line.Height = (Above + TrapezeDrop + 2) * _cell;
+            Canvas.SetLeft(line, col * _cell);
+            Canvas.SetTop(line, -Above * _cell);
+        }
+        foreach (var (wood, row) in new[] { (_bar, TrapezeDrop + 1), (_barShade, TrapezeDrop + 2) })
+        {
+            wood.Width = (CatSprites.RightArm - CatSprites.LeftArm + 6) * _cell;
+            wood.Height = _cell;
+            Canvas.SetLeft(wood, (CX + CatSprites.LeftArm - 1) * _cell);
+            Canvas.SetTop(wood, row * _cell);
+        }
+        _swing.CenterX = SW * _cell / 2;
         _swing.CenterY = 0;
         _swing.Angle = 0;
         _turn.Angle = _carried ? 0 : _edge switch { CatEdge.Left => 90, CatEdge.Right => -90, _ => 0 };
         bool side = !_carried && _edge is CatEdge.Left or CatEdge.Right;
-        Width = (side ? StageHeight : StageWidth) * _cell;
-        Height = (side ? StageWidth : StageHeight) * _cell;
+        Width = (side ? SH : SW) * _cell;
+        Height = (side ? SW : SH) * _cell;
         _moveVersion++;
         _catShift.BeginAnimation(TranslateTransform.YProperty, null);
         _peekShift.BeginAnimation(TranslateTransform.YProperty, null);
@@ -749,7 +812,7 @@ public sealed class CatWindow : Window
     public Rect BodyDip()
     {
         var cells = Hanging
-            ? new Rect(CatX, 0, CatSprites.Width, CatSprites.HangHeight)
+            ? new Rect(CX, BarDrop, CatSprites.Width, CatSprites.HangHeight)
             : new Rect(CatX, CatTop, CatSprites.Width, CatSprites.Height);
         var r = StageToWindow(cells);
         r.Offset(Left, Top);
@@ -798,8 +861,8 @@ public sealed class CatWindow : Window
         Rect area;
         if (Hanging)
             area = _out
-                ? new Rect(CatX * _cell, 0, CatSprites.Width * _cell, CatSprites.HangHeight * _cell)
-                : new Rect(0, 0, StageWidth * _cell, (CatSprites.HangPeekHeight + 3) * _cell);
+                ? new Rect(CX * _cell, 0, CatSprites.Width * _cell, (BarDrop + CatSprites.HangHeight) * _cell)
+                : new Rect((SW - CatSprites.PeekWidth) / 2 * _cell, 0, CatSprites.PeekWidth * _cell, (CatSprites.HangPeekHeight + 2) * _cell);
         else
             area = _out
                 ? new Rect(CatX * _cell, CatTop * _cell, CatSprites.Width * _cell, CatSprites.Height * _cell)
@@ -867,6 +930,7 @@ public sealed class CatWindow : Window
 
         CatPose pose;
         if (_carried) pose = _startled > 0 ? CatPose.Startled : Math.Abs(_swing.Angle) > 12 ? CatPose.Pop : CatPose.Listen;
+        else if (_sliding) pose = _tick % 2 == 0 ? CatPose.StrainLeft : CatPose.StrainRight; // claws scrabbling at the wall
         else if (_clickPop > 0) { pose = CatPose.Pop; _clickPop--; }
         else if (_startled > 0) { pose = CatPose.Startled; if (--_startled == 0) Evaluate(); }
         else if (_yawn > 0) { pose = CatPose.Yawn; if (--_yawn == 0) Evaluate(); }
@@ -976,6 +1040,7 @@ public sealed class CatWindow : Window
     /// <summary>Picked up: out of hiding, hanging from the pointer by its paws, a little startled.</summary>
     void StartCarry()
     {
+        StopWallSlide();
         _carried = true;
         _asleep = false;
         _out = true;
@@ -1033,6 +1098,7 @@ public sealed class CatWindow : Window
         else _settings.CatAlong = edge is CatEdge.Left or CatEdge.Right ? target.Y : target.X;
         _settings.Save();
         Log.Info($"Cat moved to the {_settings.CatEdge} edge");
+        if (edge is CatEdge.Left or CatEdge.Right) SlideDownSoon();
         // A happy moment on arrival, then back to hiding as usual.
         _celebrating = true;
         Evaluate();
@@ -1053,6 +1119,70 @@ public sealed class CatWindow : Window
         };
     }
 
+    // ---- The wall slide (an easter egg) ----
+
+    /// <summary>On a wall there's nothing to hold: after a second or two, the claws give way.</summary>
+    void SlideDownSoon()
+    {
+        int version = ++_wallVersion;
+        Later(1300 + _random.Next(700), () => { if (version == _wallVersion && !_carried && _edge is CatEdge.Left or CatEdge.Right) StartWallSlide(); });
+    }
+
+    void StartWallSlide()
+    {
+        _sliding = true;
+        _startled = 6;
+        _wallSpeed = 0.5;
+        Touch();
+        Evaluate();
+        Float(Floater.Sweat, StageWidth / 2 + 4, CatTop - 2, rise: 3, ms: 700);
+        _wallTimer.Start();
+    }
+
+    /// <summary>Down the wall: faster and faster, the claws catching for a moment now and then.</summary>
+    void WallStep()
+    {
+        var area = SystemParameters.WorkArea;
+        double floor = area.Bottom - Height;
+        _wallSpeed = Math.Min(_wallSpeed + 0.32, 10);
+        if (_random.NextDouble() < 0.05) _wallSpeed *= 0.3;
+        Top = Math.Min(floor, Top + _wallSpeed);
+        if (Top >= floor - 0.5) Landed();
+    }
+
+    /// <summary>Thump: on the taskbar in the corner below, a little shaken, then fine.</summary>
+    void Landed()
+    {
+        var wall = _edge;
+        StopWallSlide();
+        _edge = CatEdge.Bottom;
+        _out = true;
+        ApplyLayout();
+        var area = SystemParameters.WorkArea;
+        var spot = Spot(CatEdge.Bottom, wall == CatEdge.Left ? area.Left : area.Right - Width);
+        Left = spot.X;
+        Top = spot.Y;
+        _settings.CatEdge = "bottom";
+        _settings.CatLeft = spot.X;
+        _settings.Save();
+        Log.Info("Cat slid down the wall to the taskbar");
+        _startled = 10;
+        Float(Floater.Alert, StageWidth / 2 - 1, CatTop - 6, rise: 4, ms: 900);
+        Hop();
+        _celebrating = true;
+        Later(1600, () => { _celebrating = false; Evaluate(); });
+        Evaluate();
+    }
+
+    void StopWallSlide()
+    {
+        _wallVersion++;
+        _wallTimer.Stop();
+        if (!_sliding) return;
+        _sliding = false;
+        Evaluate();
+    }
+
     double AlongNow => _edge is CatEdge.Left or CatEdge.Right ? Top : Left;
     double? SavedAlong => _edge == CatEdge.Bottom ? _settings.CatLeft : _settings.CatAlong;
 
@@ -1069,8 +1199,9 @@ public sealed class CatWindow : Window
     {
         if (!_out) return;
         double x = at.X / _cell, y = at.Y / _cell;
-        int headTop = Hanging ? CatSprites.HangArms : CatTop;
-        bool onHead = x >= CatX && x <= CatX + CatSprites.Width && y >= headTop && y <= headTop + 13;
+        int headTop = Hanging ? BarDrop + CatSprites.HangArms : CatTop;
+        int headLeft = Hanging ? CX : CatX;
+        bool onHead = x >= headLeft && x <= headLeft + CatSprites.Width && y >= headTop && y <= headTop + 13;
         if (!onHead) { _petLastX = double.NaN; return; }
         if (double.IsNaN(_petLastX)) { _petLastX = x; return; }
         double dx = x - _petLastX;

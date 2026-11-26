@@ -38,7 +38,7 @@ public static class CatSprites
 {
     public const int Width = 20, Height = 20, PeekWidth = 26, PeekHeight = 7;
     /// <summary>The hanging cat (from the top of the screen, or carried): arms up over the head, then the cat.</summary>
-    public const int HangArms = 6, HangHeight = Height + HangArms, HangPeekHeight = 4;
+    public const int HangArms = 6, HangHeight = Height + HangArms, HangPeekHeight = 13;
     /// <summary>Where each arm sits across the hanging cat (columns of the 20-wide drawing).</summary>
     public const int LeftArm = 4, RightArm = 12;
 
@@ -364,17 +364,29 @@ public static class CatSprites
         return Render(grid, skin);
     });
 
+    // A front leg hanging down over the edge: fur from the edge, the paw at the end, toe beans to you.
+    static readonly string[] DanglingLeg = ["kbbk", "kbbk", "kbbk", "kffk", "kfek", "kffk", ".kk."];
+
     /// <summary>
-    /// Hiding at the top of the screen: only the two paws, hooked over the edge where the hanging
-    /// cat's paws are. LeftPaw / RightPaw let one dangle a pixel lower, like a tap.
+    /// Hiding at the top of the screen: leaning over the edge to look at you upside down. The head
+    /// is flipped (chin at the edge, eyes below it, the tops of the ears at the bottom) and both
+    /// front legs hang down beside it. LeftPaw / RightPaw: that paw curls up a pixel, a little wave.
+    /// Sleep: eyes shut.
     /// </summary>
     public static BitmapSource HangPeek(CatSkin skin, PeekPose pose) => Cached($"{skin.Id}/hangpeek/{pose}", () =>
     {
+        var cat = Body.Select(r => r.ToCharArray()).ToArray();
+        Apply(cat, skin.Markings);
+        if (pose == PeekPose.Sleep) Apply(cat, Poses[CatPose.Blink]);
         var grid = Enumerable.Range(0, HangPeekHeight).Select(_ => new string('.', PeekWidth).ToCharArray()).ToArray();
         int x = (PeekWidth - Width) / 2;
-        var paw = Arm.Take(3).ToArray();
-        Blit(grid, paw, x + LeftArm, pose == PeekPose.LeftPaw ? 1 : 0);
-        Blit(grid, paw, x + RightArm, pose == PeekPose.RightPaw ? 1 : 0);
+        // Chin row 12 at the edge, the ear tips (row 0) at the bottom.
+        for (int r = 0; r < HangPeekHeight; r++)
+            for (int c = 0; c < Width; c++)
+                if (cat[12 - r][c] != '.') grid[r][x + c] = cat[12 - r][c];
+        int sway(PeekPose side) => pose == side ? 1 : 0;
+        Blit(grid, DanglingLeg, 0, -sway(PeekPose.LeftPaw));
+        Blit(grid, DanglingLeg, PeekWidth - 4, -sway(PeekPose.RightPaw));
         return Render(grid, skin);
     });
 
