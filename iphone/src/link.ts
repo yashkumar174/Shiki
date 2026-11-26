@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import * as Network from 'expo-network';
 import { Pairing, Scanned } from './store';
 
 /**
@@ -49,6 +50,49 @@ export async function pair(target: PairTarget, phoneName: string): Promise<Pairi
     autoSince: Date.now(),
     autoSend: true,
   };
+}
+
+/** Is this PC there, at its saved address? A quick "hello" (no key needed), checked against its id. */
+export async function hello(p: { host: string; port: number; pcId: string }, ms = 2500): Promise<boolean> {
+  try {
+    const r = await withTimeout(`${base(p)}/v1/hello`, {}, ms);
+    const json = await r.json();
+    return json?.id === p.pcId;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The PC isn't at its saved address (a new Wi-Fi, or the hotspot gave it another one): ask around
+ * the network for it by its id. Nearest guesses first: next to the old address, then this
+ * iPhone's own network, then the iPhone hotspot's few addresses. Returns the new address, or null.
+ */
+export async function findPc(p: Pairing): Promise<string | null> {
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+  const prefix = (ip: string) => ip.split('.').slice(0, 3).join('.');
+  const lastOf = (ip: string) => Number(ip.split('.')[3]);
+  let mine = '';
+  try { mine = await Network.getIpAddressAsync(); } catch { /* not known */ }
+  const order: string[] = [];
+  const add = (ip: string) => { if (ip !== p.host && ip !== mine && !order.includes(ip)) order.push(ip); };
+  const around = (net: string, centre: number, range: number) => {
+    for (let d = 1; d <= range; d++) {
+      if (centre - d >= 1) add(`${net}.${centre - d}`);
+      if (centre + d <= 254) add(`${net}.${centre + d}`);
+    }
+  };
+  if (ipv4.test(p.host)) around(prefix(p.host), lastOf(p.host), 12);
+  // On this iPhone's own hotspot the PC gets one of 172.20.10.2 to .14.
+  for (let n = 2; n <= 14; n++) add(`172.20.10.${n}`);
+  if (ipv4.test(mine) && !mine.startsWith('172.20.10.')) around(prefix(mine), ipv4.test(p.host) && prefix(p.host) === prefix(mine) ? lastOf(p.host) : lastOf(mine), 254);
+  for (let i = 0; i < order.length; i += 48) {
+    const batch = order.slice(i, i + 48);
+    const hits = await Promise.all(batch.map(async (host) => ((await hello({ host, port: p.port, pcId: p.pcId }, 1200)) ? host : null)));
+    const found = hits.find((h) => h !== null);
+    if (found) return found;
+  }
+  return null;
 }
 
 /** "Anything for me?": the PC answers at once with a command, or with none after 25 seconds. */

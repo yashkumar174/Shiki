@@ -124,10 +124,33 @@ export default function App() {
     let lastAuto = 0;
     const run = async () => {
       let backoff = 2000;
+      let lastSearch = 0;
+      let checked = false;
       while (alive && generation === loopGeneration.current) {
-        if (AppState.currentState !== 'active') { await sleep(1000); continue; }
-        const p = pairingRef.current;
+        if (AppState.currentState !== 'active') { await sleep(1000); checked = false; continue; }
+        let p = pairingRef.current;
         if (!p) return;
+        // Coming back (opening the app, or after losing the PC): a quick hello first, so "Connected"
+        // shows at once; and if the PC isn't at its old address, find it at its new one.
+        if (!checked) {
+          if (await Link.hello(p)) {
+            checked = true;
+            setConnected(true);
+            setStatus(`Connected to ${p.pcName}`);
+          } else if (Date.now() - lastSearch > 20000) {
+            lastSearch = Date.now();
+            setStatus(`Looking for ${p.pcName}…`);
+            const found = await Link.findPc(p);
+            if (found && generation === loopGeneration.current) {
+              p = { ...p, host: found };
+              await remember(p);
+              console.log(`[shiki] found ${p.pcName} at its new address ${found}`);
+              checked = true;
+              setConnected(true);
+              setStatus(`Connected to ${p.pcName}`);
+            }
+          }
+        }
         try {
           const command = await Link.wait(p);
           setConnected(true);
@@ -150,6 +173,7 @@ export default function App() {
         } catch (e) {
           if (e instanceof Link.Unpaired) { await remember(null); setStatus('Removed on the PC. Scan its code again to connect.'); return; }
           setConnected(false);
+          checked = false;
           setStatus(`Looking for ${p.pcName}… (same Wi-Fi, or this iPhone's hotspot)`);
           await sleep(backoff);
           backoff = Math.min(backoff * 2, 15000);

@@ -2322,6 +2322,9 @@ public partial class App : Application
             return () => Tell("\uE823", $"It's {DateTime.Now:h:mm tt}.");
         if (words is "whats the date" or "what is the date" or "what date is it" or "todays date" or "the date" or "what day is it" or "whats the day today" or "aaj kya date hai" or "aaj kaun sa din hai" or "what is today")
             return () => Tell("\uE787", $"It's {DateTime.Now:dddd, d MMMM}.");
+        // Connecting the phone works without Claude: the window that pairs it (and shows if it's connected).
+        if (rx(words, @"^(connect|pair|link|set up|setup|add|reconnect|re connect)( up)?( my| the| a| an| new)? (phone|iphone|mobile|android)( again| to (this |the |my )?(pc|computer|laptop)| with (this |the |my )?(pc|computer|laptop))?$|^(phone|iphone|mobile) (connect|pairing|link)$|^(mera )?(phone|mobile) (connect|jodo|connect karo)$").Success)
+            return () => { ShowPhoneConnect(); Tell("\uE8EA", "Here's Connect a phone. Scan the code with Shiki on your phone: once it's connected, it reconnects by itself."); };
         if (rx(words, @"^(battery|how much battery|whats my battery|what is my battery|my battery|battery level|how much charge|battery kitni hai|charge kitna hai)( is left| left| level)?$").Success)
         {
             var power = System.Windows.Forms.SystemInformation.PowerStatus;

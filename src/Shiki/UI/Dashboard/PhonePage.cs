@@ -48,6 +48,7 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
         var items = Media(PhotoFolder);
         var others = Files(FileFolder);
         page.Children.Add(Header(items));
+        page.Children.Add(Connection());
         if (items.Count == 0)
         {
             page.Children.Add(Empty());
@@ -110,15 +111,9 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var left = new StackPanel();
         left.Children.Add(k.Text("From your phone", 40, font: DashKit.Pixel));
-        var link = Core.Phone.PhoneLink.Current;
-        var here = link?.Connected();
-        var paired = link?.Phones.FirstOrDefault();
-        string status = here != null ? $"{here.Name} is here."
-            : paired != null ? $"{paired.Name} is away."
-            : "No phone connected yet.";
         string line = items.Count == 0
-            ? $"{status} What it sends shows up here, full quality."
-            : $"{status} {Count(items)}, {Size(items.Sum(i => i.Bytes))}, each checked byte for byte when it arrived.";
+            ? "What your phone sends shows up here, full quality."
+            : $"{Count(items)}, {Size(items.Sum(i => i.Bytes))}, each checked byte for byte when it arrived.";
         var intro = k.Text(line, 15, P.Muted, wrap: true);
         intro.Margin = new Thickness(0, 8, 0, 0);
         intro.MaxWidth = 760;
@@ -127,16 +122,86 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
         grid.Children.Add(left);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(16, 0, 0, 2) };
-        if (paired == null && host.ConnectPhone != null)
-        {
-            var connect = k.Button("Connect your phone", host.ConnectPhone, DashKit.Pill.Accent, "\uE8EA");
-            connect.Margin = new Thickness(0, 0, 10, 0);
-            buttons.Children.Add(connect);
-        }
         buttons.Children.Add(k.Button("Open folder", () => OpenFolder(PhotoFolder), DashKit.Pill.Quiet, "\uE838"));
         Grid.SetColumn(buttons, 1);
         grid.Children.Add(buttons);
         return grid;
+    }
+
+    // ---- The phone's connection ----
+
+    /// <summary>
+    /// Is the phone there right now? A dot (moonlight: connected, amber: away, grey: none yet),
+    /// what that means, and one button: connect, scan the code again, or connect another phone.
+    /// It keeps itself up to date while the page is open.
+    /// </summary>
+    UIElement Connection()
+    {
+        var dot = new Border { Width = 12, Height = 12, CornerRadius = new CornerRadius(6), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(2, 0, 16, 0) };
+        var title = k.Text("", 17, P.Text, FontWeights.Bold);
+        var sub = k.Text("", 14, P.Muted, wrap: true);
+        sub.Margin = new Thickness(0, 4, 0, 0);
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { title, sub } };
+        var button = new ContentControl { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(16, 0, 0, 0), Focusable = false };
+        var row = new DockPanel();
+        DockPanel.SetDock(dot, Dock.Left);
+        DockPanel.SetDock(button, Dock.Right);
+        row.Children.Add(dot);
+        row.Children.Add(button);
+        row.Children.Add(text);
+        var card = k.Card(row, new Thickness(22, 18, 20, 18));
+        card.Margin = new Thickness(0, 26, 0, 0);
+
+        string? shown = null;
+        void Update()
+        {
+            var link = Core.Phone.PhoneLink.Current;
+            var here = link?.Connected();
+            var phone = here ?? link?.Phones.OrderByDescending(f => f.LastSeen ?? f.Paired).FirstOrDefault();
+            string state = here != null ? "here" : phone != null ? "away" : "none";
+            Color colour = here != null ? P.Accent : phone != null ? DashPalette.Eye : P.Faint;
+            dot.Background = DashKit.B(colour);
+            dot.Effect = here != null ? new System.Windows.Media.Effects.DropShadowEffect { Color = colour, BlurRadius = 12, ShadowDepth = 0, Opacity = 0.9 } : null;
+            if (phone == null)
+            {
+                title.Text = "No phone connected yet";
+                sub.Text = "Connect once by scanning a code with Shiki on your phone. After that it connects by itself whenever the app is open, even when this PC's address changes.";
+            }
+            else if (here != null)
+            {
+                title.Text = $"{phone.Name} is connected";
+                sub.Text = $"Heard from {Ago(phone.LastSeen)}{(phone.LastIp is { } ip ? $" at {ip}" : "")}. Send from the Shiki app, or ask here: \"get my last photo from my phone\".";
+            }
+            else
+            {
+                title.Text = $"{phone.Name} is away";
+                sub.Text = $"Last seen {Ago(phone.LastSeen)}. Open Shiki on the phone, on the same Wi-Fi or this PC on its hotspot: it finds this PC by itself, even at a new address. Not connecting? Scan the code again.";
+            }
+            if (state == shown || host.ConnectPhone == null) return;
+            shown = state;
+            button.Content = state switch
+            {
+                "none" => k.Button("Connect your phone", host.ConnectPhone, DashKit.Pill.Accent, "\uE8EA"),
+                "away" => k.Button("Scan the code again", host.ConnectPhone, DashKit.Pill.Accent, "\uED14"),
+                _ => k.Button("Connect another phone", host.ConnectPhone, DashKit.Pill.Quiet, "\uE710"),
+            };
+        }
+        Update();
+        var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+        timer.Tick += (_, _) => Update();
+        card.Loaded += (_, _) => timer.Start();
+        card.Unloaded += (_, _) => timer.Stop();
+        return card;
+    }
+
+    static string Ago(DateTime? when)
+    {
+        if (when is not { } t) return "not yet";
+        var gone = DateTime.Now - t;
+        return gone.TotalSeconds < 60 ? "just now"
+            : gone.TotalMinutes < 60 ? $"{(int)gone.TotalMinutes} min ago"
+            : gone.TotalHours < 24 ? $"{(int)gone.TotalHours} h ago"
+            : t.ToString("d MMM, HH:mm");
     }
 
     UIElement Empty()
