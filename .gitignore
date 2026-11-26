@@ -5,3 +5,5 @@ obj/
 tools/
 publish/
 Releases/
+# Raw recordings, settings copies and demo files for the ad stay on this PC (they can hold personal details).
+ad/raw/

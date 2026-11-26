@@ -259,12 +259,14 @@ To add an action, add a `BroAction` in `ActionCatalog.Build()`, with `Group = Ac
 
 ## Licensing notes
 
-- Magick.NET: Apache-2.0. Docnet.Core / PDFium: MIT / BSD. Pixelify Sans and Instrument Serif: SIL Open Font License 1.1 (see the OFL files in Assets/Fonts).
+Shiki is open source under the **MIT License** (see `LICENSE`). The parts it uses keep their own licenses:
+
+- Magick.NET: Apache-2.0. Docnet.Core / PDFium: MIT / BSD. Pixelify Sans and Manrope (and Instrument Serif in older versions): SIL Open Font License 1.1 (see the OFL files in Assets/Fonts).
 - SharpCompress: MIT. QRCoder: MIT. ZXing.Net: Apache-2.0. NAudio: MIT. Velopack: MIT.
 - ONNX Runtime (DirectML): MIT. BiRefNet model weights: MIT (downloaded at first use from the onnx-community conversion on Hugging Face, not bundled).
 - The cats are original pixel art made for this project.
 - **PDFsharp is pinned to 6.2.4 on purpose.** 6.5.0 switched to AGPL/commercial and refuses to run without a license.
-- The bundled FFmpeg build is **GPL** (needed for libx264). That's fine for personal use; to distribute the app under a non-GPL license, switch to an LGPL build and use a different H.264 encoder.
+- FFmpeg is **not in this repository**. The build copies it from `tools/ffmpeg` (the BtbN win64 GPL build, needed for libx264). The source code here is MIT either way; an installer that bundles that FFmpeg build has to follow the GPL for FFmpeg, or switch to an LGPL build with a different H.264 encoder.
 
 ## Known limits / next up
 
