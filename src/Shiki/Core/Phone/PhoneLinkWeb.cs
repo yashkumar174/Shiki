@@ -265,6 +265,22 @@ public sealed partial class PhoneLink
             return;
         }
         var target = Keep(partPath, name, sha, taken, job, phone, size);
+        // A photo: the same number of pixels as on the phone? (Turned photos count: 3024×4032 is 4032×3024.)
+        int.TryParse(request.Q("w"), out var phoneW);
+        int.TryParse(request.Q("h"), out var phoneH);
+        string? pixels = null;
+        bool? same = null;
+        if (phoneW > 0 && phoneH > 0 && Pixels(target) is { } here)
+        {
+            pixels = $"{here.W}×{here.H}";
+            same = Math.Max(here.W, here.H) >= Math.Max(phoneW, phoneH) && Math.Min(here.W, here.H) >= Math.Min(phoneW, phoneH);
+            lock (_gate)
+            {
+                if (same == true) { job.SameSize++; job.LastPixels = pixels; }
+                else job.Smaller.Add($"{Path.GetFileName(target)}: {pixels} here, {phoneW}×{phoneH} on the phone");
+            }
+            Log.Info($"iPhone photo {Path.GetFileName(target)}: {pixels} here, {phoneW}×{phoneH} on the phone{(same == true ? "" : " (SMALLER)")}");
+        }
         var id = FileId(request.Q("id"));
         if (id.Length > 0)
         {
@@ -272,8 +288,19 @@ public sealed partial class PhoneLink
             lock (_gate) _receivedIds[id] = target;
             try { File.AppendAllText(ReceivedIdsPath, $"{id}\t{target}\n"); } catch (Exception ex) { Log.Error("Noting an iPhone file", ex); }
         }
-        await Json(stream, 200, new JsonObject { ["ok"] = true, ["saved"] = Path.GetFileName(target), ["sha"] = sha, ["checked"] = md5.Length == 32 });
+        await Json(stream, 200, new JsonObject { ["ok"] = true, ["saved"] = Path.GetFileName(target), ["sha"] = sha, ["checked"] = md5.Length == 32, ["pixels"] = pixels, ["sameSize"] = same });
         if (string.IsNullOrWhiteSpace(jobId)) FinishSingle(job);
+    }
+
+    /// <summary>A picture's width and height, read from its header (HEIC too), or null if it isn't one.</summary>
+    internal static (int W, int H)? Pixels(string path)
+    {
+        try
+        {
+            var info = new ImageMagick.MagickImageInfo(path);
+            return info.Width > 0 && info.Height > 0 ? ((int)info.Width, (int)info.Height) : null;
+        }
+        catch (Exception) { return null; }
     }
 
     async Task WebGet(Stream stream, WebRequest request)

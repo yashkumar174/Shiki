@@ -101,7 +101,7 @@ export default function App() {
       let failed = 0;
       for (const file of command.files) {
         setStatus(`Getting ${file.name} from ${p.pcName}…`);
-        const path = await Link.download(p, file.token, file.name);
+        const path = await Link.download(p, file.token, file.name, file.md5);
         if (!path) { failed++; continue; }
         // Photos and videos go into Photos; anything else stays here, to share or save to Files.
         if (Media.isMedia(file.name) && (await MediaLibrary.requestPermissionsAsync(true)).granted) {
@@ -237,6 +237,7 @@ export default function App() {
     const items = (await Promise.all(result.assets.map(async (a) =>
       (a.assetId ? await Media.fromLibrary(a.assetId) : null) ?? {
         uri: a.uri, name: a.fileName ?? 'photo', taken: Date.now(), id: `pick:${a.fileName}:${a.fileSize}`,
+        ...(a.type === 'image' && a.width > 0 && a.height > 0 ? { w: a.width, h: a.height } : {}),
       }))) as Link.Sendable[];
     later(() => sendBatch(`share-${Date.now().toString(36)}`, items, 'Sending'));
   }, [later, sendBatch]);

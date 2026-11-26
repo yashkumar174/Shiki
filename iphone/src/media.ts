@@ -13,6 +13,8 @@ async function sendable(asset: MediaLibrary.Asset): Promise<Sendable | null> {
       name: asset.filename,
       taken: asset.creationTime || asset.modificationTime || Date.now(),
       id: `${asset.id}:${asset.modificationTime}`,
+      // A photo's size as the phone has it: the PC checks the file it gets has the same.
+      ...(asset.mediaType === 'photo' && info.width > 0 && info.height > 0 ? { w: info.width, h: info.height } : {}),
     };
   } catch {
     return null;

@@ -202,6 +202,10 @@ public partial class App
                 EnterBuddyMode();
                 _buddy?.DropAt(new Point(dropX, dropY));
                 return true;
+            case "pixels-test" when args.Length >= 2:
+                // Dev aid: the pixel size the phone check reads from each file (null for anything that isn't a picture).
+                foreach (var file in args[1..]) Log.Info($"pixels-test {Path.GetFileName(file)}: {(Core.Phone.PhoneLink.Pixels(file) is { } px ? $"{px.W}x{px.H}" : "not a picture")}");
+                return true;
             case "shot-collect":
                 // Dev aid: presses "Collect more" on the offer.
                 CollectShots();

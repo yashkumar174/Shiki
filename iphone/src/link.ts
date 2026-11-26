@@ -12,7 +12,7 @@ export class Unpaired extends Error {}
 export type Command =
   | { cmd: 'none' }
   | { cmd: 'send-recent'; job: string; count: number; kind: 'photo' | 'video' | 'screenshot' | 'any'; today: boolean }
-  | { cmd: 'get'; job: string; files: { token: string; name: string; size: number; sha: string }[] };
+  | { cmd: 'get'; job: string; files: { token: string; name: string; size: number; sha: string; md5?: string }[] };
 
 const base = (p: { host: string; port: number }) => `http://${p.host}:${p.port}`;
 const auth = (p: Pairing) => ({ 'X-Shiki-Phone': p.phone, 'X-Shiki-Key': p.key });
@@ -70,7 +70,8 @@ export async function report(p: Pairing, job: string, info: { total?: number; do
   }
 }
 
-export type Sendable = { uri: string; name: string; taken: number; id: string };
+/** A file to send. w and h: a photo's size in pixels on the phone, so the PC can check it got the same. */
+export type Sendable = { uri: string; name: string; taken: number; id: string; w?: number; h?: number };
 
 const query = (values: Record<string, string | number | undefined>) =>
   Object.entries(values)
@@ -112,7 +113,7 @@ async function sendFile(p: Pairing, item: Sendable, job?: string): Promise<numbe
     console.log(`[shiki] ${item.name}: not readable from disk (${String((e as Error)?.message ?? e)}), sending it another way`);
   }
   if (info?.exists) {
-    const url = `${base(p)}/v1/put?${query({ id: item.id, name: item.name, size: info.size, taken: item.taken, md5: info.md5, job })}`;
+    const url = `${base(p)}/v1/put?${query({ id: item.id, name: item.name, size: info.size, taken: item.taken, md5: info.md5, job, w: item.w, h: item.h })}`;
     try {
       // In the foreground: iOS background transfers don't reach a plain-http address on the home network.
       const result = await FileSystem.uploadAsync(url, item.uri, {
@@ -128,13 +129,28 @@ async function sendFile(p: Pairing, item: Sendable, job?: string): Promise<numbe
   }
   const blob = await (await fetch(item.uri)).blob();
   if (!blob.size) throw new Error('the photo came out empty');
-  const url = `${base(p)}/v1/put?${query({ id: item.id, name: item.name, size: blob.size, taken: item.taken, job })}`;
+  const url = `${base(p)}/v1/put?${query({ id: item.id, name: item.name, size: blob.size, taken: item.taken, job, w: item.w, h: item.h })}`;
   const r = await withTimeout(url, { method: 'PUT', headers: { ...auth(p), 'Content-Type': 'application/octet-stream' }, body: blob }, 15 * 60 * 1000);
   return r.status;
 }
 
-/** Fetches a file the PC offered into the app's own folder; its path, or null. */
-export async function download(p: Pairing, token: string, name: string): Promise<string | null> {
+/**
+ * Fetches a file the PC offered into the app's own folder; its path, or null. With the PC's MD5,
+ * the copy is checked against it and fetched once more if it doesn't match.
+ */
+export async function download(p: Pairing, token: string, name: string, md5?: string): Promise<string | null> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const path = await downloadOnce(p, token, name);
+    if (!path || !md5) return path;
+    const info = await FileSystem.getInfoAsync(path, { md5: true });
+    if (info.exists && info.md5?.toLowerCase() === md5.toLowerCase()) return path;
+    console.log(`[shiki] ${name}: the copy from the PC doesn't match (try ${attempt})`);
+    await FileSystem.deleteAsync(path, { idempotent: true });
+  }
+  return null;
+}
+
+async function downloadOnce(p: Pairing, token: string, name: string): Promise<string | null> {
   const folder = `${FileSystem.documentDirectory}From PC/`;
   await FileSystem.makeDirectoryAsync(folder, { intermediates: true }).catch(() => {});
   const safe = name.replace(/[\/\\:]/g, '_');

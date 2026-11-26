@@ -3891,7 +3891,12 @@ public partial class App : Application
         if (videos > 0) parts.Add(videos == 1 ? "1 video" : $"{videos} videos");
         if (others > 0) parts.Add(others == 1 ? "1 file" : $"{others} files");
         var what = parts.Count == 0 ? "Nothing" : string.Join(" and ", parts);
-        var line = job.Saved.Count > 0 ? $"Full quality, each checked. {Path.GetFileName(job.Saved[^1])}" : "";
+        // Checked byte for byte on the way; photos also by size against the phone's own.
+        var line = job.Saved.Count == 0 ? ""
+            : job.Smaller.Count > 0 ? $"{(job.Smaller.Count == 1 ? "1 photo" : $"{job.Smaller.Count} photos")} came out smaller than on the phone: {job.Smaller[0]}."
+            : job.SameSize > 0 ? $"Full quality, each checked: {job.LastPixels}, the same as on the phone. {Path.GetFileName(job.Saved[^1])}"
+            : $"Full quality, each checked. {Path.GetFileName(job.Saved[^1])}";
+        if (job.Smaller.Count > 0) Log.Info("Phone photos smaller than on the phone: " + string.Join("; ", job.Smaller));
         if (job.Failed > 0) line += (line.Length > 0 ? " " : "") + $"{job.Failed} didn't come through.";
         AiLog.Write("phone", $"{what} from {phone}");
         var folder = job.Saved.Count > 0 ? Path.GetDirectoryName(job.Saved[^1]) : null;

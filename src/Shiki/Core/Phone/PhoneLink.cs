@@ -53,6 +53,12 @@ public sealed class PhoneJob(string id, string phone, bool quiet)
     public List<string> Saved { get; } = [];
     public int Failed { get; internal set; }
     public string? Note { get; internal set; }
+    /// <summary>Photos whose pixel size was checked against the phone's own, and matched.</summary>
+    public int SameSize { get; internal set; }
+    /// <summary>The last matched photo's size ("4032×3024"), for the toast.</summary>
+    public string? LastPixels { get; internal set; }
+    /// <summary>Photos that came out smaller than on the phone ("IMG_1.HEIC: 1170×2532 here, 4032×3024 on the phone").</summary>
+    public List<string> Smaller { get; } = [];
     internal readonly TaskCompletionSource Started = new(TaskCreationOptions.RunContinuationsAsynchronously);
     internal readonly TaskCompletionSource Finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public bool IsDone => Finished.Task.IsCompleted;
@@ -666,12 +672,23 @@ public sealed partial class PhoneLink : IDisposable
         foreach (var path in files)
         {
             var info = new FileInfo(path);
-            string sha;
+            // Fingerprints the phone checks its copy against: SHA-256 (Android) and MD5 (the iPhone can work that one out).
+            using var sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            using var md5 = IncrementalHash.CreateHash(HashAlgorithmName.MD5);
             await using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan))
-                sha = Convert.ToHexString(await SHA256.HashDataAsync(stream)).ToLowerInvariant();
+            {
+                var buffer = new byte[1 << 20];
+                int read;
+                while ((read = await stream.ReadAsync(buffer)) > 0)
+                {
+                    sha256.AppendData(buffer, 0, read);
+                    md5.AppendData(buffer, 0, read);
+                }
+            }
+            var sha = Convert.ToHexString(sha256.GetHashAndReset()).ToLowerInvariant();
             var token = Base64Url(RandomNumberGenerator.GetBytes(18));
             _outgoing[token] = (path, DateTime.Now.AddMinutes(30));
-            list.Add(new JsonObject { ["token"] = token, ["name"] = info.Name, ["size"] = info.Length, ["sha"] = sha });
+            list.Add(new JsonObject { ["token"] = token, ["name"] = info.Name, ["size"] = info.Length, ["sha"] = sha, ["md5"] = Convert.ToHexString(md5.GetHashAndReset()).ToLowerInvariant() });
         }
         Send(phone.Id, new JsonObject { ["cmd"] = "get", ["job"] = job.Id, ["files"] = list });
         AiLog.Write("phone", $"sending {files.Count} file(s) to {phone.Name}");
