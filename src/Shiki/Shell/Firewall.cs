@@ -26,7 +26,32 @@ public static class Firewall
     // NET_FW_PROFILE_TYPE2: domain, private, public.
     static readonly (int Bit, string Name)[] Profiles = [(1, "domain"), (2, "private"), (4, "public")];
 
-    static string Exe => Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Shiki.exe");
+    static string? _exe;
+
+    /// <summary>
+    /// Shiki.exe where it really is on disk. The firewall goes by that path, and it isn't always the
+    /// one the app sees: installed from inside a packaged app (the Claude app, say), Windows keeps
+    /// the files in that app's own folder and shows them at the usual place.
+    /// </summary>
+    static string Exe => _exe ??= RealPath(Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "Shiki.exe"));
+
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    static extern uint GetFinalPathNameByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle file, System.Text.StringBuilder path, uint size, uint flags);
+
+    static string RealPath(string path)
+    {
+        try
+        {
+            using var file = File.OpenHandle(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var found = new System.Text.StringBuilder(1024);
+            uint length = GetFinalPathNameByHandle(file, found, (uint)found.Capacity, 0);
+            if (length == 0 || length >= found.Capacity) return path;
+            var real = found.ToString();
+            if (real.StartsWith(@"\\?\UNC\", StringComparison.Ordinal)) return @"\\" + real[8..];
+            return real.StartsWith(@"\\?\", StringComparison.Ordinal) ? real[4..] : real;
+        }
+        catch { return path; }
+    }
 
     /// <summary>Is there a way in for the phone on every network the PC is on now? Takes a moment: call it off the UI thread.</summary>
     public static Check Look()
