@@ -116,6 +116,7 @@ public sealed class DashboardWindow : Window
 
     // One phone photo or video, big, with its details (over the Phone page; Esc goes back to it).
     MediaViewer? _viewer;
+    PhonePage? _phonePage;
     double? _galleryOffset;
     string _askDraft = "";
     WindowState _stateBeforeFullscreen;
@@ -197,7 +198,7 @@ public sealed class DashboardWindow : Window
     }
 
     /// <summary>The phone sent something: the gallery (and Home's phone tile) show it at once.</summary>
-    public void PhoneFilesChanged() => Dispatcher.BeginInvoke(() => { if (_page is DashPage.Phone or DashPage.Home && _showing == null && _viewer == null && !_onPlayer && !IsTyping()) RebuildInPlace(); });
+    public void PhoneFilesChanged() => Dispatcher.BeginInvoke(() => { if (_page is DashPage.Phone or DashPage.Home && _showing == null && _viewer == null && _phonePage?.Selecting != true && !_onPlayer && !IsTyping()) RebuildInPlace(); });
 
     /// <summary>Back from one photo to the gallery, where it was scrolled to.</summary>
     void CloseViewer()
@@ -215,7 +216,7 @@ public sealed class DashboardWindow : Window
     static bool IsTyping() => Keyboard.FocusedElement is TextBox;
 
     // Tools and Ask don't show history; rebuilding Ask while a plan runs would only flicker.
-    void OnHistoryChanged() => Dispatcher.BeginInvoke(() => { if (_page is not (DashPage.Tools or DashPage.Ask) || _showing != null || _onPlayer) Rebuild(); });
+    void OnHistoryChanged() => Dispatcher.BeginInvoke(() => { if ((_page is not (DashPage.Tools or DashPage.Ask) || _showing != null || _onPlayer) && !(_page == DashPage.Phone && (_phonePage?.Selecting == true || _viewer != null))) Rebuild(); });
 
     bool DarkWanted => _host.Settings.DashboardDark ?? DashPalette.WindowsIsDark();
 
@@ -345,6 +346,11 @@ public sealed class DashboardWindow : Window
             var ask = view.Root;
             if (ask.Parent is Decorator old) old.Child = null;
             panel.Child = ask;
+        }
+        else if (_page == DashPage.Phone && _phonePage != null)
+        {
+            // The gallery's selection bar floats over the bottom of the page.
+            panel.Child = new Grid { Children = { scroll, _phonePage.Floating() } };
         }
         else panel.Child = scroll;
         // The content's corners follow the panel's: square under the tab, round elsewhere.
@@ -538,6 +544,15 @@ public sealed class DashboardWindow : Window
     }
 
     /// <summary>Dev aid: the photo viewer on this file (with the rest of its folder to step through), for "snapshot phone".</summary>
+    public void PeekSelection(int count)
+    {
+        _page = DashPage.Phone;
+        _viewer = null;
+        Rebuild();
+        _phonePage?.PickFirst(count);
+    }
+
+    /// <summary>Dev aid: the photo viewer on this file.</summary>
     public void PeekViewer(string path, int steps = 0)
     {
         var folder = System.IO.Path.GetDirectoryName(path)!;
@@ -657,7 +672,7 @@ public sealed class DashboardWindow : Window
         DashPage.Skills => new SkillsPage(_k, _host).Build(),
         DashPage.Cats => new CatsPage(_k, _host, RebuildInPlace, () => Show(DashPage.Levels)).Build(),
         DashPage.Levels => new LevelsPage(_k, _host).Build(),
-        DashPage.Phone => new PhonePage(_k, _host).Build(),
+        DashPage.Phone => (_phonePage = new PhonePage(_k, _host)).Build(),
         _ => new HomePage(_k, _host, () => Show(DashPage.History), () => { _historySearch = ""; Show(DashPage.History); }, RebuildInPlace,
             SetupCard, () => Show(DashPage.Cats), Show).Build(),
     };

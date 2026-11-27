@@ -44,6 +44,16 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
     /// <summary>What the gallery shows, in order (the viewer steps through them).</summary>
     List<string> _shown = [];
 
+    // Choosing several: Select (or Ctrl+click) puts a ring on every tile; the bar floats at the bottom.
+    bool _selecting;
+    readonly HashSet<string> _picked = new(StringComparer.OrdinalIgnoreCase);
+    readonly List<Action> _tileLooks = [];
+    Action? _barUpdate;
+    Action? _selectButtonUpdate;
+
+    /// <summary>Choosing photos right now (the dashboard doesn't redraw the page under you).</summary>
+    public bool Selecting => _selecting;
+
     internal static bool IsVideo(string path) => Videos.Contains(Path.GetExtension(path));
 
     public UIElement Build()
@@ -127,6 +137,15 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
         grid.Children.Add(left);
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(16, 0, 0, 2) };
+        if (items.Count > 0)
+        {
+            var select = new ContentControl { Focusable = false, Margin = new Thickness(0, 0, 8, 0) };
+            _selectButtonUpdate = () => select.Content = _selecting
+                ? k.Button("Cancel", () => Choose(false), DashKit.Pill.Quiet, "\uE711")
+                : k.Button("Select", () => Choose(true), DashKit.Pill.Quiet, "\uE762");
+            _selectButtonUpdate();
+            buttons.Children.Add(select);
+        }
         buttons.Children.Add(k.Button("Open folder", () => OpenFolder(PhotoFolder), DashKit.Pill.Quiet, "\uE838"));
         Grid.SetColumn(buttons, 1);
         grid.Children.Add(buttons);
@@ -373,14 +392,77 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
             ToolTip = $"{Path.GetFileName(item.Path)}\n{Size(item.Bytes)}, {item.Arrived:d MMM, HH:mm}",
         };
         DashKit.Press(tile);
+
+        // Top right: an "i" (on hover) for the details; while choosing, a ring that fills when picked.
+        var info = new Border
+        {
+            Width = 30,
+            Height = 30,
+            CornerRadius = new CornerRadius(15),
+            Background = DashKit.B(DashKit.A(Colors.Black, 0x8C)),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(9),
+            Cursor = Cursors.Hand,
+            ToolTip = "Details",
+            Visibility = Visibility.Collapsed,
+            Child = Middle(k.Icon("\uE946", 14, Colors.White)),
+        };
+        info.MouseLeftButtonUp += (_, e) => { e.Handled = true; View(item.Path); };
+        layers.Children.Add(info);
+        var tick = new Border
+        {
+            Width = 26,
+            Height = 26,
+            CornerRadius = new CornerRadius(13),
+            BorderBrush = DashKit.B(Colors.White),
+            BorderThickness = new Thickness(2),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(11),
+            Visibility = Visibility.Collapsed,
+            IsHitTestVisible = false,
+            Child = Middle(k.Icon("\uE73E", 13, P.AccentText)),
+        };
+        layers.Children.Add(tick);
+        var ring = new Border { CornerRadius = new CornerRadius(15), BorderBrush = DashKit.B(P.Accent), BorderThickness = new Thickness(3), Visibility = Visibility.Collapsed, IsHitTestVisible = false };
+        layers.Children.Add(ring);
+        void Look()
+        {
+            bool picked = _picked.Contains(item.Path);
+            info.Visibility = !_selecting && tile.IsMouseOver ? Visibility.Visible : Visibility.Collapsed;
+            tick.Visibility = _selecting ? Visibility.Visible : Visibility.Collapsed;
+            tick.Background = picked ? DashKit.B(P.Accent) : DashKit.B(DashKit.A(Colors.Black, 0x40));
+            tick.BorderBrush = DashKit.B(picked ? P.Accent : Colors.White);
+            tick.Child.Visibility = picked ? Visibility.Visible : Visibility.Hidden;
+            ring.Visibility = picked ? Visibility.Visible : Visibility.Collapsed;
+        }
+        _tileLooks.Add(Look);
+        tile.MouseEnter += (_, _) => Look();
+        tile.MouseLeave += (_, _) => Look();
         tile.MouseLeftButtonUp += (_, e) =>
         {
             e.Handled = true;
-            // The details view, like the phone's; without one (an older host), just open it.
-            if (host.ShowViewer is { } view) view(_shown, Math.Max(0, _shown.IndexOf(item.Path)));
-            else host.OpenFile(item.Path);
+            if (_selecting || Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                if (!_selecting) Choose(true);
+                if (!_picked.Remove(item.Path)) _picked.Add(item.Path);
+                Look();
+                _barUpdate?.Invoke();
+                return;
+            }
+            View(item.Path);
         };
         var menu = new ContextMenu();
+        var details = new MenuItem { Header = "Details" };
+        details.Click += (_, _) => View(item.Path);
+        menu.Items.Add(details);
+        var shareIt = new MenuItem { Header = "Share" };
+        shareIt.Click += (_, _) => { if (Window.GetWindow(tile) is { } w) Shell.ShareSheet.Share(w, [item.Path]); };
+        menu.Items.Add(shareIt);
+        var copyIt = new MenuItem { Header = "Copy" };
+        copyIt.Click += (_, _) => Shell.ShareSheet.Copy([item.Path]);
+        menu.Items.Add(copyIt);
         var openIt = new MenuItem { Header = video ? "Play" : "Open" };
         openIt.Click += (_, _) => host.OpenFile(item.Path);
         menu.Items.Add(openIt);
@@ -395,6 +477,119 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
             tile.Background = new ImageBrush(image) { Stretch = Stretch.UniformToFill };
         });
         return tile;
+    }
+
+    static UIElement Middle(TextBlock icon)
+    {
+        icon.HorizontalAlignment = HorizontalAlignment.Center;
+        icon.VerticalAlignment = VerticalAlignment.Center;
+        return icon;
+    }
+
+    void View(string path)
+    {
+        // The details view, like the phone's; without one (an older host), just open it.
+        if (host.ShowViewer is { } view) view(_shown, Math.Max(0, _shown.IndexOf(path)));
+        else host.OpenFile(path);
+    }
+
+    // ---- Choosing several ----
+
+    void Choose(bool on)
+    {
+        _selecting = on;
+        if (!on) _picked.Clear();
+        foreach (var look in _tileLooks) look();
+        _selectButtonUpdate?.Invoke();
+        _barUpdate?.Invoke();
+    }
+
+    /// <summary>Dev aid: choose the first few, as if clicked.</summary>
+    public void PickFirst(int count)
+    {
+        Choose(true);
+        foreach (var p in _shown.Take(count)) _picked.Add(p);
+        foreach (var look in _tileLooks) look();
+        _barUpdate?.Invoke();
+    }
+
+    /// <summary>The bar that floats over the bottom of the page while choosing: how many, and what to do with them.</summary>
+    public UIElement Floating()
+    {
+        var count = k.Text("", 15, P.Text, FontWeights.Bold);
+        count.VerticalAlignment = VerticalAlignment.Center;
+        count.Margin = new Thickness(6, 0, 12, 0);
+        var note = k.Text("", 13.5, P.Muted);
+        note.VerticalAlignment = VerticalAlignment.Center;
+        note.Margin = new Thickness(0, 0, 16, 0);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Children = { count, note, actions } };
+        var bar = new Border
+        {
+            Background = DashKit.B(P.Card),
+            BorderBrush = DashKit.B(P.Line),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(24),
+            Padding = new Thickness(16, 9, 9, 9),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(24, 0, 24, 26),
+            Visibility = Visibility.Collapsed,
+            Effect = new System.Windows.Media.Effects.DropShadowEffect { BlurRadius = 30, ShadowDepth = 6, Opacity = P.Dark ? 0.55 : 0.18, Color = Colors.Black },
+            Child = row,
+        };
+        bool confirming = false;
+
+        void Add(string label, Action go, DashKit.Pill kind, string glyph)
+        {
+            var button = k.Button(label, go, kind, glyph, 13);
+            button.Margin = new Thickness(0, 0, 6, 0);
+            actions.Children.Add(button);
+        }
+        List<string> Picked() => _shown.Where(_picked.Contains).ToList();
+
+        void Update()
+        {
+            bar.Visibility = _selecting ? Visibility.Visible : Visibility.Collapsed;
+            actions.Children.Clear();
+            note.Text = "";
+            int n = _picked.Count;
+            if (confirming && n > 0)
+            {
+                count.Text = n == 1 ? "Move this one to the Recycle Bin?" : $"Move these {n} to the Recycle Bin?";
+                note.Text = "You can put them back from there.";
+                Add("Move", () =>
+                {
+                    var gone = Shell.ShareSheet.Recycle(Picked());
+                    confirming = false;
+                    Choose(false);
+                    if (gone > 0 && Window.GetWindow(bar) is DashboardWindow dash) dash.PhoneFilesChanged();
+                }, DashKit.Pill.Accent, "\uE74D");
+                Add("Keep them", () => { confirming = false; Update(); }, DashKit.Pill.Quiet, "\uE711");
+                return;
+            }
+            confirming = false;
+            count.Text = n == 0 ? "Choose photos and videos" : n == 1 ? "1 selected" : $"{n} selected";
+            if (n > 0) note.Text = Size(Picked().Sum(p => { try { return new FileInfo(p).Length; } catch { return 0L; } }));
+            bool all = n == _shown.Count;
+            Add(all ? "Select none" : "Select all", () =>
+            {
+                if (all) _picked.Clear(); else foreach (var p in _shown) _picked.Add(p);
+                foreach (var look in _tileLooks) look();
+                Update();
+            }, DashKit.Pill.Quiet, all ? "\uE8E6" : "\uE8B3");
+            if (n > 0)
+            {
+                Add("Share", () => { if (Window.GetWindow(bar) is { } w && !Shell.ShareSheet.Share(w, Picked())) note.Text = "Windows couldn't open Share."; }, DashKit.Pill.Accent, "\uE72D");
+                Add("Copy", () => { if (Shell.ShareSheet.Copy(Picked())) note.Text = "Copied. Paste them anywhere."; }, DashKit.Pill.Quiet, "\uE8C8");
+                if (n == 1) Add("Show in folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{Picked()[0]}\"") { UseShellExecute = true })?.Dispose(), DashKit.Pill.Quiet, "\uE838");
+                Add("Delete", () => { confirming = true; Update(); }, DashKit.Pill.Quiet, "\uE74D");
+            }
+            Add("Done", () => Choose(false), DashKit.Pill.Quiet, "\uE73E");
+        }
+        _barUpdate = Update;
+        Update();
+        return bar;
     }
 
     // ---- Thumbnails: Windows' own (so HEIC and videos have one too), made off the UI thread ----
@@ -491,11 +686,13 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
         return string.Join(" and ", parts);
     }
 
+    /// <summary>Sizes the way the iPhone (and the Mac) count them, 1 MB = 1,000,000 bytes, so the numbers match the phone's.</summary>
     internal static string Size(long bytes) => bytes switch
     {
-        >= 1L << 30 => $"{bytes / (double)(1L << 30):0.0} GB",
-        >= 1L << 20 => $"{bytes / (double)(1L << 20):0.#} MB",
-        _ => $"{Math.Max(1, bytes / 1024)} KB",
+        >= 1_000_000_000 => $"{bytes / 1e9:0.0#} GB",
+        >= 100_000_000 => $"{bytes / 1e6:0} MB",
+        >= 1_000_000 => $"{bytes / 1e6:0.#} MB",
+        _ => $"{Math.Max(1, bytes / 1000)} KB",
     };
 
     static string DayName(DateTime day) =>

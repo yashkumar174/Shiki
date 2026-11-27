@@ -57,10 +57,18 @@ public sealed class MediaViewer
         var back = k.Button("Back to the gallery", close, DashKit.Pill.Quiet, "\uE72B");
         DockPanel.SetDock(back, Dock.Left);
         bar.Children.Add(back);
+        // Right: where you are, Share, and the "i" that shows or hides the details.
+        var tools = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         _counter = k.Text("", 14, P.Muted, FontWeights.SemiBold);
         _counter.VerticalAlignment = VerticalAlignment.Center;
-        _counter.HorizontalAlignment = HorizontalAlignment.Right;
-        bar.Children.Add(_counter);
+        _counter.Margin = new Thickness(0, 0, 14, 0);
+        tools.Children.Add(_counter);
+        var share = k.Button("Share", () => { if (Window.GetWindow(_root) is { } w) Shell.ShareSheet.Share(w, [_paths[_index]]); }, DashKit.Pill.Quiet, "\uE72D");
+        share.Margin = new Thickness(0, 0, 8, 0);
+        tools.Children.Add(share);
+        _infoToggle = new ContentControl { Focusable = false };
+        tools.Children.Add(_infoToggle);
+        bar.Children.Add(tools);
         DockPanel.SetDock(bar, Dock.Top);
         left.Children.Add(bar);
 
@@ -108,8 +116,25 @@ public sealed class MediaViewer
         };
         Grid.SetColumn(scroll, 1);
         _root.Children.Add(scroll);
+        _detailsPane = scroll;
 
+        ShowDetails(DetailsOn);
         Show();
+    }
+
+    /// <summary>Whether the details sit beside the picture (kept from one look to the next, like the phone's "i").</summary>
+    static bool DetailsOn = true;
+    readonly ContentControl _infoToggle;
+    ScrollViewer? _detailsPane;
+
+    void ShowDetails(bool on)
+    {
+        DetailsOn = on;
+        _root.ColumnDefinitions[1].Width = on ? new GridLength(400) : new GridLength(0);
+        if (_detailsPane != null) _detailsPane.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+        var toggle = k.Button("Details", () => ShowDetails(!DetailsOn), on ? DashKit.Pill.Accent : DashKit.Pill.Quiet, "\uE946");
+        toggle.ToolTip = on ? "Hide the details (I)" : "Show the details (I)";
+        _infoToggle.Content = toggle;
     }
 
     /// <summary>Esc, and the arrow keys. True when it used the key.</summary>
@@ -121,6 +146,7 @@ public sealed class MediaViewer
             case Key.Left: Step(-1); return true;
             case Key.Right: Step(1); return true;
             case Key.Space or Key.Enter: host.OpenFile(_paths[_index]); return true;
+            case Key.I: ShowDetails(!DetailsOn); return true;
         }
         return false;
     }
@@ -294,7 +320,10 @@ public sealed class MediaViewer
         var open = k.Button(m.Video ? "Play" : "Open", () => host.OpenFile(m.Path), DashKit.Pill.Accent, m.Video ? "\uE768" : "\uE8A7", 13);
         open.Margin = new Thickness(0, 0, 8, 0);
         buttons.Children.Add(open);
-        buttons.Children.Add(k.Button("Show in folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{m.Path}\"") { UseShellExecute = true })?.Dispose(), DashKit.Pill.Quiet, "\uE838", 13));
+        var folder = k.Button("Show in folder", () => Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{m.Path}\"") { UseShellExecute = true })?.Dispose(), DashKit.Pill.Quiet, "\uE838", 13);
+        folder.Margin = new Thickness(0, 0, 8, 0);
+        buttons.Children.Add(folder);
+        buttons.Children.Add(k.Button("Copy", () => Shell.ShareSheet.Copy([m.Path]), DashKit.Pill.Quiet, "\uE8C8", 13));
         body.Children.Add(buttons);
         var card = k.Card(body, new Thickness(20, 18, 20, 18));
         card.Margin = new Thickness(0, 14, 0, 0);

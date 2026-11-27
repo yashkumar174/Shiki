@@ -675,6 +675,12 @@ public partial class App : Application
                 if (_dashboard == null) ShowDashboard(DashPage.Phone, show: false);
                 _dashboard!.PeekViewer(args[1]);
                 break;
+            case "select-test" when args.Length == 2 && int.TryParse(args[1], out var pickCount):
+                // Dev aid: the Phone page with the first few chosen (see it with "snapshot phone <png>").
+                EnterBuddyMode();
+                if (_dashboard == null) ShowDashboard(DashPage.Phone, show: false);
+                _dashboard!.PeekSelection(pickCount);
+                break;
             case "media-info" when args.Length >= 2:
                 // Dev aid: what the viewer reads from each file.
                 foreach (var media in args[1..]) _ = System.Threading.Tasks.Task.Run(async () => Log.Info($"media-info: {await Core.Phone.MediaInfo.ReadAsync(media)}"));
