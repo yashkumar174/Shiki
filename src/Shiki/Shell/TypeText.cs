@@ -58,6 +58,17 @@ public static class TypeText
         SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
     }
 
+    /// <summary>Ctrl+C, Ctrl+A or Ctrl+Z: copy the selection, select all in the box, undo.</summary>
+    public static void Copy() => Ctrl(0x43);
+    public static void SelectAll() => Ctrl(0x41);
+    public static void Undo() => Ctrl(0x5A);
+
+    static void Ctrl(ushort vk)
+    {
+        var inputs = new[] { Key(VK_CONTROL, 0, 0), Key(vk, 0, 0), Key(vk, 0, KEYEVENTF_KEYUP), Key(VK_CONTROL, 0, KEYEVENTF_KEYUP) };
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+    }
+
     /// <summary>One press of Enter (sending a message that's ready in its box).</summary>
     public static void PressEnter()
     {

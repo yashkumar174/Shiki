@@ -65,6 +65,9 @@ public sealed class Settings
     public string NotesHotkey { get; set; } = "Ctrl+Alt+N";
     /// <summary>Dictation: hold, talk, let go and the words are typed where the cursor is (or tap: until a pause).</summary>
     public string DictateHotkey { get; set; } = "Ctrl+Alt+D";
+
+    /// <summary>Writing help on the text selected in any app.</summary>
+    public string WriteHotkey { get; set; } = "Ctrl+Alt+W";
     /// <summary>Also keep a meeting's sound (as M4A, with recordings). Off: only the notes and transcript stay.</summary>
     public bool KeepMeetingAudio { get; set; }
     /// <summary>When a call starts (Zoom, Teams, Meet…), offer once to take notes.</summary>

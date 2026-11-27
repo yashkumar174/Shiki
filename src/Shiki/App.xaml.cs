@@ -40,7 +40,7 @@ public partial class App : Application
     ConvertWheel? _dragWheel;
     BroMenu? _menu;
     Hotkeys? _hotkeys;
-    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1, _talkHotkeyId = -1, _pawHotkeyId = -1, _errorHotkeyId = -1, _notesHotkeyId = -1, _dictateHotkeyId = -1;
+    int _snipHotkeyId = -1, _colourHotkeyId = -1, _convertHotkeyId = -1, _recordHotkeyId = -1, _askHotkeyId = -1, _talkHotkeyId = -1, _pawHotkeyId = -1, _errorHotkeyId = -1, _notesHotkeyId = -1, _dictateHotkeyId = -1, _writeHotkeyId = -1;
     RecordingSession? _recording;
     SnipWindow? _snip;
     PawWindow? _paw;
@@ -681,6 +681,29 @@ public partial class App : Application
                 if (_dashboard == null) ShowDashboard(DashPage.Phone, show: false);
                 _dashboard!.PeekSelection(pickCount);
                 break;
+            case "snapshot-writing" when args.Length >= 2:
+                // Dev aid: the writing card (choices, or with a result after the path), to a PNG; "-" for nothing selected.
+                {
+                    var writePalette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
+                    var sample = args.Length > 2 && args[2] == "-" ? null : "i has went to the market yesterday and buyed some apple, they was very fresh but costed to much";
+                    var card = new UI.WritingPanel(writePalette, CatSprites.Head(Skin), NativeMethods.GetForegroundWindow(), sample, _ => { });
+                    var drawn = card.Preview(Core.Ai.WriteAsk.Fix, args.Length > 2 && args[2] != "-" ? string.Join(" ", args[2..]) : null);
+                    DashboardWindow.SaveElement(drawn, UI.WritingPanel.CardWidth + 36, args[1]);
+                    card.Close();
+                }
+                break;
+            case "write-try" when args.Length >= 3 && Enum.TryParse<Core.Ai.WriteAsk>(args[1], true, out var writeAsk):
+                // Dev aid: one real rewrite with the saved key, to the log.
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    try
+                    {
+                        var (written, cost) = await Core.Ai.Writer.Rewrite(string.Join(" ", args[2..]), writeAsk, null, System.Threading.CancellationToken.None);
+                        Log.Info($"write-try {writeAsk}: \"{written}\" (${cost:0.00000})");
+                    }
+                    catch (Exception ex) { Log.Info($"write-try {writeAsk} failed: {ex.Message}"); }
+                });
+                break;
             case "media-info" when args.Length >= 2:
                 // Dev aid: what the viewer reads from each file.
                 foreach (var media in args[1..]) _ = System.Threading.Tasks.Task.Run(async () => Log.Info($"media-info: {await Core.Phone.MediaInfo.ReadAsync(media)}"));
@@ -1262,6 +1285,7 @@ public partial class App : Application
                 new ShortcutSetting("What's this error?", () => _settings.ErrorHotkey, text => ChangeHotkey(text, () => _settings.ErrorHotkey, v => _settings.ErrorHotkey = v)),
                 new ShortcutSetting("Meeting notes", () => _settings.NotesHotkey, text => ChangeHotkey(text, () => _settings.NotesHotkey, v => _settings.NotesHotkey = v)),
                 new ShortcutSetting("Dictation (hold, talk, let go)", () => _settings.DictateHotkey, text => ChangeHotkey(text, () => _settings.DictateHotkey, v => _settings.DictateHotkey = v)),
+                new ShortcutSetting("Writing help (select text first)", () => _settings.WriteHotkey, text => ChangeHotkey(text, () => _settings.WriteHotkey, v => _settings.WriteHotkey = v)),
             ],
             [
                 new SettingSwitch("Right-click menu in Explorer", "Convert with Shiki, under Show more options.", ContextMenuRegistrar.IsRegistered, ToggleExplorerMenu, "files"),
@@ -1357,7 +1381,7 @@ public partial class App : Application
     {
         var previous = get();
         // Shortcuts can't share keys.
-        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey || text == _settings.TalkHotkey || text == _settings.PawHotkey || text == _settings.ErrorHotkey || text == _settings.NotesHotkey || text == _settings.DictateHotkey)) return false;
+        if (text != previous && (text == _settings.SnipHotkey || text == _settings.ColourHotkey || text == _settings.ConvertHotkey || text == _settings.RecordHotkey || text == _settings.AskHotkey || text == _settings.TalkHotkey || text == _settings.PawHotkey || text == _settings.ErrorHotkey || text == _settings.NotesHotkey || text == _settings.DictateHotkey || text == _settings.WriteHotkey)) return false;
         set(text);
         if (BindHotkeys(quiet: true))
         {
@@ -1439,7 +1463,8 @@ public partial class App : Application
         bool error = Bind(ref _errorHotkeyId, _settings.ErrorHotkey, ExplainError, quiet);
         bool notes = Bind(ref _notesHotkeyId, _settings.NotesHotkey, ToggleNotes, quiet);
         bool dictate = Bind(ref _dictateHotkeyId, _settings.DictateHotkey, Dictate, quiet);
-        return snip && colour && convert && record && ask && talk && paw && error && notes && dictate;
+        bool write = Bind(ref _writeHotkeyId, _settings.WriteHotkey, () => StartWriting(), quiet);
+        return snip && colour && convert && record && ask && talk && paw && error && notes && dictate && write;
     }
 
     bool Bind(ref int id, string text, Action handler, bool quiet)
@@ -1500,6 +1525,7 @@ public partial class App : Application
                         case "record": StartRecording(); break;
                         case "colour": StartColourPicker(); break;
                         case "notes": ToggleNotes(); break;
+                        case "write": StartWriting(demo: "i has went to the market yesterday and buyed some apple, they was very fresh but costed to much"); break;
                     }
                 },
                 ExplainError = ExplainError,
@@ -2341,6 +2367,15 @@ public partial class App : Application
         // Connecting the phone works without Claude: the window that pairs it (and shows if it's connected).
         if (rx(words, @"^(connect|pair|link|set up|setup|add|reconnect|re connect)( up)?( my| the| a| an| new)? (phone|iphone|mobile|android)( again| to (this |the |my )?(pc|computer|laptop)| with (this |the |my )?(pc|computer|laptop))?$|^(phone|iphone|mobile) (connect|pairing|link)$|^(mera )?(phone|mobile) (connect|jodo|connect karo)$").Success)
             return () => { ShowPhoneConnect(); Tell("\uE8EA", "Here's Connect a phone. Scan the code with Shiki on your phone: once it's connected, it reconnects by itself."); };
+        // Writing help on what's selected in the app in front.
+        if (rx(words, @"^(fix|correct|check) (the |my |this )?(grammar|spelling|writing|text|sentence|message|english)( (in|of) (this|it))?$").Success)
+            return () => StartWriting(Core.Ai.WriteAsk.Fix);
+        if (rx(words, @"^make (this|it) (shorter|short)$").Success) return () => StartWriting(Core.Ai.WriteAsk.Shorter);
+        if (rx(words, @"^make (this|it) (more )?polite$").Success) return () => StartWriting(Core.Ai.WriteAsk.Polite);
+        if (rx(words, @"^make (this|it) (more )?professional$").Success) return () => StartWriting(Core.Ai.WriteAsk.Professional);
+        if (rx(words, @"^make (this|it) (friendlier|more friendly|friendly)$").Success) return () => StartWriting(Core.Ai.WriteAsk.Friendly);
+        if (rx(words, @"^make (this|it) (clearer|more clear|clear)$").Success) return () => StartWriting(Core.Ai.WriteAsk.Clearer);
+        if (rx(words, @"^(write|draft) a reply( to (this|it|this message))?$|^reply to this( message)?$").Success) return () => StartWriting(Core.Ai.WriteAsk.Reply);
         if (rx(words, @"^(battery|how much battery|whats my battery|what is my battery|my battery|battery level|how much charge|battery kitni hai|charge kitna hai)( is left| left| level)?$").Success)
         {
             var power = System.Windows.Forms.SystemInformation.PowerStatus;
@@ -2691,6 +2726,36 @@ public partial class App : Application
     /// Hold the shortcut and talk: when it's let go, the words are typed where the cursor is.
     /// A quick tap listens until a pause instead (or until it's pressed again).
     /// </summary>
+    UI.WritingPanel? _writing;
+
+    /// <summary>Writing help: reads what's selected in the app in front, then offers what to do with it.</summary>
+    async void StartWriting(Core.Ai.WriteAsk? ask = null, string? demo = null)
+    {
+        _menu?.CloseAnimated();
+        if (_writing != null) { _writing.Activate(); return; }
+        if (!_settings.AiEnabled || !ClaudeKey.Exists)
+        {
+            ShowDashboard(DashPage.Ask);
+            return;
+        }
+        var target = demo != null ? IntPtr.Zero : NativeMethods.GetForegroundWindow();
+        var text = demo ?? await Selection.Read(target);
+        if (_writing != null) return;
+        var palette = (_settings.DashboardDark ?? DashPalette.WindowsIsDark()) ? DashPalette.Night : DashPalette.Light;
+        var panel = _writing = new UI.WritingPanel(palette, CatSprites.Head(Skin), target, text, cost =>
+        {
+            _settings.AiSpentUsd += cost;
+            _settings.AiRequests++;
+            _settings.Save();
+        });
+        panel.Closed += (_, _) => _writing = null;
+        panel.PlaceNearMouse();
+        panel.Show();
+        NativeMethods.ForceForeground(new System.Windows.Interop.WindowInteropHelper(panel).Handle);
+        panel.Activate();
+        if (ask is { } now) panel.Start(now);
+    }
+
     async void Dictate()
     {
         if (_dictation != null)
