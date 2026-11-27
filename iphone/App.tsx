@@ -211,7 +211,7 @@ export default function App() {
       setStatus(`Connected to ${p.pcName}`);
       await MediaLibrary.requestPermissionsAsync();
     } catch (e) {
-      setStatus(`Couldn't connect: ${String((e as Error)?.message ?? e)}. Is this iPhone on the same Wi-Fi as the PC?`);
+      setStatus(`Couldn't reach Shiki on the PC. Check this iPhone is on the same Wi-Fi, then open the Phone page in Shiki on the PC: if Windows Firewall is in the way, it shows a button to let your phone in. (${String((e as Error)?.message ?? e)})`);
     }
   }, [remember]);
 
@@ -230,7 +230,7 @@ export default function App() {
       setStatus(`Connected to ${p.pcName}`);
       await MediaLibrary.requestPermissionsAsync();
     } catch (e) {
-      setStatus(`Couldn't connect: ${String((e as Error)?.message ?? e)}`);
+      setStatus(`Couldn't reach Shiki on the PC. Check the address, and open the Phone page in Shiki on the PC: if Windows Firewall is in the way, it shows a button to let your phone in. (${String((e as Error)?.message ?? e)})`);
     }
   }, [address, pin, remember]);
 

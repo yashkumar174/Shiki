@@ -149,7 +149,8 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
         row.Children.Add(dot);
         row.Children.Add(button);
         row.Children.Add(text);
-        var card = k.Card(row, new Thickness(22, 18, 20, 18));
+        var gate = Gate();
+        var card = k.Card(new StackPanel { Children = { row, gate.View } }, new Thickness(22, 18, 20, 18));
         card.Margin = new Thickness(0, 26, 0, 0);
 
         string? shown = null;
@@ -187,11 +188,72 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
             };
         }
         Update();
+        int ticks = 0;
         var timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        timer.Tick += (_, _) => Update();
-        card.Loaded += (_, _) => timer.Start();
+        timer.Tick += (_, _) =>
+        {
+            Update();
+            // The network can change under it (home Wi-Fi to a hotspot): look at the firewall again now and then.
+            if (++ticks % 10 == 0) gate.Recheck();
+        };
+        card.Loaded += (_, _) => { timer.Start(); gate.Recheck(); };
         card.Unloaded += (_, _) => timer.Stop();
         return card;
+    }
+
+    /// <summary>
+    /// Under the connection: shown only when Windows Firewall would keep the phone out, with one
+    /// button that asks Windows to let it in.
+    /// </summary>
+    (UIElement View, Action Recheck) Gate()
+    {
+        var title = k.Text("Windows Firewall is keeping your phone out", 15, DashPalette.Eye, FontWeights.Bold);
+        var sub = k.Text("", 13.5, P.Muted, wrap: true);
+        sub.Margin = new Thickness(0, 4, 0, 0);
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Children = { title, sub } };
+        bool busy = false, isPublic = false;
+        var view = new Border
+        {
+            BorderBrush = DashKit.B(P.Line),
+            BorderThickness = new Thickness(0, 1, 0, 0),
+            Margin = new Thickness(30, 16, 0, 0),
+            Padding = new Thickness(0, 14, 0, 0),
+            Visibility = Visibility.Collapsed,
+        };
+        Action recheck = null!;
+        var button = k.Button("Let your phone in", () =>
+        {
+            if (busy) return;
+            busy = true;
+            sub.Text = "Press Yes when Windows asks.";
+            _ = Ask();
+        }, DashKit.Pill.Accent, "\uE83D");
+        async Task Ask()
+        {
+            var problem = await Shell.Firewall.LetIn(isPublic);
+            busy = false;
+            if (problem != null) { sub.Text = problem; return; }
+            recheck();
+        }
+        button.VerticalAlignment = VerticalAlignment.Center;
+        button.Margin = new Thickness(16, 0, 0, 0);
+        var row = new DockPanel();
+        DockPanel.SetDock(button, Dock.Right);
+        row.Children.Add(button);
+        row.Children.Add(text);
+        view.Child = row;
+
+        recheck = () => _ = Task.Run(Shell.Firewall.Look).ContinueWith(t =>
+        {
+            if (busy) return;
+            var look = t.Result;
+            isPublic = look.PublicNetwork;
+            view.Visibility = look.Verdict == Shell.Firewall.Verdict.Closed ? Visibility.Visible : Visibility.Collapsed;
+            sub.Text = look.PublicNetwork
+                ? "Windows calls this network public, and Shiki isn't allowed in on it, so your phone can't reach this PC. This lets Shiki in on home and public networks. Windows asks you once."
+                : "Shiki isn't allowed in on this network, so your phone can't reach this PC. This lets Shiki in on home networks. Windows asks you once.";
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+        return (view, () => recheck());
     }
 
     static string Ago(DateTime? when)

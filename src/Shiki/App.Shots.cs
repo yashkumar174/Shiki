@@ -206,6 +206,10 @@ public partial class App
                 // Dev aid: the pixel size the phone check reads from each file (null for anything that isn't a picture).
                 foreach (var file in args[1..]) Log.Info($"pixels-test {Path.GetFileName(file)}: {(Core.Phone.PhoneLink.Pixels(file) is { } px ? $"{px.W}x{px.H}" : "not a picture")}");
                 return true;
+            case "firewall-test":
+                // Dev aid: whether Windows Firewall lets the phone in (reads the rules, changes nothing).
+                _ = Task.Run(() => Log.Info($"firewall-test: {Firewall.Look()}"));
+                return true;
             case "shot-collect":
                 // Dev aid: presses "Collect more" on the offer.
                 CollectShots();

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -84,7 +85,9 @@ public sealed class PhoneLinkWindow : Window
         _request.Children.Add(_code);
         _request.Children.Add(UiKit.Row(UiKit.Button("Pair", Accept, primary: true), UiKit.Button("Not now", Decline)));
 
-        stack.Children.Add(UiKit.Body("If Windows asks, press Allow. On a Wi-Fi Windows calls public (a phone's hotspot, say), tick public networks too, or the phone can't reach this PC.", 12));
+        var hint = UiKit.Body("If Windows asks, press Allow. On a Wi-Fi Windows calls public (a phone's hotspot, say), tick public networks too, or the phone can't reach this PC.", 12);
+        stack.Children.Add(hint);
+        stack.Children.Add(FirewallGate(hint));
         _status.Margin = new Thickness(0, 14, 0, 0);
         stack.Children.Add(_status);
         var close = UiKit.Button("Close", Close);
@@ -100,6 +103,46 @@ public sealed class PhoneLinkWindow : Window
             link.StopAppDownload();
             link.StopIphonePairing();
         };
+    }
+
+    /// <summary>
+    /// When Windows Firewall would keep the phone out: says so, with a button that asks Windows to
+    /// let Shiki in (and the general "if Windows asks" hint goes, since this replaces it).
+    /// </summary>
+    UIElement FirewallGate(TextBlock hint)
+    {
+        var panel = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 12, 0, 0) };
+        var said = UiKit.Body("", 12.5);
+        said.Foreground = new SolidColorBrush(Dashboard.DashPalette.Eye);
+        bool busy = false, isPublic = false;
+        var button = UiKit.Button("Let your phone in", async () =>
+        {
+            if (busy) return;
+            busy = true;
+            said.Text = "Press Yes when Windows asks.";
+            var problem = await Shell.Firewall.LetIn(isPublic);
+            busy = false;
+            if (problem != null) { said.Text = problem; return; }
+            panel.Visibility = Visibility.Collapsed;
+            _status.Text = "Done: your phone can reach this PC now.";
+        }, primary: true);
+        button.Margin = new Thickness(0, 10, 0, 0);
+        button.HorizontalAlignment = HorizontalAlignment.Left;
+        panel.Children.Add(said);
+        panel.Children.Add(button);
+        _ = Task.Run(Shell.Firewall.Look).ContinueWith(t =>
+        {
+            var look = t.Result;
+            Log.Info("Firewall for the phone link: " + look.Detail);
+            if (look.Verdict != Shell.Firewall.Verdict.Closed) return;
+            isPublic = look.PublicNetwork;
+            said.Text = look.PublicNetwork
+                ? "Windows Firewall is keeping your phone out: Windows calls this network public and Shiki isn't allowed in on it. Let it in once, and Windows asks you to confirm."
+                : "Windows Firewall is keeping your phone out: Shiki isn't allowed in on this network. Let it in once, and Windows asks you to confirm.";
+            hint.Visibility = Visibility.Collapsed;
+            panel.Visibility = Visibility.Visible;
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+        return panel;
     }
 
     void Show(bool iphone)
