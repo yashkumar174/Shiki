@@ -61,6 +61,9 @@ public sealed class PlayerView
         DockPanel.SetDock(backButton, Dock.Left);
         head.Children.Add(backButton);
         var actions = new StackPanel { Orientation = Orientation.Horizontal };
+        if (!_audioOnly && host.ShowDetails is { } details)
+            actions.Children.Add(k.IconButton("\uE946", () => { Pause(); details(path); }, "Details: when, where, camera, quality (I)", 14, p.Muted));
+        actions.Children.Add(k.IconButton("\uE72D", () => { if (Window.GetWindow(head) is { } w) Shell.ShareSheet.Share(w, [path]); }, "Share", 14, p.Muted));
         actions.Children.Add(k.IconButton("\uE8A7", () => Launch(path, null), "Open in your usual player", 14, p.Muted));
         actions.Children.Add(k.IconButton("\uE8C8", () => { ClipboardTools.CopyFiles([path]); ToastHost.Show(ToastWindow.Message("Copied", System.IO.Path.GetFileName(path))); }, "Copy", 14, p.Muted));
         actions.Children.Add(k.IconButton("\uE838", () => Launch("explorer.exe", $"/select,\"{path}\""), "Show in folder", 14, p.Muted));
@@ -321,6 +324,7 @@ public sealed class PlayerView
         switch (key)
         {
             case Key.Space: case Key.K: TogglePlay(); return true;
+            case Key.I when !_audioOnly && _host.ShowDetails != null: Pause(); _host.ShowDetails(Path); return true;
             case Key.Left: SeekBy(-5); return true;
             case Key.Right: SeekBy(5); return true;
             case Key.J: SeekBy(-10); return true;

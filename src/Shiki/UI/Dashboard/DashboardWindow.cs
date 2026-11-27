@@ -75,6 +75,8 @@ public sealed class DashboardHost
     public Action<string>? Play { get; set; }
     /// <summary>Shows phone photos and videos one at a time with their details, starting at this one (set by the dashboard itself).</summary>
     public Action<IReadOnlyList<string>, int>? ShowViewer { get; set; }
+    /// <summary>The details of one photo or video (from the player's "i"; set by the dashboard itself).</summary>
+    public Action<string>? ShowDetails { get; set; }
 }
 
 public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks, Skills, Cats, Levels, Phone }
@@ -129,6 +131,15 @@ public sealed class DashboardWindow : Window
         {
             _galleryOffset = _pageScroll?.VerticalOffset;
             _viewer = new MediaViewer(_k, _host, paths, index, CloseViewer);
+            Rebuild();
+        };
+        _host.ShowDetails = path =>
+        {
+            // From the player: it waits (paused) while you look; Play in the details goes back to it.
+            ParkPlayer();
+            var paths = MediaAround(path);
+            _galleryOffset = null;
+            _viewer = new MediaViewer(_k, _host, paths, Math.Max(0, paths.FindIndex(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase))), CloseViewer);
             Rebuild();
         };
         _host.OpenMeeting = id => { _meetingId = id; Show(DashPage.Meetings); };
@@ -543,7 +554,7 @@ public sealed class DashboardWindow : Window
         Content = _root;
     }
 
-    /// <summary>Dev aid: the photo viewer on this file (with the rest of its folder to step through), for "snapshot phone".</summary>
+    /// <summary>Dev aid: the Phone page with the first few chosen, for "snapshot phone".</summary>
     public void PeekSelection(int count)
     {
         _page = DashPage.Phone;
@@ -552,13 +563,26 @@ public sealed class DashboardWindow : Window
         _phonePage?.PickFirst(count);
     }
 
-    /// <summary>Dev aid: the photo viewer on this file.</summary>
+    /// <summary>The photos and videos in this file's folder, newest first (to step through), always with the file itself.</summary>
+    static List<string> MediaAround(string path)
+    {
+        var paths = new List<string>();
+        try
+        {
+            var folder = System.IO.Path.GetDirectoryName(path)!;
+            paths = new System.IO.DirectoryInfo(folder).EnumerateFiles()
+                .Where(f => PhonePage.IsVideo(f.FullName) || f.Extension.ToLowerInvariant() is ".jpg" or ".jpeg" or ".png" or ".heic" or ".heif" or ".webp" or ".gif")
+                .OrderByDescending(f => f.CreationTime).Select(f => f.FullName).ToList();
+        }
+        catch { }
+        if (!paths.Contains(path, StringComparer.OrdinalIgnoreCase)) paths.Insert(0, path);
+        return paths;
+    }
+
+    /// <summary>Dev aid: the photo viewer on this file (with the rest of its folder to step through), for "snapshot phone".</summary>
     public void PeekViewer(string path, int steps = 0)
     {
-        var folder = System.IO.Path.GetDirectoryName(path)!;
-        var paths = new System.IO.DirectoryInfo(folder).EnumerateFiles()
-            .Where(f => PhonePage.IsVideo(f.FullName) || f.Extension.ToLowerInvariant() is ".jpg" or ".jpeg" or ".png" or ".heic" or ".heif")
-            .OrderByDescending(f => f.CreationTime).Select(f => f.FullName).ToList();
+        var paths = MediaAround(path);
         _page = DashPage.Phone;
         _viewer = new MediaViewer(_k, _host, paths, Math.Max(0, paths.FindIndex(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase))), CloseViewer);
         for (int i = 0; i < steps; i++) _viewer.HandleKey(Key.Right);
