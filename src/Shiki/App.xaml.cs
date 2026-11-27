@@ -669,6 +669,16 @@ public partial class App : Application
                 if (_dashboard == null) ShowDashboard(shot, show: false);
                 _dashboard!.Snapshot(args[2], shot);
                 break;
+            case "view-media" when args.Length == 2 && File.Exists(args[1]):
+                // Dev aid: the phone gallery's viewer on this file (see it with "snapshot phone <png>").
+                EnterBuddyMode();
+                if (_dashboard == null) ShowDashboard(DashPage.Phone, show: false);
+                _dashboard!.PeekViewer(args[1]);
+                break;
+            case "media-info" when args.Length >= 2:
+                // Dev aid: what the viewer reads from each file.
+                foreach (var media in args[1..]) _ = System.Threading.Tasks.Task.Run(async () => Log.Info($"media-info: {await Core.Phone.MediaInfo.ReadAsync(media)}"));
+                break;
             case "try-saying" when args.Length >= 2:
                 // Dev aid: what Try on the skills page does with these words.
                 TrySaying(string.Join(" ", args[1..]));

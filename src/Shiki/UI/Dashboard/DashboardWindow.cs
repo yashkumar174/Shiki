@@ -73,6 +73,8 @@ public sealed class DashboardHost
     public Action<string>? TryTool { get; init; }
     /// <summary>Plays a video or audio file in the dashboard (set by the dashboard itself).</summary>
     public Action<string>? Play { get; set; }
+    /// <summary>Shows phone photos and videos one at a time with their details, starting at this one (set by the dashboard itself).</summary>
+    public Action<IReadOnlyList<string>, int>? ShowViewer { get; set; }
 }
 
 public enum DashPage { Home, Ask, Tools, History, Meetings, Tasks, Skills, Cats, Levels, Phone }
@@ -111,6 +113,10 @@ public sealed class DashboardWindow : Window
 
     // The cat chat page, kept between visits (and across rebuilds) so a half-typed message stays.
     AskView? _ask;
+
+    // One phone photo or video, big, with its details (over the Phone page; Esc goes back to it).
+    MediaViewer? _viewer;
+    double? _galleryOffset;
     string _askDraft = "";
     WindowState _stateBeforeFullscreen;
 
@@ -118,6 +124,12 @@ public sealed class DashboardWindow : Window
     {
         _host = host;
         _host.Play = Play;
+        _host.ShowViewer = (paths, index) =>
+        {
+            _galleryOffset = _pageScroll?.VerticalOffset;
+            _viewer = new MediaViewer(_k, _host, paths, index, CloseViewer);
+            Rebuild();
+        };
         _host.OpenMeeting = id => { _meetingId = id; Show(DashPage.Meetings); };
         Title = "Shiki";
         Width = 1240;
@@ -173,6 +185,11 @@ public sealed class DashboardWindow : Window
                 return;
             }
             if (_showing != null) { Forward(e, Keyboard.PreviewKeyDownEvent); return; }
+            if (_viewer != null && !_onPlayer && Keyboard.FocusedElement is not TextBox)
+            {
+                if (_viewer.HandleKey(e.Key)) e.Handled = true;
+                return;
+            }
             if (e.Key == Key.F && Keyboard.Modifiers == ModifierKeys.Control) { _historySearch ??= ""; Show(DashPage.History); e.Handled = true; }
         };
         KeyDown += (_, e) => { if (_showing != null && !e.Handled) Forward(e, Keyboard.KeyDownEvent); };
@@ -180,7 +197,16 @@ public sealed class DashboardWindow : Window
     }
 
     /// <summary>The phone sent something: the gallery (and Home's phone tile) show it at once.</summary>
-    public void PhoneFilesChanged() => Dispatcher.BeginInvoke(() => { if (_page is DashPage.Phone or DashPage.Home && _showing == null && !_onPlayer && !IsTyping()) RebuildInPlace(); });
+    public void PhoneFilesChanged() => Dispatcher.BeginInvoke(() => { if (_page is DashPage.Phone or DashPage.Home && _showing == null && _viewer == null && !_onPlayer && !IsTyping()) RebuildInPlace(); });
+
+    /// <summary>Back from one photo to the gallery, where it was scrolled to.</summary>
+    void CloseViewer()
+    {
+        if (_viewer == null) return;
+        _viewer = null;
+        _keepOffset = _galleryOffset;
+        Rebuild();
+    }
 
     // Tasks and meetings change from elsewhere (a reminder, notes being written): show it.
     void OnListsChanged() => Dispatcher.BeginInvoke(() => { if (_page is DashPage.Tasks or DashPage.Meetings && _showing == null && !_onPlayer && !IsTyping()) Rebuild(); });
@@ -199,6 +225,7 @@ public sealed class DashboardWindow : Window
         Theme.EditorDark = _p.Dark;
         _k = new DashKit(_p);
         if (_ask != null) { _askDraft = _ask.Draft; _ask.Detach(); _ask = null; }
+        _viewer = null;
         Background = DashKit.B(_p.Canvas);
         Rebuild();
     }
@@ -209,6 +236,7 @@ public sealed class DashboardWindow : Window
         // Settings has nothing to lose: leaving it closes it. Editors are parked instead.
         _settingsPage?.Window.Close();
         _showing = null;
+        _viewer = null;
         ParkPlayer();
         Rebuild();
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
@@ -303,6 +331,11 @@ public sealed class DashboardWindow : Window
         {
             if (_showing.Frame.Parent is Decorator old) old.Child = null;
             panel.Child = _showing.Frame;
+        }
+        else if (_viewer != null)
+        {
+            if (_viewer.Root.Parent is Decorator old) old.Child = null;
+            panel.Child = _viewer.Root;
         }
         else if (_page == DashPage.Ask && _host.Chat != null)
         {
@@ -502,6 +535,19 @@ public sealed class DashboardWindow : Window
         SaveElement(holder, Width, path, Height);
         holder.Child = null;
         Content = _root;
+    }
+
+    /// <summary>Dev aid: the photo viewer on this file (with the rest of its folder to step through), for "snapshot phone".</summary>
+    public void PeekViewer(string path, int steps = 0)
+    {
+        var folder = System.IO.Path.GetDirectoryName(path)!;
+        var paths = new System.IO.DirectoryInfo(folder).EnumerateFiles()
+            .Where(f => PhonePage.IsVideo(f.FullName) || f.Extension.ToLowerInvariant() is ".jpg" or ".jpeg" or ".png" or ".heic" or ".heif")
+            .OrderByDescending(f => f.CreationTime).Select(f => f.FullName).ToList();
+        _page = DashPage.Phone;
+        _viewer = new MediaViewer(_k, _host, paths, Math.Max(0, paths.FindIndex(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase))), CloseViewer);
+        for (int i = 0; i < steps; i++) _viewer.HandleKey(Key.Right);
+        if (IsVisible) Rebuild();
     }
 
     /// <summary>Dev aid: a page's whole length (not just what fits the window), as a PNG.</summary>

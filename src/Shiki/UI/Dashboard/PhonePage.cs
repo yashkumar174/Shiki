@@ -41,12 +41,17 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
     static string FileFolder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "From phone");
 
     readonly List<(UniformGrid Grid, List<Border> Tiles)> _days = [];
+    /// <summary>What the gallery shows, in order (the viewer steps through them).</summary>
+    List<string> _shown = [];
+
+    internal static bool IsVideo(string path) => Videos.Contains(Path.GetExtension(path));
 
     public UIElement Build()
     {
         var page = new StackPanel { Margin = new Thickness(48, 40, 48, 56), MaxWidth = 1180, HorizontalAlignment = HorizontalAlignment.Stretch };
         var items = Media(PhotoFolder);
         var others = Files(FileFolder);
+        _shown = items.Take(Most).Select(i => i.Path).ToList();
         page.Children.Add(Header(items));
         page.Children.Add(Connection());
         if (items.Count == 0)
@@ -368,8 +373,17 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
             ToolTip = $"{Path.GetFileName(item.Path)}\n{Size(item.Bytes)}, {item.Arrived:d MMM, HH:mm}",
         };
         DashKit.Press(tile);
-        tile.MouseLeftButtonUp += (_, e) => { e.Handled = true; host.OpenFile(item.Path); };
+        tile.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            // The details view, like the phone's; without one (an older host), just open it.
+            if (host.ShowViewer is { } view) view(_shown, Math.Max(0, _shown.IndexOf(item.Path)));
+            else host.OpenFile(item.Path);
+        };
         var menu = new ContextMenu();
+        var openIt = new MenuItem { Header = video ? "Play" : "Open" };
+        openIt.Click += (_, _) => host.OpenFile(item.Path);
+        menu.Items.Add(openIt);
         var show = new MenuItem { Header = "Show in folder" };
         show.Click += (_, _) => Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.Path}\"") { UseShellExecute = true })?.Dispose();
         menu.Items.Add(show);
@@ -387,6 +401,9 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
 
     static readonly ConcurrentDictionary<string, (DateTime Stamp, BitmapSource Image)> Cache = new(StringComparer.OrdinalIgnoreCase);
     static readonly System.Threading.SemaphoreSlim Makers = new(3);
+
+    /// <summary>The gallery's thumbnail of it, if it's been made.</summary>
+    internal static BitmapSource? CachedThumb(string path) => Cache.TryGetValue(path, out var hit) ? hit.Image : null;
 
     static void Thumb(string path, Action<BitmapSource> done)
     {
@@ -424,7 +441,7 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
     [DllImport("gdi32.dll")]
     static extern bool DeleteObject(IntPtr handle);
 
-    static BitmapSource? ShellThumb(string path, int size)
+    internal static BitmapSource? ShellThumb(string path, int size)
     {
         SHCreateItemFromParsingName(path, IntPtr.Zero, typeof(IShellItemImageFactory).GUID, out var factory);
         try
@@ -474,7 +491,7 @@ public sealed class PhonePage(DashKit k, DashboardHost host)
         return string.Join(" and ", parts);
     }
 
-    static string Size(long bytes) => bytes switch
+    internal static string Size(long bytes) => bytes switch
     {
         >= 1L << 30 => $"{bytes / (double)(1L << 30):0.0} GB",
         >= 1L << 20 => $"{bytes / (double)(1L << 20):0.#} MB",
