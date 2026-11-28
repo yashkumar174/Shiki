@@ -704,6 +704,14 @@ public partial class App : Application
                     catch (Exception ex) { Log.Info($"write-try {writeAsk} failed: {ex.Message}"); }
                 });
                 break;
+            case "where-test":
+                // Dev aid: where the cat thinks the PC is, and a known point (Jamshedpur's Bistupur) matched to its town.
+                _ = System.Threading.Tasks.Task.Run(async () =>
+                {
+                    await Where.Refresh();
+                    Log.Info($"where-test: now {Where.Now(_settings)?.ToString() ?? "unknown"}; 22.7957,86.1832 is {Where.Nearest(22.7957, 86.1832)}; 28.61,77.21 is {Where.Nearest(28.61, 77.21)}; note:{Where.Note(_settings)}");
+                });
+                break;
             case "browser-setup":
                 // Dev aid: the one-time browser setup.
                 EnterBuddyMode();
@@ -1308,6 +1316,7 @@ public partial class App : Application
                 new SettingSwitch("Quick sends and reminders", "\"WhatsApp Mummy that I'm on my way\", \"email this to me\", \"remind me at 5 to call the bank\": done in a second on this PC, without waiting for Claude. Anything unclear still goes to Claude.", () => _settings.QuickPath, () => { _settings.QuickPath = !_settings.QuickPath; _settings.Save(); }, "sending"),
                 new SettingSwitch("Morning briefing", $"The first \"Hey {CatName}\" of the day (after 4 am), said on its own, tells you today's meetings, the emails that matter and tasks due. Say \"brief me\" or \"good morning\" any time for it.", () => _settings.BriefingOnWake, () => { _settings.BriefingOnWake = !_settings.BriefingOnWake; _settings.Save(); }, "day"),
                 new SettingSwitch("Keep my last 30 voice requests", "As sound files on this PC only (Shiki's data folder, voice-clips), so speech engines can be tested on your own voice. Nothing is uploaded by itself.", () => _settings.KeepVoiceClips, () => { _settings.KeepVoiceClips = !_settings.KeepVoiceClips; VoiceClips.On = _settings.KeepVoiceClips; _settings.Save(); }, "voiceadvanced"),
+                new SettingSwitch("Know my town", "From Windows' location, matched to the nearest town on this PC: only the town's name goes to Claude, so \"the cheapest flight to Goa\" starts from where you are. Or say \"I live in Jamshedpur\".", () => _settings.UseLocation, () => { _settings.UseLocation = !_settings.UseLocation; _settings.Save(); if (_settings.UseLocation) _ = Where.Refresh(); }),
                 new SettingSwitch("Privacy guard", "Card numbers, Aadhaar and PAN numbers, passwords and keys in documents or copied text are hidden on this PC before anything goes to Claude.", () => _settings.PrivacyGuard, () => { _settings.PrivacyGuard = !_settings.PrivacyGuard; Core.Ai.PrivacyGuard.On = _settings.PrivacyGuard; _settings.Save(); }, "privacy"),
                 new SettingSwitch("Suggest what to do with downloads", "A HEIC photo, a huge video, an archive: one tap to fix it. Worked out on this PC.", () => _settings.SuggestDownloads, () => { _settings.SuggestDownloads = !_settings.SuggestDownloads; _settings.Save(); }, "files"),
                 new SettingSwitch($"{CatName} says a word now and then", "Welcome back, what a job saved, your tasks for today. Never over full-screen apps.", () => _settings.Quips, () => { _settings.Quips = !_settings.Quips; _settings.Save(); }, "cat"),
@@ -1452,6 +1461,7 @@ public partial class App : Application
         StartReminders();
         StartPhoneLink();
         StartBrowserBridge();
+        if (_settings.UseLocation && string.IsNullOrWhiteSpace(_settings.HomeCity)) _ = Where.Refresh();
         ApplyShotPile();
         WatchPc();
         _calls = new CallWatcher();
@@ -1783,6 +1793,7 @@ public partial class App : Application
         ReadClipboard = ReadClipboardForCat,
         StartAgent = StartAgent,
         StartWebAgent = StartWebAgent,
+        WhereNote = () => Where.Note(_settings),
         WebBrowser = () => BrowserBridge.Current is { Connected: true } b ? b.Browser ?? "your browser" : null,
         SendWhatsApp = SendWhatsApp,
         Quick = VoiceCommand,
@@ -2447,6 +2458,12 @@ public partial class App : Application
         // Connecting the phone works without Claude: the window that pairs it (and shows if it's connected).
         if (rx(words, @"^(connect|pair|link|set up|setup|add|reconnect|re connect)( up)?( my| the| a| an| new)? (phone|iphone|mobile|android)( again| to (this |the |my )?(pc|computer|laptop)| with (this |the |my )?(pc|computer|laptop))?$|^(phone|iphone|mobile) (connect|pairing|link)$|^(mera )?(phone|mobile) (connect|jodo|connect karo)$").Success)
             return () => { ShowPhoneConnect(); Tell("\uE8EA", "Here's Connect a phone. Scan the code with Shiki on your phone: once it's connected, it reconnects by itself."); };
+        // Where the person lives: kept, and used over Windows' location.
+        if (rx(words, @"^(i live in|i stay in|i'm from|im from|i am from|my (home )?(city|town) is|main (.+ )?(mein|me) rehta hoon) (?<city>[a-z .'-]{2,40})$") is { Success: true } home)
+        {
+            var city = System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(home.Groups["city"].Value.Trim());
+            return () => { _settings.HomeCity = city; _settings.Save(); Tell("\uE707", $"Got it: you live in {city}. I'll start from there for travel, weather and near me."); };
+        }
         // Shiki's extension in the browser, for doing things on websites.
         if (rx(words, @"^(connect|set up|setup|link|add) (shiki (to|with|in) )?(my |the )?(browser|chrome|edge|brave)( extension)?$|^(install|add) (the )?(shiki )?(browser |chrome )?extension$").Success)
             return () => { ShowBrowserSetup(); Tell("\uE774", "Here's how to add Shiki to your browser (once). Then ask me to do things on websites."); };

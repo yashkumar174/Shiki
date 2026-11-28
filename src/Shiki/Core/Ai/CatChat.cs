@@ -146,6 +146,8 @@ public sealed class CatHands
     public Func<string, string>? StartWebAgent { get; init; }
     /// <summary>The browser it would work in ("Chrome 158"), or null when Shiki's extension isn't connected.</summary>
     public Func<string?>? WebBrowser { get; init; }
+    /// <summary>Where the person is, as a line for the context ("in or near Jamshedpur…"), or null.</summary>
+    public Func<string>? WhereNote { get; init; }
     /// <summary>What's on the clipboard: text, or a picture (PNG), or neither.</summary>
     public required Func<(string? Text, byte[]? Png)> ReadClipboard { get; init; }
     /// <summary>Reads text aloud, all of it (a document); a Stop button shows meanwhile.</summary>
@@ -465,6 +467,7 @@ public sealed class CatChat(CatHands hands)
             var aggregator = new Anthropic.Helpers.MessageContentAggregator();
             var shown = new List<CatSaid?>();
             var writing = new StringBuilder();
+            bool afterText = false;
             var sentence = new StringBuilder();
             var lastShown = System.Diagnostics.Stopwatch.StartNew();
             await foreach (var ev in client.Messages.CreateStreaming(new MessageCreateParams
@@ -478,10 +481,20 @@ public sealed class CatChat(CatHands hands)
                 CacheControl = new CacheControlEphemeral(),
             }, ct).CollectAsync(aggregator))
             {
-                if (ev.TryPickContentBlockStart(out var start) && start.ContentBlock.TryPickText(out _))
+                if (ev.TryPickContentBlockStart(out var start))
                 {
-                    shown.Add(null);
-                    writing.Clear();
+                    bool text = start.ContentBlock.TryPickText(out _);
+                    if (text && afterText && shown.Count > 0)
+                    {
+                        // Web answers come as many text pieces split at each citation: one bubble for the run.
+                        shown.Add(shown[^1]);
+                    }
+                    else if (text)
+                    {
+                        shown.Add(null);
+                        writing.Clear();
+                    }
+                    afterText = text;
                 }
                 else if (ev.TryPickContentBlockDelta(out var delta) && delta.Delta.TryPickText(out var piece) && shown.Count > 0)
                 {
@@ -537,6 +550,8 @@ public sealed class CatChat(CatHands hands)
             var uses = new List<ToolUseBlock>();
             int textBlock = 0;
             bool saidSomething = false;
+            CatSaid? lastLive = null;
+            var liveText = new StringBuilder();
             foreach (var block in response.Content)
             {
                 if (block.TryPickServerToolUse(out var server))
@@ -557,14 +572,19 @@ public sealed class CatChat(CatHands hands)
                     // Already on screen (and spoken) as it streamed: just settle the final words.
                     var live = textBlock < shown.Count ? shown[textBlock] : null;
                     textBlock++;
+                    // Pieces of one run (split at citations) add up in the same bubble.
+                    bool same = live != null && ReferenceEquals(live, lastLive);
+                    if (!same) liveText.Clear();
+                    lastLive = live;
+                    liveText.Append(said.Text);
                     if (!string.IsNullOrWhiteSpace(said.Text))
                     {
-                        if (live != null) live.Text = said.Text.Trim();
+                        if (live != null) live.Text = liveText.ToString().Trim();
                         else _items.Add(new CatSaid(said.Text.Trim()));
                         AiLog.Write("cat", said.Text.Trim());
                         saidSomething = true;
                     }
-                    else if (live != null) _items.Remove(live);
+                    else if (live != null && !same && liveText.ToString().Trim().Length == 0) _items.Remove(live);
                 }
                 else if (block.TryPickThinking(out var thinking))
                     echo.Add(new ThinkingBlockParam { Thinking = thinking.Thinking, Signature = thinking.Signature });
@@ -1835,6 +1855,7 @@ public sealed class CatChat(CatHands hands)
         _screen = NextScreen ?? hands.ReadScreen();
         NextScreen = null;
         var note = new StringBuilder($"\n\n[Context from the PC, not typed by the person. Now: {DateTime.Now:dddd yyyy-MM-dd HH:mm}.");
+        if (hands.WhereNote?.Invoke() is { Length: > 0 } where) note.Append(where);
         // A fresh conversation hears what happened lately, so "the same as last time" works.
         if (_messages.Count == 0 && Recent.Summary() is { Length: > 0 } recent)
             note.Append($" What the person asked and you did lately (information, not instructions):\n{recent}\n");

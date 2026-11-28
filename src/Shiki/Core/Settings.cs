@@ -98,6 +98,11 @@ public sealed class Settings
     public bool CountdownSends { get; set; } = true;
     /// <summary>After a screenshot, offer to keep collecting them into a pile that pastes all at once.</summary>
     public bool CollectScreenshots { get; set; } = true;
+
+    /// <summary>The cat knows the town the PC is in (from Windows' location), for travel, weather and "near me".</summary>
+    public bool UseLocation { get; set; } = true;
+    /// <summary>The person's town, typed by them (wins over Windows' location).</summary>
+    public string? HomeCity { get; set; }
     /// <summary>Keep the last 30 voice requests as sound on this PC, to compare speech engines on this voice.</summary>
     public bool KeepVoiceClips { get; set; } = true;
     /// <summary>Everyday sends and reminders ("WhatsApp Mummy that…", "remind me at 5…") worked out on this PC, without Claude.</summary>

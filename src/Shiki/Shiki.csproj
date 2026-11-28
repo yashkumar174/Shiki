@@ -10,7 +10,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>Shiki</AssemblyName>
     <RootNamespace>Shiki</RootNamespace>
-    <Version>2.58.0</Version>
+    <Version>2.59.0</Version>
     <Product>Shiki</Product>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -48,6 +48,7 @@
   <ItemGroup>
     <!-- Shiki for Android (built from phone/), offered to the phone from the connect window. -->
     <Content Include="Assets\phone\Shiki-phone.apk" Link="phone\Shiki-phone.apk" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\cities.tsv.gz" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\browser-extension\**\*" Link="browser-extension\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\tools\ffmpeg\**\*" Link="tools\ffmpeg\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
