@@ -1740,11 +1740,33 @@ public partial class App : Application
         Log.Info($"Talk shortcut ({(_voice is { Active: true } ? "sends what was heard" : "starts listening")})");
         if (_voice is { Active: true })
         {
+            _voice.Held = false;
             _voice.Finish();
             return;
         }
         ShowAskBubble();
-        if (_bubble != null && !Chat.Busy) _ = Voice.Listen();
+        if (_bubble == null || Chat.Busy) return;
+        // Held down: it listens through any pause and sends when the keys are let go.
+        // A quick tap: it listens on its own and sends when you stop talking (or press again).
+        var voice = Voice;
+        voice.Held = true;
+        _ = voice.Listen();
+        var key = Hotkey.Parse(_settings.TalkHotkey) is { } hotkey ? System.Windows.Input.KeyInterop.VirtualKeyFromKey(hotkey.Key) : 0;
+        var pressed = Stopwatch.StartNew();
+        var watch = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
+        watch.Tick += (_, _) =>
+        {
+            if (key != 0 && TypeText.Down(key) && voice.Active) return;
+            watch.Stop();
+            voice.Held = false;
+            if (!voice.Active) return;
+            if (pressed.ElapsedMilliseconds >= 450)
+            {
+                Log.Info("Talk shortcut let go: sending what was heard");
+                voice.Finish();
+            }
+        };
+        watch.Start();
     }
 
     /// <summary>The name of the cat on the desktop: used everywhere (Ask, the voice, the pages).</summary>

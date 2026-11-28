@@ -117,7 +117,7 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
             double wait = followUp || answering ? Math.Max(settings.FollowUpSeconds, answering ? 7 : 3) : 7;
             // With a live engine (Scribe or Deepgram), it decides when you've finished; the local pause is only a backstop.
             // This listen's own microphone: _mic is only there so Stop and Finish can reach it.
-            using (mic = _mic = new Microphone(pauseEnds: Speech.IsLive(engine) ? 6 : 1.9, waitForSpeech: wait))
+            using (mic = _mic = new Microphone(pauseEnds: Speech.IsLive(engine) ? 6 : 1.9, waitForSpeech: wait) { Held = _held })
             {
                 bool key = Speech.IsLive(engine);
                 var thisMic = mic;
@@ -127,7 +127,8 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
                     var stream = await Speech.OpenLive(engine, thisMic.SampleRate, Speech.KeyTerms(catName()), ct);
                     if (stream == null) return null;
                     stream.Partial += text => Post(() => { Partial = text; Changed?.Invoke(); });
-                    stream.Ended += thisMic.Stop;
+                    // The engine thinks you've finished: unless the talk shortcut is still held down.
+                    stream.Ended += () => { if (!thisMic.Held) thisMic.Stop(); };
                     thisMic.StreamTo(stream.Send);
                     return stream;
                 }
@@ -265,6 +266,19 @@ public sealed class VoiceInput(CatChat chat, Settings settings, Func<string> cat
 
     /// <summary>Stops listening and uses what was heard so far.</summary>
     public void Finish() => _mic?.Stop();
+
+    bool _held;
+
+    /// <summary>The talk shortcut is held: keep listening through pauses until it's let go (then Finish).</summary>
+    public bool Held
+    {
+        get => _held;
+        set
+        {
+            _held = value;
+            if (_mic is { } mic) mic.Held = value;
+        }
+    }
 
     /// <summary>
     /// What was said, written down: a yes or no for a waiting plan, the end of the conversation,

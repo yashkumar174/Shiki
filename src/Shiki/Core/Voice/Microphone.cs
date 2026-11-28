@@ -38,6 +38,12 @@ public sealed class Microphone : IDisposable
     bool _speaking, _finished;
     int _speechFrames;
 
+    /// <summary>
+    /// The talk shortcut is held down: a pause doesn't end the listen and there's no hurry for
+    /// speech to start; letting go of the keys ends it (up to two minutes).
+    /// </summary>
+    public volatile bool Held;
+
     /// <summary>Loudness of the last frame, 0 to 1, for a meter. Raised on the audio thread.</summary>
     public event Action<double>? Level;
 
@@ -140,7 +146,7 @@ public sealed class Microphone : IDisposable
             Log.Info($"Microphone \"{DeviceName}\" sent no sound in 3 s; skipping it for 10 minutes");
             Stop();
         }
-        else if (seconds > _waitForSpeech + MaxLength + 5) Stop();
+        else if (seconds > (Held ? 125 : _waitForSpeech + MaxLength + 5)) Stop();
     }
 
     /// <summary>Stop now and keep what was said so far.</summary>
@@ -232,7 +238,12 @@ public sealed class Microphone : IDisposable
         }
         if (_speaking) _heardSeconds += FrameSeconds;
 
-        if (!_speaking && _elapsed > _waitForSpeech) StopSoon();
+        if (Held)
+        {
+            // Holding the keys: only letting go (or two minutes) ends it.
+            if (_elapsed > 120) StopSoon();
+        }
+        else if (!_speaking && _elapsed > _waitForSpeech) StopSoon();
         else if (_speaking && _quietSeconds > _pauseEnds) StopSoon();
         else if (_elapsed > MaxLength) StopSoon();
     }
