@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -23,8 +24,15 @@ namespace Shiki.Shell;
 public sealed class BrowserBridge : IDisposable
 {
     public const int Port = 47820;
-    /// <summary>The extension's id (fixed by the key in its manifest).</summary>
+    /// <summary>The extension's id when added by hand from Shiki's folder (fixed by the key in its manifest).</summary>
     public const string ExtensionId = "eimendniolefjdmbjdohaaekkhmalnmm";
+    /// <summary>Its id in the Chrome Web Store (the store gives it one), once it's published there; null until then.</summary>
+    public const string? ChromeStoreId = null;
+    /// <summary>Its id in Microsoft's Edge Add-ons store, once it's published there; null until then.</summary>
+    public const string? EdgeStoreId = null;
+
+    /// <summary>Every id Shiki's own extension can have; only these may connect.</summary>
+    static readonly string[] Ours = new[] { ExtensionId, ChromeStoreId, EdgeStoreId }.Where(id => !string.IsNullOrEmpty(id)).Select(id => id!).ToArray();
 
     public static BrowserBridge? Current { get; private set; }
 
@@ -89,7 +97,7 @@ public sealed class BrowserBridge : IDisposable
             var origin = Header("Origin") ?? "";
             var key = Header("Sec-WebSocket-Key");
             // Only Shiki's extension: a web page (or anything else) is turned away.
-            if (key == null || !origin.Equals($"chrome-extension://{ExtensionId}", StringComparison.OrdinalIgnoreCase))
+            if (key == null || !Ours.Any(id => origin.Equals($"chrome-extension://{id}", StringComparison.OrdinalIgnoreCase)))
             {
                 await stream.WriteAsync(Encoding.ASCII.GetBytes("HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"));
                 return;

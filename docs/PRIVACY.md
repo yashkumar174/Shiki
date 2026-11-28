@@ -1,6 +1,6 @@
 # Shiki privacy policy
 
-Last updated: 23 October 2026
+Last updated: 28 November 2026
 
 Shiki is a Windows desktop assistant: a small cat on your screen that converts and tidies files, answers questions, and helps with email when you ask it to. This page explains what Shiki reads, where it goes, and what stays on your PC.
 
@@ -25,6 +25,9 @@ Shiki is a Windows desktop assistant: a small cat on your screen that converts a
 - a picture of part of your screen when you point at it, or a screenshot of the window in front when you ask "what's this error?" or ask the cat to work on screen;
 - the text or picture you copied, when you ask it to work on your clipboard;
 - the content of an email, when you ask about that email;
+- the text you selected, when you use writing help (fix, shorten, translate, reply);
+- the text of web pages (and, when needed, a picture of the tab), while Shiki does a task you asked for on a website in your browser (see "Shiki's browser extension" below);
+- the name of the town your PC is in, when "Know my town" is on (see "Location" below);
 - a meeting's transcript, to write its summary and tasks when you asked for meeting notes;
 - caption lines, when you ask for live captions to be translated.
 
@@ -43,6 +46,25 @@ Before text from documents, the clipboard or email is sent, Shiki's privacy guar
 Shiki's use and transfer of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
 
 **Web search.** When you ask about something on the web, Claude searches and reads web pages through Anthropic's web search; the search words come from your request.
+
+## Shiki's browser extension
+
+Shiki's extension for Chrome, Edge and other Chromium browsers lets the Shiki app on your PC do tasks you ask for on websites, in your own browser.
+
+- The extension connects only to the Shiki app on the same computer (127.0.0.1). It has no server and sends nothing anywhere else. The Shiki app accepts connections only from Shiki's own extension.
+- It does nothing on its own. Only while Shiki is doing a task you asked for does it open a tab (or use the one you point it to) and, through the browser's debugger, read that page's text, click, type and scroll there. The browser shows "Shiki started debugging this browser" while it does; when the task ends, it lets go.
+- To work out the next step, the Shiki app sends the page's text (and, when needed, a picture of the tab) to Anthropic's Claude with your own key, as described above. Nothing is stored after the task, beyond a line in the cat's log on your PC saying what was done.
+- It never types passwords, one-time codes, card or bank details or ID numbers: when a page needs those, Shiki asks you to type them yourself. Anything that sends, submits, books, buys or deletes waits for your yes.
+- It doesn't read your history, bookmarks, cookies or saved passwords, and doesn't track the sites you visit.
+- You can remove the extension at any time from your browser's extensions page.
+
+## Location
+
+When "Know my town" is on (Settings), Shiki asks Windows where the PC is (Windows' own location setting, the one Weather and Maps use) and finds the nearest town in a list stored on your PC. Only the town's name is sent to Claude, so that answers about travel, weather or "near me" start from where you are. Your position itself never leaves your PC. You can turn this off, or set your town yourself ("I live in…").
+
+## Your phone
+
+When you connect a phone, photos and files go directly between the phone and your PC over your own Wi-Fi (or the phone's hotspot). They don't pass through any server.
 
 ## Your choices
 

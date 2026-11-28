@@ -78,6 +78,30 @@ public static class BrowserSetup
         return ("Edge", File.Exists(edge) ? edge : null, "edge://extensions", true);
     }
 
+    /// <summary>Shiki's page in the store for this browser (Edge Add-ons for Edge, else the Chrome Web Store), or null before it's published.</summary>
+    public static string? StoreUrl(string browser) =>
+        browser == "Edge" && BrowserBridge.EdgeStoreId is { } edge ? $"https://microsoftedge.microsoft.com/addons/detail/{edge}"
+        : BrowserBridge.ChromeStoreId is { } chrome ? $"https://chromewebstore.google.com/detail/{chrome}"
+        : null;
+
+    /// <summary>Opens Shiki's store page in the person's usual browser, where "Add to Chrome" is one click.</summary>
+    public static bool OpenStorePage()
+    {
+        var (name, exe, _, _) = Default();
+        if (StoreUrl(name) is not { } url) return false;
+        try
+        {
+            if (exe != null) Process.Start(new ProcessStartInfo(exe, url) { UseShellExecute = false })?.Dispose();
+            else Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Opening Shiki's store page", ex);
+            return false;
+        }
+    }
+
     /// <summary>Opens the browser's extensions page (where "Load unpacked" is).</summary>
     public static bool OpenExtensionsPage()
     {
