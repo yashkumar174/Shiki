@@ -557,6 +557,9 @@ public sealed class CatChat(CatHands hands)
             bool saidSomething = false;
             CatSaid? lastLive = null;
             var liveText = new StringBuilder();
+            // The pages the web search found, and the bubbles this answer wrote (for links under them).
+            var found = new List<(string Title, string Url)>();
+            var spoken = new List<CatSaid>();
             foreach (var block in response.Content)
             {
                 if (block.TryPickServerToolUse(out var server))
@@ -567,7 +570,14 @@ public sealed class CatChat(CatHands hands)
                     AiLog.Write(server.Name, query);
                 }
                 else if (block.TryPickWebSearchToolResult(out var search))
-                    echo.Add(WebSearchToolResultBlockParam.FromRawUnchecked(Wire(search, "type", "tool_use_id", "content")));
+                {
+                    var wire = Wire(search, "type", "tool_use_id", "content");
+                    echo.Add(WebSearchToolResultBlockParam.FromRawUnchecked(wire));
+                    if (wire.TryGetValue("content", out var hits) && hits.ValueKind == JsonValueKind.Array)
+                        foreach (var r in hits.EnumerateArray())
+                            if (r.TryGetProperty("url", out var ru) && ru.GetString() is { } rurl && Uri.TryCreate(rurl, UriKind.Absolute, out _))
+                                found.Add((r.TryGetProperty("title", out var rt) ? rt.GetString() ?? "" : "", rurl));
+                }
                 else if (block.TryPickWebFetchToolResult(out var fetched))
                     echo.Add(WebFetchToolResultBlockParam.FromRawUnchecked(Wire(fetched, "type", "tool_use_id", "content")));
                 else if (block.TryPickText(out var said))
@@ -600,7 +610,8 @@ public sealed class CatChat(CatHands hands)
                     if (!string.IsNullOrWhiteSpace(said.Text))
                     {
                         if (live != null) live.Text = liveText.ToString().Trim();
-                        else _items.Add(new CatSaid(said.Text.Trim()));
+                        else _items.Add(live = new CatSaid(said.Text.Trim()));
+                        if (!spoken.Contains(live)) spoken.Add(live);
                         AiLog.Write("cat", said.Text.Trim());
                         saidSomething = true;
                     }
@@ -617,6 +628,20 @@ public sealed class CatChat(CatHands hands)
                 }
             }
             _messages.Add(new AssistantMessageParam { Content = echo });
+            // No citations on the answer: link the search results whose site it names (redBus, MakeMyTrip…), else the first few.
+            if (found.Count > 0)
+                foreach (var bubble in spoken)
+                {
+                    // Every site the answer names gets its link; with none named or cited, the first few results.
+                    var words = System.Text.RegularExpressions.Regex.Replace(bubble.Text.ToLowerInvariant(), "[^a-z0-9]", "");
+                    var named = found.Where(r => Uri.TryCreate(r.Url, UriKind.Absolute, out var ru) && SiteWord(ru.Host) is { Length: > 2 } site && words.Contains(site)).ToList();
+                    var hosts = bubble.Sources.Select(x => Uri.TryCreate(x.Url, UriKind.Absolute, out var xu) ? SiteWord(xu.Host) : "").ToHashSet();
+                    foreach (var r in named)
+                        if (Uri.TryCreate(r.Url, UriKind.Absolute, out var ru2) && hosts.Add(SiteWord(ru2.Host))) bubble.Sources.Add(r);
+                    if (bubble.Sources.Count == 0) bubble.Sources.AddRange(found.Take(3));
+                }
+            foreach (var bubble in spoken.Where(b => b.Sources.Count > 0))
+                AiLog.Write("sources", string.Join(" ", bubble.Sources.Select(x => x.Url)));
             Notify();
             // A long web search can pause mid-turn: send it back as it is and Claude carries on.
             if (response.StopReason == "pause_turn") continue;
@@ -2111,6 +2136,17 @@ public sealed class CatChat(CatHands hands)
     }
 
     /// <summary>A response block's own JSON, keeping only the fields a request may carry.</summary>
+    /// <summary>A site's own name from its address: "www.redbus.in" is "redbus", "m.makemytrip.com" is "makemytrip".</summary>
+    static string SiteWord(string host)
+    {
+        var parts = host.ToLowerInvariant().Split('.');
+        if (parts.Length < 2) return host.ToLowerInvariant();
+        // "goibibo.com" -> goibibo; "skyscanner.co.in" -> skyscanner (skip co/com/org/net before the country).
+        int i = parts.Length - 2;
+        if (i > 0 && parts[i] is "co" or "com" or "org" or "net" or "gov" or "ac") i--;
+        return System.Text.RegularExpressions.Regex.Replace(parts[i], "[^a-z0-9]", "");
+    }
+
     static IReadOnlyDictionary<string, JsonElement> Wire(object block, params string[] keep)
     {
         var all = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(block, block.GetType())) ?? [];
