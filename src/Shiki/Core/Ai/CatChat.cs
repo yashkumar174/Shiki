@@ -33,7 +33,12 @@ public sealed class TableItem(string title, IReadOnlyList<string[]> rows) : Chat
     public string? SavedAs { get; internal set; }
 }
 
-public sealed class CatSaid(string text) : ChatItem { public string Text { get; internal set; } = text; }
+public sealed class CatSaid(string text) : ChatItem
+{
+    public string Text { get; internal set; } = text;
+    /// <summary>The web pages the answer came from (its citations), to open with a click.</summary>
+    public List<(string Title, string Url)> Sources { get; } = [];
+}
 
 /// <summary>A quiet line about something the cat did on its own (searched a folder, opened Explorer).</summary>
 public sealed class CatDid(string glyph, string text) : ChatItem
@@ -577,6 +582,21 @@ public sealed class CatChat(CatHands hands)
                     if (!same) liveText.Clear();
                     lastLive = live;
                     liveText.Append(said.Text);
+                    // The pages it cited: links under the answer.
+                    if (said.Citations is { Count: > 0 } && (live ?? lastLive) is { } holder)
+                    {
+                        try
+                        {
+                            if (Wire(said, "citations").TryGetValue("citations", out var cited) && cited.ValueKind == JsonValueKind.Array)
+                                foreach (var c in cited.EnumerateArray())
+                                {
+                                    if (!c.TryGetProperty("url", out var u) || u.GetString() is not { } url || !Uri.TryCreate(url, UriKind.Absolute, out _)) continue;
+                                    var title = c.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                                    if (!holder.Sources.Any(s => s.Url == url)) holder.Sources.Add((title, url));
+                                }
+                        }
+                        catch (Exception ex) { Log.Error("Reading an answer's sources", ex); }
+                    }
                     if (!string.IsNullOrWhiteSpace(said.Text))
                     {
                         if (live != null) live.Text = liveText.ToString().Trim();

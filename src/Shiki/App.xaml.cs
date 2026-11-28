@@ -2465,7 +2465,7 @@ public partial class App : Application
             return () => { _settings.HomeCity = city; _settings.Save(); Tell("\uE707", $"Got it: you live in {city}. I'll start from there for travel, weather and near me."); };
         }
         // Shiki's extension in the browser, for doing things on websites.
-        if (rx(words, @"^(connect|set up|setup|link|add) (shiki (to|with|in) )?(my |the )?(browser|chrome|edge|brave)( extension)?$|^(install|add) (the )?(shiki )?(browser |chrome )?extension$").Success)
+        if (rx(words, @"^(connect|set up|setup|link|add|pair)( shiki)?( (to|with|in|into))?( my| the)? (browser|chrome|edge|brave|web browser)( extension)?$|^(install|add|set up|setup) (the )?(shiki )?(browser |chrome )?extension$|^(browser|chrome) (connect|setup|set up)$").Success)
             return () => { ShowBrowserSetup(); Tell("\uE774", "Here's how to add Shiki to your browser (once). Then ask me to do things on websites."); };
         // Writing help on what's selected in the app in front.
         if (rx(words, @"^(fix|correct|check) (the |my |this )?(grammar|spelling|writing|text|sentence|message|english)( (in|of) (this|it))?$").Success)
@@ -3930,6 +3930,7 @@ public partial class App : Application
             case "paw_to_ask": Dispatcher.BeginInvoke(() => StartPaw(listen: _voice?.FollowingUp == true || _voice?.Active == true)); return true;
             case "make_qr": ShowQr(text ?? ""); return true;
             case "connect_phone": Dispatcher.BeginInvoke(() => ShowPhoneConnect()); return true;
+            case "connect_browser": Dispatcher.BeginInvoke(ShowBrowserSetup); return true;
             case "paste_clipboard": PasteToCat(); return true;
             case "open_history": ShowDashboard(DashPage.History); return true;
             case "open_settings": ShowSettings(); return true;

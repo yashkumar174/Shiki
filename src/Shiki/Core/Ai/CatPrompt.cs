@@ -112,6 +112,8 @@ static class CatPrompt
             - "Get my last photo from my phone", "send me the video I took today", "the last 3 screenshots from my phone": phone_get. The files arrive at full quality (checked byte for byte) in Pictures\From phone; then do what was asked with them (email them, convert them, open them) using their paths.
             - "Send this to my phone", "put the PDF on my phone": phone_send with the full paths (selected_files or find_files first). They land in the phone's Download/Shiki folder.
             - "Connect my phone", or a phone tool says no phone is connected yet: use_app_tool connect_phone (a window with a QR code to get the app; it's done once).
+            - "Connect to my browser", "set up Chrome", "install the extension": use_app_tool connect_browser (the one-time steps to add Shiki's extension, so it can work in their own browser).
+            - Answers from the web: the sites you cite show as links under your answer by themselves. When you name a specific deal or page, you can also link it in the text as [site](https://…).
 
             Meetings and tasks
             - "Take notes" (a call is starting) and "stop notes": use_app_tool with take_notes or stop_notes. The app records the call, writes it down and, at the end, writes a summary, decisions and tasks.
@@ -732,7 +734,7 @@ static class CatPrompt
             {
                 Properties = new Dictionary<string, JsonElement>
                 {
-                    ["tool"] = J(new { type = "string", @enum = new[] { "snip", "record_screen", "pick_colour", "make_qr", "paste_clipboard", "open_history", "open_settings", "paw_to_ask", "take_notes", "stop_notes", "open_tasks", "open_meetings", "stop_recording", "captions_on", "captions_off", "connect_phone" } }),
+                    ["tool"] = J(new { type = "string", @enum = new[] { "snip", "record_screen", "pick_colour", "make_qr", "paste_clipboard", "open_history", "open_settings", "paw_to_ask", "take_notes", "stop_notes", "open_tasks", "open_meetings", "stop_recording", "captions_on", "captions_off", "connect_phone", "connect_browser" } }),
                     ["text"] = J(new { type = "string", description = "For make_qr: the link or text to put in the code. For captions_on: a language to translate into (leave out for none)." }),
                 },
                 Required = ["tool"],

@@ -28,7 +28,7 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
     {
         YouSaid you => You(you.Text, you.Spoken, you.Picture),
         TableItem table => Table(table),
-        CatSaid cat => Cat(cat.Text),
+        CatSaid cat => Cat(cat.Text, cat.Sources),
         CatDid did => Did(did.Glyph, did.Text),
         ChatProblem problem => Problem(problem),
         PlanItem plan => Plan(plan),
@@ -75,7 +75,7 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         return bubble;
     }
 
-    UIElement Cat(string text)
+    UIElement Cat(string text, IReadOnlyList<(string Title, string Url)>? sources = null)
     {
         var row = new DockPanel { Margin = new Thickness(0, compact ? 8 : 14, compact ? 0 : 80, 2) };
         var head = Head(compact ? 20 : 24);
@@ -84,8 +84,45 @@ public sealed class ChatCards(DashKit k, CatChat chat, string catName, ImageSour
         DockPanel.SetDock(head, Dock.Left);
         row.Children.Add(head);
         // Paragraphs, lists and bold, the way the answer was written.
-        row.Children.Add(ChatText.View(text, Size, P.Text, P.Muted, P.Accent, P.Hover));
+        var body = new StackPanel();
+        body.Children.Add(ChatText.View(text, Size, P.Text, P.Muted, P.Accent, P.Hover));
+        if (sources is { Count: > 0 }) body.Children.Add(Sources(sources));
+        row.Children.Add(body);
         return row;
+    }
+
+    /// <summary>The sites an answer came from, as small buttons that open the page (one per site).</summary>
+    UIElement Sources(IReadOnlyList<(string Title, string Url)> sources)
+    {
+        var wrap = new WrapPanel { Margin = new Thickness(0, 8, 0, 0) };
+        var sites = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (title, url) in sources)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) continue;
+            var host = uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? uri.Host[4..] : uri.Host;
+            if (!sites.Add(host) || sites.Count > 8) continue;
+            var label = k.Text(host, compact ? 12 : 12.5, P.Muted, FontWeights.SemiBold);
+            var arrow = k.Icon("\uE8A7", 10, P.Faint);
+            arrow.Margin = new Thickness(6, 1, 0, 0);
+            arrow.VerticalAlignment = VerticalAlignment.Center;
+            var chip = new Border
+            {
+                CornerRadius = new CornerRadius(10),
+                Background = DashKit.B(P.Hover),
+                BorderBrush = DashKit.B(P.Line),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(9, 3, 8, 4),
+                Margin = new Thickness(0, 0, 6, 6),
+                Cursor = Cursors.Hand,
+                ToolTip = string.IsNullOrWhiteSpace(title) ? url : $"{title}\n{url}",
+                Child = new StackPanel { Orientation = Orientation.Horizontal, Children = { label, arrow } },
+            };
+            DashKit.Press(chip);
+            var target = uri.AbsoluteUri;
+            chip.MouseLeftButtonUp += (_, e) => { e.Handled = true; try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true })?.Dispose(); } catch (Exception) { } };
+            wrap.Children.Add(chip);
+        }
+        return wrap;
     }
 
     UIElement Did(string glyph, string text)
