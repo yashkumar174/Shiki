@@ -33,7 +33,8 @@ public sealed class BrowserSetupWindow : Window
         stack.Children.Add(UiKit.Title($"Add Shiki to {target}"));
         if (!supported)
             stack.Children.Add(UiKit.Body($"Your usual browser is {browser}, which doesn't take Shiki's extension yet. Add it to Chrome or Edge, or Shiki does web tasks with your mouse and keyboard instead."));
-        stack.Children.Add(UiKit.Body($"Then Shiki can do things on websites for you in your own {target}, where you're already signed in: fill in forms, search and compare, download from portals."));
+        stack.Children.Add(UiKit.Body($"Then Shiki does things on websites for you in your own {target}, where you're already signed in: fill in forms, search and compare, download from portals."));
+        stack.Children.Add(UiKit.Body("You don't have to: without it, Shiki works in a browser window of its own, where you sign in to a site once and it remembers.", 12.5));
 
         // By hand: Developer mode and Load unpacked (for now, or for people who'd rather).
         var byHand = HandSteps(target, page);

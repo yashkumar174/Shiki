@@ -2141,19 +2141,18 @@ public partial class App : Application
 
     WebAgent? _webAgent;
 
-    /// <summary>Starts the web agent in the person's own browser; without Shiki's extension there, the screen agent does it (and the setup shows).</summary>
+    /// <summary>
+    /// Starts the web agent: in the person's own browser when Shiki's extension is there, otherwise
+    /// in Shiki's own browser window (nothing to install; sites remember a sign-in there).
+    /// </summary>
     string StartWebAgent(string task)
     {
-        if (BrowserBridge.Current is not { Connected: true } bridge)
-        {
-            ShowBrowserSetup();
-            return StartAgent(task);
-        }
         if (_webAgent != null || _agent != null) return "I'm already working on something. Stop it first (the pill at the top right).";
         if (ClaudeKey.Read() is not { } key) return "I need a Claude API key first.";
         _bubble?.Close();
+        var own = BrowserBridge.Current is { Connected: true } connected ? connected : null;
         AgentPill? pill = null;
-        var agent = _webAgent = new WebAgent(bridge, question => pill!.Ask(question));
+        var agent = _webAgent = new WebAgent(async ct => own != null ? own : await ShikiBrowser.Start(ct), question => pill!.Ask(question));
         pill = new AgentPill(agent, task);
         pill.StopPressed += () =>
         {
@@ -2186,7 +2185,9 @@ public partial class App : Application
             AiLog.Write("web agent cost", $"${agent.Cost:0.000} over {agent.Steps} steps");
             ToastHost.Show(ToastWindow.Message(agent.Stopped ? "Stopped" : "Done", summary));
         });
-        return $"Started in {bridge.Browser ?? "your browser"}: watch the new tab, or carry on with your own work. The pill at the top right has Stop.";
+        return own != null
+            ? $"Started in {own.Browser ?? "your browser"}: watch the new tab, or carry on with your own work. The pill at the top right has Stop."
+            : "Started in Shiki's own browser window. If a site asks you to sign in, do it there once and it'll remember. The pill at the top right has Stop.";
     }
 
     void StartBrowserBridge()

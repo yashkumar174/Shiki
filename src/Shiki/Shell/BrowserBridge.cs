@@ -21,7 +21,7 @@ namespace Shiki.Shell;
 /// web pages can't fake it). Through it Shiki lists and opens tabs and sends Chrome DevTools
 /// commands to a tab: reading the page, clicking, typing.
 /// </summary>
-public sealed class BrowserBridge : IDisposable
+public sealed class BrowserBridge : IDisposable, IBrowserLink
 {
     public const int Port = 47820;
     /// <summary>The extension's id when added by hand from Shiki's folder (fixed by the key in its manifest).</summary>

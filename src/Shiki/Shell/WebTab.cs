@@ -16,17 +16,17 @@ namespace Shiki.Shell;
 /// </summary>
 public sealed class WebTab
 {
-    readonly BrowserBridge _bridge;
+    readonly IBrowserLink _bridge;
     public int Id { get; private set; }
 
-    WebTab(BrowserBridge bridge, int id)
+    WebTab(IBrowserLink bridge, int id)
     {
         _bridge = bridge;
         Id = id;
     }
 
     /// <summary>A new tab (in front) at this address, ready to work in.</summary>
-    public static async Task<WebTab> Open(BrowserBridge bridge, string url, CancellationToken ct)
+    public static async Task<WebTab> Open(IBrowserLink bridge, string url, CancellationToken ct)
     {
         var opened = await bridge.Call("open", new JsonObject { ["url"] = url }, ct);
         var tab = new WebTab(bridge, opened.GetProperty("id").GetInt32());

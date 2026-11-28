@@ -1074,7 +1074,7 @@ public sealed class CatChat(CatHands hands)
                 var card = new PlanItem(summary, [])
                 {
                     Detail = onWeb
-                        ? browser != null ? $"{hands.CatName()} does it in a new tab of {browser}, signed in as you. Your mouse stays yours." : $"{hands.CatName()} works in your browser once Shiki's extension is in (one time, it shows you how); until then it uses your mouse and keyboard."
+                        ? browser != null ? $"{hands.CatName()} does it in a new tab of {browser}, signed in as you. Your mouse stays yours." : $"{hands.CatName()} does it in its own browser window (sign in to a site there once and it remembers). Your mouse stays yours."
                         : $"{hands.CatName()} uses your mouse and keyboard for this.",
                     More = task,
                     Fine = onWeb

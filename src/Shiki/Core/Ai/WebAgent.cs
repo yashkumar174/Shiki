@@ -31,7 +31,8 @@ public sealed class WebAgent : IAgentStatus
     const double InputPrice = 2.0, OutputPrice = 10.0, CacheWritePrice = 2.5, CacheReadPrice = 0.20;
     const int MaxTurns = 80;
 
-    readonly BrowserBridge _bridge;
+    readonly Func<CancellationToken, Task<IBrowserLink>> _connect;
+    IBrowserLink _bridge = null!;
     readonly Func<AgentQuestion, Task<bool>> _ask;
     readonly CancellationTokenSource _stop = new();
     readonly List<MessageParam> _messages = [];
@@ -48,9 +49,10 @@ public sealed class WebAgent : IAgentStatus
     public bool Stopped => _stop.IsCancellationRequested;
     public event Action? Changed;
 
-    public WebAgent(BrowserBridge bridge, Func<AgentQuestion, Task<bool>> ask)
+    /// <param name="connect">Gets the browser to work in: the person's own (through the extension), or Shiki's own window.</param>
+    public WebAgent(Func<CancellationToken, Task<IBrowserLink>> connect, Func<AgentQuestion, Task<bool>> ask)
     {
-        _bridge = bridge;
+        _connect = connect;
         _ask = ask;
     }
 
@@ -127,10 +129,12 @@ public sealed class WebAgent : IAgentStatus
             if (kind == "tabCreated" && _tab != null && e.TryGetProperty("openerTabId", out var opener) && opener.ValueKind == JsonValueKind.Number && opener.GetInt32() == _tab.Id)
                 _newTab = e.GetProperty("tabId").GetInt32();
         }
-        _bridge.Event += OnEvent;
         AiLog.Write("web agent", task);
         try
         {
+            Set("Opening the browser…");
+            _bridge = await _connect(_stop.Token);
+            _bridge.Event += OnEvent;
             _tab = await WebTab.Open(_bridge, "about:blank", _stop.Token);
             _messages.Add(new UserMessageParam { Content = $"The task: {task}\n\nA new tab is open and empty." });
             for (int turn = 0; turn < MaxTurns; turn++)
@@ -219,7 +223,7 @@ public sealed class WebAgent : IAgentStatus
         }
         finally
         {
-            _bridge.Event -= OnEvent;
+            if (_bridge != null) _bridge.Event -= OnEvent;
             if (_tab != null) await _tab.Release();
         }
     }
