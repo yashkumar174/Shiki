@@ -101,6 +101,7 @@ public sealed class SkillsPage(DashKit k, DashboardHost host)
             new("Record the screen", "Pick an area; say \"stop recording\" to finish.", How.Key, keys.RecordHotkey, "record"),
             new("Pick a colour", "Click anywhere to get its colour code.", How.Key, keys.ColourHotkey, "colour"),
             new("Dictation", "Hold the keys, talk, let go: typed where your cursor is, in any app.", How.Key, keys.DictateHotkey),
+            new("connect my browser", "Adds Shiki's extension to your browser once, so it can do things on websites for you, signed in as you.", How.Ask),
             new("Writing help", "Select text in any app, press the keys: fix it, shorten it, change its tone, translate it or write a reply, then put it back.", How.Key, keys.WriteHotkey, "write"),
         ]),
         ("Copy, remember, routines", "",

@@ -38,7 +38,7 @@ public static class Firewall
     [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
     static extern uint GetFinalPathNameByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle file, System.Text.StringBuilder path, uint size, uint flags);
 
-    static string RealPath(string path)
+    internal static string RealPath(string path)
     {
         try
         {

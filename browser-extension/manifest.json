@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Shiki",
+  "version": "1.0.0",
+  "description": "Lets Shiki, the cat on your PC, work in your browser when you ask it to. It talks only to Shiki on this computer.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlPtF4Uo59ZMfQCvf9cE6HOlSfzA0yzuDFuGI1n6stK1n0NYxJeE9rvtMXKSvE3SClZp0w4RuhhWCZqLcNuLBNg+0LPy6cRrQ0t3vF0V7vAWgx0/AKTbDr78mF/r+W1445iOgCFBr0kLEgtiyL2Y3xKFRqwvS8bWKiqgYnAc5s9Rx1FQqhsbe5gKapV0h3ZkA9QtFf/NHWEWyT3m79XqpSUcWfdJ3aC3V8PPTM8DUC0bqs42ZEtnYOuyyOKe/FBVUJmPx18fnNwzrY/NFYwecUMl9yo7p5THu0flFK4U1Y6ncsRC7CR4vbPmTfg3Tz3ylIEnXXe5BPBSGC3nuQalJTQIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "debugger",
+    "tabs",
+    "alarms"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  },
+  "action": {
+    "default_title": "Shiki",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png"
+    }
+  }
+}

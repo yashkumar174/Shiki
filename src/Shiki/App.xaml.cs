@@ -704,6 +704,16 @@ public partial class App : Application
                     catch (Exception ex) { Log.Info($"write-try {writeAsk} failed: {ex.Message}"); }
                 });
                 break;
+            case "browser-setup":
+                // Dev aid: the one-time browser setup.
+                EnterBuddyMode();
+                ShowBrowserSetup();
+                break;
+            case "web-try" when args.Length >= 2:
+                // Dev aid: the web agent on a task, as if the card's Do it was pressed.
+                EnterBuddyMode();
+                Log.Info("web-try: " + StartWebAgent(string.Join(" ", args[1..])));
+                break;
             case "media-info" when args.Length >= 2:
                 // Dev aid: what the viewer reads from each file.
                 foreach (var media in args[1..]) _ = System.Threading.Tasks.Task.Run(async () => Log.Info($"media-info: {await Core.Phone.MediaInfo.ReadAsync(media)}"));
@@ -1441,6 +1451,7 @@ public partial class App : Application
         ApplyWake();
         StartReminders();
         StartPhoneLink();
+        StartBrowserBridge();
         ApplyShotPile();
         WatchPc();
         _calls = new CallWatcher();
@@ -1771,6 +1782,8 @@ public partial class App : Application
         ReadAloud = ReadAloud,
         ReadClipboard = ReadClipboardForCat,
         StartAgent = StartAgent,
+        StartWebAgent = StartWebAgent,
+        WebBrowser = () => BrowserBridge.Current is { Connected: true } b ? b.Browser ?? "your browser" : null,
         SendWhatsApp = SendWhatsApp,
         Quick = VoiceCommand,
         CountdownSends = () => _settings.CountdownSends,
@@ -2115,6 +2128,73 @@ public partial class App : Application
         return "Started: watch the pill at the top right. Click or type yourself and it pauses.";
     }
 
+    WebAgent? _webAgent;
+
+    /// <summary>Starts the web agent in the person's own browser; without Shiki's extension there, the screen agent does it (and the setup shows).</summary>
+    string StartWebAgent(string task)
+    {
+        if (BrowserBridge.Current is not { Connected: true } bridge)
+        {
+            ShowBrowserSetup();
+            return StartAgent(task);
+        }
+        if (_webAgent != null || _agent != null) return "I'm already working on something. Stop it first (the pill at the top right).";
+        if (ClaudeKey.Read() is not { } key) return "I need a Claude API key first.";
+        _bubble?.Close();
+        AgentPill? pill = null;
+        var agent = _webAgent = new WebAgent(bridge, question => pill!.Ask(question));
+        pill = new AgentPill(agent, task);
+        pill.StopPressed += () =>
+        {
+            if (agent.Stopped) return;
+            agent.Stop();
+            AiLog.Write("web agent stopped", "Stop pressed");
+            Chat.Say(new CatDid("\uE71A", "Stopped."));
+        };
+        pill.Show();
+        _buddy?.Listening(true);
+        Dispatcher.BeginInvoke(async () =>
+        {
+            string summary;
+            try
+            {
+                summary = await agent.Run(task, key);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("The web agent failed", ex);
+                summary = CatChat.Explain(ex).Message ?? "Stopped.";
+            }
+            _webAgent = null;
+            pill.Close();
+            _buddy?.Listening(false);
+            _settings.AiSpentUsd += agent.Cost;
+            _settings.AiRequests++;
+            _settings.Save();
+            Chat.Report("\uE774", summary);
+            AiLog.Write("web agent cost", $"${agent.Cost:0.000} over {agent.Steps} steps");
+            ToastHost.Show(ToastWindow.Message(agent.Stopped ? "Stopped" : "Done", summary));
+        });
+        return $"Started in {bridge.Browser ?? "your browser"}: watch the new tab, or carry on with your own work. The pill at the top right has Stop.";
+    }
+
+    void StartBrowserBridge()
+    {
+        BrowserBridge.Start();
+        BrowserSetup.Install();
+    }
+
+    BrowserSetupWindow? _browserSetup;
+
+    /// <summary>The one-time setup that puts Shiki's extension into the person's browser.</summary>
+    void ShowBrowserSetup()
+    {
+        if (_browserSetup != null) { _browserSetup.Activate(); return; }
+        _browserSetup = new BrowserSetupWindow();
+        _browserSetup.Closed += (_, _) => _browserSetup = null;
+        _browserSetup.Show();
+    }
+
     // ---- Live captions ----
 
     LiveCaptions? _captions;
@@ -2367,6 +2447,9 @@ public partial class App : Application
         // Connecting the phone works without Claude: the window that pairs it (and shows if it's connected).
         if (rx(words, @"^(connect|pair|link|set up|setup|add|reconnect|re connect)( up)?( my| the| a| an| new)? (phone|iphone|mobile|android)( again| to (this |the |my )?(pc|computer|laptop)| with (this |the |my )?(pc|computer|laptop))?$|^(phone|iphone|mobile) (connect|pairing|link)$|^(mera )?(phone|mobile) (connect|jodo|connect karo)$").Success)
             return () => { ShowPhoneConnect(); Tell("\uE8EA", "Here's Connect a phone. Scan the code with Shiki on your phone: once it's connected, it reconnects by itself."); };
+        // Shiki's extension in the browser, for doing things on websites.
+        if (rx(words, @"^(connect|set up|setup|link|add) (shiki (to|with|in) )?(my |the )?(browser|chrome|edge|brave)( extension)?$|^(install|add) (the )?(shiki )?(browser |chrome )?extension$").Success)
+            return () => { ShowBrowserSetup(); Tell("\uE774", "Here's how to add Shiki to your browser (once). Then ask me to do things on websites."); };
         // Writing help on what's selected in the app in front.
         if (rx(words, @"^(fix|correct|check) (the |my |this )?(grammar|spelling|writing|text|sentence|message|english)( (in|of) (this|it))?$").Success)
             return () => StartWriting(Core.Ai.WriteAsk.Fix);

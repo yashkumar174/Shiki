@@ -20,7 +20,7 @@ namespace Shiki.UI;
 public sealed class AgentPill : Window
 {
     readonly DashKit _k = new(DashPalette.Night);
-    readonly ComputerAgent _agent;
+    readonly IAgentStatus _agent;
     readonly TextBlock _status, _task;
     readonly StackPanel _question = new() { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
     readonly TextBlock _questionText;
@@ -36,7 +36,7 @@ public sealed class AgentPill : Window
     public event Action? Paused;
     public event Action? Resumed;
 
-    public AgentPill(ComputerAgent agent, string task)
+    public AgentPill(IAgentStatus agent, string task)
     {
         _agent = agent;
         var p = _k.P;

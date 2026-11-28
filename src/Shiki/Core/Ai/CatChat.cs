@@ -142,6 +142,10 @@ public sealed class CatHands
     public required Func<string, string, bool, IReadOnlyList<string>, Task<string>> SendWhatsApp { get; init; }
     /// <summary>Starts the agent on a task (it works by itself, with its own pill); says whether it started.</summary>
     public required Func<string, string> StartAgent { get; init; }
+    /// <summary>Starts the web agent (in the person's own browser) on a task; null when the app has none.</summary>
+    public Func<string, string>? StartWebAgent { get; init; }
+    /// <summary>The browser it would work in ("Chrome 158"), or null when Shiki's extension isn't connected.</summary>
+    public Func<string?>? WebBrowser { get; init; }
     /// <summary>What's on the clipboard: text, or a picture (PNG), or neither.</summary>
     public required Func<(string? Text, byte[]? Png)> ReadClipboard { get; init; }
     /// <summary>Reads text aloud, all of it (a document); a Stop button shows meanwhile.</summary>
@@ -1000,13 +1004,19 @@ public sealed class CatChat(CatHands hands)
                 // The card says what it'll do in a line; the full instructions wait behind "Show the steps".
                 var summary = (Str(input, "summary") ?? "").Trim().TrimEnd('.');
                 if (summary.Length == 0) summary = task.Length <= 90 ? task.TrimEnd('.') : task[..task[..90].LastIndexOf(' ')].TrimEnd(',', '.') + "…";
+                bool onWeb = input.TryGetProperty("on_web", out var web) && web.ValueKind == JsonValueKind.True && hands.StartWebAgent != null;
+                var browser = onWeb ? hands.WebBrowser?.Invoke() : null;
                 var card = new PlanItem(summary, [])
                 {
-                    Detail = $"{hands.CatName()} uses your mouse and keyboard for this.",
+                    Detail = onWeb
+                        ? browser != null ? $"{hands.CatName()} does it in a new tab of {browser}, signed in as you. Your mouse stays yours." : $"{hands.CatName()} works in your browser once Shiki's extension is in (one time, it shows you how); until then it uses your mouse and keyboard."
+                        : $"{hands.CatName()} uses your mouse and keyboard for this.",
                     More = task,
-                    Fine = $"Asks before sending or deleting anything, never types passwords, and stops if you click or type. Uses {ComputerAgent.ModelName}, a few cents a task.",
+                    Fine = onWeb
+                        ? $"Asks before sending, booking, buying or deleting anything; you sign in and pay yourself. Uses {ComputerAgent.ModelName}, a few cents a task."
+                        : $"Asks before sending or deleting anything, never types passwords, and stops if you click or type. Uses {ComputerAgent.ModelName}, a few cents a task.",
                 };
-                card.Run = () => Task.FromResult(hands.StartAgent(task));
+                card.Run = () => Task.FromResult(onWeb ? hands.StartWebAgent!(task) : hands.StartAgent(task));
                 return (card, null);
             }
             case "close_app":

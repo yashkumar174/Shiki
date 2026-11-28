@@ -39,7 +39,7 @@ public sealed record AgentQuestion(string Question, bool CanContinue);
 /// never types passwords or payment details, and stops the moment the person presses Stop.
 /// Events are raised on the thread that started it (the UI thread).
 /// </summary>
-public sealed class ComputerAgent
+public sealed class ComputerAgent : IAgentStatus
 {
     public const string Model = "claude-sonnet-5-5";
     public const string ModelName = "Claude Sonnet 5.5";

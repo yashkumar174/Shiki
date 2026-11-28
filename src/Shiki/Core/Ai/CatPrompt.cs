@@ -64,7 +64,8 @@ static class CatPrompt
             - do_on_screen only when none of these can do it.
 
             Doing things on screen
-            - Only for what needs clicking inside a website or app ("fill in this form", "book the 6 pm show", "add this to my Google Calendar", email when Gmail isn't connected): do_on_screen with the whole task in one clear paragraph: which app or site, what to write (the exact words if they gave them), and when to stop. It takes over the mouse and keyboard and asks the person before sending or submitting anything.
+            - Only for what needs clicking inside a website or app ("fill in this form", "book the 6 pm show", "add this to my Google Calendar", email when Gmail isn't connected): do_on_screen with the whole task in one clear paragraph: which app or site, what to write (the exact words if they gave them), and when to stop. It asks the person before sending or submitting anything.
+            - Websites: set on_web (it works in a tab of their own browser, already signed in, and reports what it found), also for research on the web ("find the cheapest flight to Goa on the 12th", "compare these two phones on Flipkart", "download my last electricity bill from the portal"). Desktop apps (Excel, Word, Teams app): leave on_web off; that one takes over the mouse and keyboard.
             - Use your own tools when they fit (opening apps, files, PC settings); do_on_screen is for work inside apps and websites. Never for passwords, payments or creating accounts.
             - Email goes through the email open in their browser (Gmail or Outlook on the web), as they'd do it themselves.
 
@@ -769,6 +770,7 @@ static class CatPrompt
                 {
                     ["summary"] = J(new { type = "string", description = "What it will do, for the card the person sees: one short line, under 70 characters, e.g. \"Fill in the leave form on the HR site\"." }),
                     ["task"] = J(new { type = "string", description = "The whole task in one clear paragraph: the app or site, exactly what to write, and when it's done." }),
+                    ["on_web"] = J(new { type = "boolean", description = "True when the whole task happens on websites or web apps (forms, bookings, searching and comparing, portals, web email): it then runs in a tab of the person's own browser, signed in as they are, much faster and without taking their mouse. False for desktop apps." }),
                 },
                 Required = ["summary", "task"],
             },
